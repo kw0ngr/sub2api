@@ -414,16 +414,15 @@ func (h *AccountHandler) resolveAPIKeyHealthCheckAccounts(ctx context.Context, a
 	var allAccounts []*service.Account
 	page := 1
 	for {
-		items, total, err := h.adminService.ListAccounts(ctx, page, rawAPIKeyImportPageSize, "", service.AccountTypeAPIKey, "", "", 0, "")
+		items, total, err := h.adminService.ListAccounts(ctx, page, 100, "", service.AccountTypeAPIKey, "", "", 0, "")
 		if err != nil {
 			return nil, err
 		}
 		for i := range items {
-			account := items[i]
-			accCopy := account
+			accCopy := items[i]
 			allAccounts = append(allAccounts, &accCopy)
 		}
-		if len(allAccounts) >= int(total) || len(items) == 0 {
+		if len(items) == 0 || len(allAccounts) >= int(total) {
 			break
 		}
 		page++
