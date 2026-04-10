@@ -446,6 +446,12 @@ export interface APIKeyHealthCheckResult {
   results: APIKeyHealthCheckItem[]
 }
 
+export interface APIKeyHealthCheckStatusResponse {
+  status: 'idle' | 'running' | 'completed'
+  started_at?: string
+  result?: APIKeyHealthCheckResult
+}
+
 /**
  * 批量获取多个账号的今日统计
  * @param accountIds - 账号 ID 列表
@@ -587,11 +593,13 @@ export async function importRawAPIKeys(payload: {
   return data
 }
 
-export async function checkAPIKeysHealth(accountIds?: number[]): Promise<APIKeyHealthCheckResult> {
+export async function checkAPIKeysHealth(accountIds?: number[]): Promise<void> {
   const payload = accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}
-  const { data } = await apiClient.post<APIKeyHealthCheckResult>('/admin/accounts/apikey-health-check', payload, {
-    timeout: 120000
-  })
+  await apiClient.post('/admin/accounts/apikey-health-check', payload)
+}
+
+export async function getAPIKeysHealthStatus(): Promise<APIKeyHealthCheckStatusResponse> {
+  const { data } = await apiClient.get<APIKeyHealthCheckStatusResponse>('/admin/accounts/apikey-health-check')
   return data
 }
 
@@ -736,6 +744,7 @@ export const accountsAPI = {
   importData,
   importRawAPIKeys,
   checkAPIKeysHealth,
+  getAPIKeysHealthStatus,
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,
