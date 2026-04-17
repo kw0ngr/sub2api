@@ -32,8 +32,7 @@ type AccountRepository interface {
 	// platform + api_key + base_url combination.
 	// Returns (nil, nil) when no match is found.
 	FindByAPIKey(ctx context.Context, platform, apiKey, baseURL string) (*Account, error)
-	// FindByExtraField 根据 extra 字段中的键值对查找账号（限定 platform='sora'）
-	// 用于查找通过 linked_openai_account_id 关联的 Sora 账号
+	// FindByExtraField 根据 extra 字段中的键值对查找账号
 	FindByExtraField(ctx context.Context, key string, value any) ([]Account, error)
 	// ListCRSAccountIDs returns a map of crs_account_id -> local account ID
 	// for all accounts that have been synced from CRS.

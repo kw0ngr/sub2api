@@ -8,11 +8,14 @@ import (
 )
 
 // contentSessionSeedPrefix prevents collisions between content-derived seeds
-// and explicit session IDs like sess_* or compat_cc_*.
+// and explicit session IDs (e.g. "sess-xxx" or "compat_cc_xxx").
 const contentSessionSeedPrefix = "compat_cs_"
 
-// deriveOpenAIContentSessionSeed builds a stable fallback seed from fields that
-// should stay constant across turns for non-Codex clients.
+// deriveOpenAIContentSessionSeed builds a stable session seed from an
+// OpenAI-format request body. Only fields constant across conversation turns
+// are included: model, tools/functions definitions, system/developer prompts,
+// instructions (Responses API), and the first user message.
+// Supports both Chat Completions (messages) and Responses API (input).
 func deriveOpenAIContentSessionSeed(body []byte) string {
 	if len(body) == 0 {
 		return ""
@@ -21,71 +24,74 @@ func deriveOpenAIContentSessionSeed(body []byte) string {
 	var b strings.Builder
 
 	if model := gjson.GetBytes(body, "model").String(); model != "" {
-		b.WriteString("model=")
-		b.WriteString(model)
+		_, _ = b.WriteString("model=")
+		_, _ = b.WriteString(model)
 	}
 
 	if tools := gjson.GetBytes(body, "tools"); tools.Exists() && tools.IsArray() && tools.Raw != "[]" {
-		b.WriteString("|tools=")
-		b.WriteString(normalizeCompatSeedJSON(json.RawMessage(tools.Raw)))
+		_, _ = b.WriteString("|tools=")
+		_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(tools.Raw)))
 	}
 
 	if funcs := gjson.GetBytes(body, "functions"); funcs.Exists() && funcs.IsArray() && funcs.Raw != "[]" {
-		b.WriteString("|functions=")
-		b.WriteString(normalizeCompatSeedJSON(json.RawMessage(funcs.Raw)))
+		_, _ = b.WriteString("|functions=")
+		_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(funcs.Raw)))
 	}
 
-	if instructions := gjson.GetBytes(body, "instructions").String(); instructions != "" {
-		b.WriteString("|instructions=")
-		b.WriteString(instructions)
+	if instr := gjson.GetBytes(body, "instructions").String(); instr != "" {
+		_, _ = b.WriteString("|instructions=")
+		_, _ = b.WriteString(instr)
 	}
 
 	firstUserCaptured := false
+
 	msgs := gjson.GetBytes(body, "messages")
 	if msgs.Exists() && msgs.IsArray() {
 		msgs.ForEach(func(_, msg gjson.Result) bool {
-			switch msg.Get("role").String() {
+			role := msg.Get("role").String()
+			switch role {
 			case "system", "developer":
-				b.WriteString("|system=")
+				_, _ = b.WriteString("|system=")
 				if c := msg.Get("content"); c.Exists() {
-					b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+					_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
 				}
 			case "user":
 				if !firstUserCaptured {
-					b.WriteString("|first_user=")
+					_, _ = b.WriteString("|first_user=")
 					if c := msg.Get("content"); c.Exists() {
-						b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+						_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
 					}
 					firstUserCaptured = true
 				}
 			}
 			return true
 		})
-	} else if input := gjson.GetBytes(body, "input"); input.Exists() {
-		if input.Type == gjson.String {
-			b.WriteString("|input=")
-			b.WriteString(input.String())
-		} else if input.IsArray() {
-			input.ForEach(func(_, item gjson.Result) bool {
-				switch item.Get("role").String() {
+	} else if inp := gjson.GetBytes(body, "input"); inp.Exists() {
+		if inp.Type == gjson.String {
+			_, _ = b.WriteString("|input=")
+			_, _ = b.WriteString(inp.String())
+		} else if inp.IsArray() {
+			inp.ForEach(func(_, item gjson.Result) bool {
+				role := item.Get("role").String()
+				switch role {
 				case "system", "developer":
-					b.WriteString("|system=")
+					_, _ = b.WriteString("|system=")
 					if c := item.Get("content"); c.Exists() {
-						b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+						_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
 					}
 				case "user":
 					if !firstUserCaptured {
-						b.WriteString("|first_user=")
+						_, _ = b.WriteString("|first_user=")
 						if c := item.Get("content"); c.Exists() {
-							b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+							_, _ = b.WriteString(normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
 						}
 						firstUserCaptured = true
 					}
 				}
 				if !firstUserCaptured && item.Get("type").String() == "input_text" {
-					b.WriteString("|first_user=")
+					_, _ = b.WriteString("|first_user=")
 					if text := item.Get("text").String(); text != "" {
-						b.WriteString(text)
+						_, _ = b.WriteString(text)
 					}
 					firstUserCaptured = true
 				}

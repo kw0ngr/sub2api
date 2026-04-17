@@ -359,7 +359,7 @@ func (h *AccountHandler) resolveAPIKeyHealthCheckAccounts(ctx context.Context, a
 	var allAccounts []*service.Account
 	page := 1
 	for {
-		items, total, err := h.adminService.ListAccounts(ctx, page, rawAPIKeyImportPageSize, "", service.AccountTypeAPIKey, "", "", 0, "")
+		items, total, err := h.adminService.ListAccounts(ctx, page, rawAPIKeyImportPageSize, "", service.AccountTypeAPIKey, "", "", 0, "", "", "")
 		if err != nil {
 			return nil, err
 		}
@@ -396,7 +396,7 @@ func (h *AccountHandler) loadExistingAPIKeyIndex(ctx context.Context) (map[strin
 	page := 1
 	fetched := 0
 	for {
-		items, total, err := h.adminService.ListAccounts(ctx, page, rawAPIKeyImportPageSize, "", service.AccountTypeAPIKey, "", "", 0, "")
+		items, total, err := h.adminService.ListAccounts(ctx, page, rawAPIKeyImportPageSize, "", service.AccountTypeAPIKey, "", "", 0, "", "", "")
 		if err != nil {
 			return nil, err
 		}

@@ -119,6 +119,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) (shouldDisable bool) {
 	if account != nil && account.Type == AccountTypeAPIKey {
+		if account.Platform == PlatformOpenAI && (statusCode == http.StatusTooManyRequests || statusCode == 529) {
+			goto genericRuntimePath
+		}
 		// Pool mode without custom error codes: upstream manages key state, skip local marking.
 		if account.IsPoolMode() && !account.IsCustomErrorCodesEnabled() {
 			slog.Info("pool_mode_error_skipped", "account_id", account.ID, "status_code", statusCode)
@@ -141,6 +144,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		}
 	}
 
+genericRuntimePath:
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；仅当用户显式配置自定义错误码时按本地策略处理。
@@ -172,12 +176,18 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 
 	switch statusCode {
 	case 400:
-		// 只有当错误信息包含 "organization has been disabled" 时才禁用
+		// "organization has been disabled" → 永久禁用
 		if strings.Contains(strings.ToLower(upstreamMsg), "organization has been disabled") {
 			msg := "Organization disabled (400): " + upstreamMsg
 			s.handleAuthError(ctx, account, msg)
 			shouldDisable = true
+		} else if account.Platform == PlatformAnthropic && strings.Contains(strings.ToLower(upstreamMsg), "credit balance") {
+			// Anthropic API key 余额不足（语义等同 402），停止调度
+			msg := "Credit balance exhausted (400): " + upstreamMsg
+			s.handleAuthError(ctx, account, msg)
+			shouldDisable = true
 		} else if strings.Contains(strings.ToLower(upstreamMsg), "identity verification is required") {
+			// KYC 身份验证要求 → 永久禁用，账号需完成身份验证后才能恢复
 			msg := "Identity verification required (400): " + upstreamMsg
 			s.handleAuthError(ctx, account, msg)
 			shouldDisable = true
