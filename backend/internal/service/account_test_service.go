@@ -50,9 +50,10 @@ type TestEvent struct {
 }
 
 const (
-	defaultGeminiTextTestPrompt  = "hi"
 	defaultGeminiImageTestPrompt = "Generate a cute orange cat astronaut sticker on a clean pastel background."
 )
+
+var defaultGeminiTextTestPrompt = testConnectionPrompt
 
 // AccountTestService handles account testing operations
 type AccountTestService struct {
@@ -115,6 +116,13 @@ func generateSessionString() (string, error) {
 	return FormatMetadataUserID(hex64, "", sessionUUID, uaVersion), nil
 }
 
+// testExpectedOutput is the word the model must include in its response during connection tests.
+// If the model's output does not contain this word, the account is treated as unusable.
+const testExpectedOutput = "successful"
+
+// testConnectionPrompt is the user prompt sent during connection tests.
+const testConnectionPrompt = `Reply with the single word "successful" and nothing else.`
+
 // createTestPayload creates a Claude Code style test request payload
 func createTestPayload(modelID string) (map[string]any, error) {
 	sessionID, err := generateSessionString()
@@ -130,7 +138,7 @@ func createTestPayload(modelID string) (map[string]any, error) {
 				"content": []map[string]any{
 					{
 						"type": "text",
-						"text": "hi",
+						"text": testConnectionPrompt,
 						"cache_control": map[string]string{
 							"type": "ephemeral",
 						},
@@ -330,7 +338,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 				"content": []map[string]any{
 					{
 						"type": "text",
-						"text": "hi",
+						"text": testConnectionPrompt,
 					},
 				},
 			},
@@ -404,6 +412,18 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	}
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: text})
+
+	if !strings.Contains(strings.ToLower(text), testExpectedOutput) {
+		errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, text)
+		if account != nil && s.accountRepo != nil {
+			_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+			if account.Schedulable {
+				_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+			}
+		}
+		return s.sendErrorAndEnd(c, errMsg)
+	}
+
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }
@@ -614,7 +634,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	}
 
 	// Process SSE stream
-	return s.processGeminiStream(c, resp.Body)
+	return s.processGeminiStream(c, ctx, account, resp.Body)
 }
 
 // routeAntigravityTest 路由 Antigravity 账号的测试请求。
@@ -663,6 +683,17 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	// 发送响应内容
 	if result.Text != "" {
 		s.sendEvent(c, TestEvent{Type: "content", Text: result.Text})
+	}
+
+	if !strings.Contains(strings.ToLower(result.Text), testExpectedOutput) {
+		errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, result.Text)
+		if account != nil && s.accountRepo != nil {
+			_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+			if account.Schedulable {
+				_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+			}
+		}
+		return s.sendErrorAndEnd(c, errMsg)
 	}
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
@@ -824,15 +855,37 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 }
 
 // processGeminiStream processes SSE stream from Gemini API
-func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader) error {
+func (s *AccountTestService) processGeminiStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
 	reader := bufio.NewReader(body)
+	var accumulated strings.Builder
+	var isImageModel bool
+
+	completeWithValidation := func() error {
+		// Image-generation models do not produce text; skip text validation.
+		if isImageModel {
+			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+			return nil
+		}
+		txt := accumulated.String()
+		if !strings.Contains(strings.ToLower(txt), testExpectedOutput) {
+			errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, txt)
+			if account != nil && s.accountRepo != nil {
+				_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+				if account.Schedulable {
+					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+				}
+			}
+			return s.sendErrorAndEnd(c, errMsg)
+		}
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
+				return completeWithValidation()
 			}
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
 		}
@@ -844,8 +897,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 
 		jsonStr := strings.TrimPrefix(line, "data: ")
 		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return completeWithValidation()
 		}
 
 		var data map[string]any
@@ -867,15 +919,17 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 						for _, part := range parts {
 							if partMap, ok := part.(map[string]any); ok {
 								if text, ok := partMap["text"].(string); ok && text != "" {
+									accumulated.WriteString(text)
 									s.sendEvent(c, TestEvent{Type: "content", Text: text})
 								}
 								if inlineData, ok := partMap["inlineData"].(map[string]any); ok {
+									isImageModel = true
 									mimeType, _ := inlineData["mimeType"].(string)
-									data, _ := inlineData["data"].(string)
-									if strings.HasPrefix(strings.ToLower(mimeType), "image/") && data != "" {
+									imgData, _ := inlineData["data"].(string)
+									if strings.HasPrefix(strings.ToLower(mimeType), "image/") && imgData != "" {
 										s.sendEvent(c, TestEvent{
 											Type:     "image",
-											ImageURL: fmt.Sprintf("data:%s;base64,%s", mimeType, data),
+											ImageURL: fmt.Sprintf("data:%s;base64,%s", mimeType, imgData),
 											MimeType: mimeType,
 										})
 									}
@@ -887,8 +941,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 
 				// Check for completion after extracting content
 				if finishReason, ok := candidate["finishReason"].(string); ok && finishReason != "" {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
+					return completeWithValidation()
 				}
 			}
 		}
@@ -914,7 +967,7 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 				"content": []map[string]any{
 					{
 						"type": "input_text",
-						"text": "hi",
+						"text": testConnectionPrompt,
 					},
 				},
 			},
@@ -936,13 +989,28 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 // processClaudeStream processes the SSE stream from Claude API
 func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
 	reader := bufio.NewReader(body)
+	var accumulated strings.Builder
+
+	completeWithValidation := func() error {
+		if !strings.Contains(strings.ToLower(accumulated.String()), testExpectedOutput) {
+			errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, accumulated.String())
+			if account != nil && s.accountRepo != nil {
+				_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+				if account.Schedulable {
+					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+				}
+			}
+			return s.sendErrorAndEnd(c, errMsg)
+		}
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
+				return completeWithValidation()
 			}
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
 		}
@@ -954,8 +1022,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Con
 
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return completeWithValidation()
 		}
 
 		var data map[string]any
@@ -969,12 +1036,12 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Con
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
 				if text, ok := delta["text"].(string); ok {
+					accumulated.WriteString(text)
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
 			}
 		case "message_stop":
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return completeWithValidation()
 		case "error":
 			errorMsg := "Unknown error"
 			errorCode := ""
@@ -1091,6 +1158,22 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 		completedSeen   bool
 	)
 
+	applyExpectedOutputCheck := func() error {
+		txt := accumulatedText.String()
+		if !strings.Contains(strings.ToLower(txt), testExpectedOutput) {
+			errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, txt)
+			if account != nil && s.accountRepo != nil {
+				_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+				if account.Schedulable {
+					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+				}
+			}
+			return s.sendErrorAndEnd(c, errMsg)
+		}
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
+
 	applyStreamErrorText := func() (bool, error) {
 		txt := accumulatedText.String()
 		if !isStreamOnlyErrorText(txt, deltaCount, completedSeen) {
@@ -1143,8 +1226,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 						}
 					case "response.completed":
 						completedSeen = true
-						s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-						return nil
+						return applyExpectedOutputCheck()
 					case "error":
 						errorMsg := "Unknown error"
 						errorCode := ""
@@ -1183,8 +1265,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 			if triggered, errResult := applyStreamErrorText(); triggered {
 				return errResult
 			}
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return applyExpectedOutputCheck()
 		}
 	}
 }

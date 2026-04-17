@@ -125,7 +125,7 @@
                 {{ t('admin.accounts.rawKeyImport') }}
               </button>
               <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAllAPIKeys">
-                {{ checkingAllAPIKeys ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
+                {{ checkingAllAPIKeys ? t('admin.accounts.apiKeyHealthChecking', { checked: hcChecked, total: hcTotal }) : t('admin.accounts.apiKeyHealthCheckAll') }}
               </button>
               <button @click="openExportDataDialog" class="btn btn-secondary">
                 {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
@@ -397,6 +397,9 @@ const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
 const checkingAllAPIKeys = ref(false)
+const hcChecked = ref(0)
+const hcTotal = ref(0)
+let hcPollTimer: ReturnType<typeof setInterval> | null = null
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -1186,30 +1189,69 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
 const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); reload() }
 const handleDataImported = () => { showImportData.value = false; reload() }
 const handleRawKeyImported = () => { showRawKeyImport.value = false; reload() }
+const stopHealthCheckPoll = () => {
+  if (hcPollTimer) {
+    clearInterval(hcPollTimer)
+    hcPollTimer = null
+  }
+}
+const handleHealthCheckComplete = (result: { checked: number; valid: number; invalid_disabled: number; failed: number }) => {
+  stopHealthCheckPoll()
+  checkingAllAPIKeys.value = false
+  hcChecked.value = 0
+  hcTotal.value = 0
+  if (result.invalid_disabled > 0 || result.failed > 0) {
+    appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAllResultWithIssues', {
+      checked: result.checked,
+      valid: result.valid,
+      invalid_disabled: result.invalid_disabled,
+      failed: result.failed
+    }))
+  } else {
+    appStore.showSuccess(t('admin.accounts.apiKeyHealthCheckAllResult', {
+      checked: result.checked,
+      valid: result.valid
+    }))
+  }
+  reload()
+}
+const startHealthCheckPoll = () => {
+  stopHealthCheckPoll()
+  hcPollTimer = setInterval(async () => {
+    try {
+      const status = await adminAPI.accounts.getAPIKeysHealthStatus()
+      if (status.status === 'running' && status.result) {
+        hcChecked.value = status.result.checked
+        hcTotal.value = status.result.total
+      } else if (status.status === 'completed' && status.result) {
+        handleHealthCheckComplete(status.result)
+      } else if (status.status === 'idle') {
+        stopHealthCheckPoll()
+        checkingAllAPIKeys.value = false
+      }
+    } catch {
+      stopHealthCheckPoll()
+      checkingAllAPIKeys.value = false
+    }
+  }, 2000)
+}
 const handleCheckAllAPIKeys = async () => {
   if (!confirm(t('admin.accounts.apiKeyHealthCheckAllConfirm'))) return
   checkingAllAPIKeys.value = true
+  hcChecked.value = 0
+  hcTotal.value = 0
   try {
-    const result = await adminAPI.accounts.checkAPIKeysHealth()
-    if (result.invalid_disabled > 0 || result.failed > 0) {
-      appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAllResultWithIssues', {
-        checked: result.checked,
-        valid: result.valid,
-        invalid_disabled: result.invalid_disabled,
-        failed: result.failed
-      }))
-    } else {
-      appStore.showSuccess(t('admin.accounts.apiKeyHealthCheckAllResult', {
-        checked: result.checked,
-        valid: result.valid
-      }))
-    }
-    await reload()
+    await adminAPI.accounts.checkAPIKeysHealth()
+    startHealthCheckPoll()
   } catch (error: any) {
-    console.error('Failed to check API keys health:', error)
-    appStore.showError(error?.message || t('admin.accounts.apiKeyHealthCheckFailed'))
-  } finally {
-    checkingAllAPIKeys.value = false
+    if (error?.status === 409) {
+      appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAlreadyRunning'))
+      startHealthCheckPoll()
+    } else {
+      console.error('Failed to start API keys health check:', error)
+      appStore.showError(error?.message || t('admin.accounts.apiKeyHealthCheckFailed'))
+      checkingAllAPIKeys.value = false
+    }
   }
 }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
@@ -1485,9 +1527,21 @@ onMounted(async () => {
   } else {
     pauseAutoRefresh()
   }
+
+  // Resume polling if a health check is already running in the background.
+  try {
+    const status = await adminAPI.accounts.getAPIKeysHealthStatus()
+    if (status.status === 'running') {
+      checkingAllAPIKeys.value = true
+      hcChecked.value = status.result?.checked ?? 0
+      hcTotal.value = status.result?.total ?? 0
+      startHealthCheckPoll()
+    }
+  } catch { /* ignore */ }
 })
 
 onUnmounted(() => {
+  stopHealthCheckPoll()
   window.removeEventListener('scroll', handleScroll, true)
   document.removeEventListener('click', handleClickOutside)
 })

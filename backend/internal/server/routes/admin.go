@@ -279,6 +279,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.POST("/data", h.Admin.Account.ImportData)
 		accounts.POST("/raw-import", h.Admin.Account.ImportRawAPIKeys)
 		accounts.POST("/apikey-health-check", h.Admin.Account.CheckAPIKeysHealth)
+		accounts.GET("/apikey-health-check", h.Admin.Account.GetAPIKeysHealthStatus)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)

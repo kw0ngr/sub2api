@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -67,6 +70,21 @@ type APIKeyHealthCheckResult struct {
 	InvalidDisabled int                     `json:"invalid_disabled"`
 	Failed          int                     `json:"failed"`
 	Results         []APIKeyHealthCheckItem `json:"results"`
+}
+
+// APIKeyHealthCheckStatusResponse is the response for polling health check progress.
+type APIKeyHealthCheckStatusResponse struct {
+	Status    string                   `json:"status"` // "idle" | "running" | "completed"
+	StartedAt *time.Time               `json:"started_at,omitempty"`
+	Result    *APIKeyHealthCheckResult `json:"result,omitempty"`
+}
+
+// healthCheckState holds the background health check state.
+type healthCheckState struct {
+	mu        sync.RWMutex
+	running   bool
+	startedAt time.Time
+	result    *APIKeyHealthCheckResult
 }
 
 type rawAPIKeyImportLine struct {
@@ -230,6 +248,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// CheckAPIKeysHealth starts a background health check and returns immediately.
 func (h *AccountHandler) CheckAPIKeysHealth(c *gin.Context) {
 	var req APIKeyHealthCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
@@ -241,29 +260,69 @@ func (h *AccountHandler) CheckAPIKeysHealth(c *gin.Context) {
 		return
 	}
 
+	h.hcState.mu.Lock()
+	if h.hcState.running {
+		h.hcState.mu.Unlock()
+		response.Error(c, http.StatusConflict, "Health check is already running")
+		return
+	}
+
+	// Resolve accounts while we still have the HTTP context for DB access.
 	accounts, err := h.resolveAPIKeyHealthCheckAccounts(c.Request.Context(), req.AccountIDs)
 	if err != nil {
+		h.hcState.mu.Unlock()
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	result := APIKeyHealthCheckResult{
+	now := time.Now()
+	h.hcState.running = true
+	h.hcState.startedAt = now
+	h.hcState.result = &APIKeyHealthCheckResult{
 		Total:   len(accounts),
 		Results: make([]APIKeyHealthCheckItem, 0, len(accounts)),
 	}
+	h.hcState.mu.Unlock()
+
+	// Run in background with a detached context so page refresh won't cancel it.
+	go h.runHealthCheckBackground(accounts)
+
+	response.Accepted(c, gin.H{
+		"status":     "running",
+		"started_at": now,
+		"total":      len(accounts),
+	})
+}
+
+// GetAPIKeysHealthStatus returns the current health check progress/results.
+func (h *AccountHandler) GetAPIKeysHealthStatus(c *gin.Context) {
+	h.hcState.mu.RLock()
+	defer h.hcState.mu.RUnlock()
+
+	if h.hcState.result == nil && !h.hcState.running {
+		response.Success(c, APIKeyHealthCheckStatusResponse{Status: "idle"})
+		return
+	}
+
+	status := "completed"
+	if h.hcState.running {
+		status = "running"
+	}
+	startedAt := h.hcState.startedAt
+	resp := APIKeyHealthCheckStatusResponse{
+		Status:    status,
+		StartedAt: &startedAt,
+		Result:    h.hcState.result,
+	}
+	response.Success(c, resp)
+}
+
+func (h *AccountHandler) runHealthCheckBackground(accounts []*service.Account) {
+	ctx := context.Background()
 
 	const maxConcurrency = 8
-	g, ctx := errgroup.WithContext(c.Request.Context())
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxConcurrency)
-
-	type checkResult struct {
-		item APIKeyHealthCheckItem
-		// counters
-		valid           bool
-		invalidDisabled bool
-		failed          bool
-	}
-	resultCh := make(chan checkResult, len(accounts))
 
 	for _, account := range accounts {
 		acc := account
@@ -274,77 +333,73 @@ func (h *AccountHandler) CheckAPIKeysHealth(c *gin.Context) {
 				Platform:  acc.Platform,
 			}
 
-			health, healthErr := h.accountTestService.CheckAPIKeyValidity(ctx, acc)
+			var valid, invalidDisabled, failed bool
 
-			r := checkResult{item: item}
+			health, healthErr := h.accountTestService.CheckAPIKeyValidity(gctx, acc)
+
 			if healthErr != nil {
-				r.item.Error = healthErr.Error()
-				r.failed = true
-				resultCh <- r
-				return nil
-			}
+				item.Error = healthErr.Error()
+				failed = true
+			} else {
+				item.StatusCode = health.StatusCode
+				item.Message = health.Message
+				item.Valid = health.Valid
 
-			r.item.StatusCode = health.StatusCode
-			r.item.Message = health.Message
-			r.item.Valid = health.Valid
-
-			if health.Valid {
-				r.valid = true
-				if !acc.IsActive() || !acc.Schedulable {
-					if err := h.recoverValidAPIKeyAccount(ctx, acc); err != nil {
-						r.item.Error = err.Error()
-						r.failed = true
-					} else if strings.TrimSpace(r.item.Message) == "" {
-						r.item.Message = "account re-enabled and scheduling restored after successful health check"
-					} else {
-						r.item.Message = r.item.Message + " | account re-enabled and scheduling restored after successful health check"
+				if health.Valid {
+					valid = true
+					if !acc.IsActive() || !acc.Schedulable {
+						if err := h.recoverValidAPIKeyAccount(gctx, acc); err != nil {
+							item.Error = err.Error()
+							failed = true
+						} else if strings.TrimSpace(item.Message) == "" {
+							item.Message = "account re-enabled and scheduling restored after successful health check"
+						} else {
+							item.Message = item.Message + " | account re-enabled and scheduling restored after successful health check"
+						}
 					}
 				}
-			}
 
-			if health.Invalid {
-				if err := h.disableInvalidAPIKeyAccount(ctx, acc, health.Message); err != nil {
-					r.item.Error = err.Error()
-					r.failed = true
-				} else {
-					r.item.InvalidDisabled = true
-					r.invalidDisabled = true
-					if acc.Schedulable {
-						if strings.TrimSpace(r.item.Message) == "" {
-							r.item.Message = "account marked invalid and scheduling disabled after health check"
-						} else {
-							r.item.Message += " | scheduling disabled after failed health check"
+				if health.Invalid {
+					if err := h.disableInvalidAPIKeyAccount(gctx, acc, health.Message); err != nil {
+						item.Error = err.Error()
+						failed = true
+					} else {
+						item.InvalidDisabled = true
+						invalidDisabled = true
+						if acc.Schedulable {
+							if strings.TrimSpace(item.Message) == "" {
+								item.Message = "account marked invalid and scheduling disabled after health check"
+							} else {
+								item.Message += " | scheduling disabled after failed health check"
+							}
 						}
 					}
 				}
 			}
 
-			resultCh <- r
+			h.hcState.mu.Lock()
+			h.hcState.result.Checked++
+			if valid {
+				h.hcState.result.Valid++
+			}
+			if invalidDisabled {
+				h.hcState.result.InvalidDisabled++
+			}
+			if failed {
+				h.hcState.result.Failed++
+			}
+			h.hcState.result.Results = append(h.hcState.result.Results, item)
+			h.hcState.mu.Unlock()
+
 			return nil
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	close(resultCh)
+	_ = g.Wait()
 
-	for r := range resultCh {
-		result.Checked++
-		if r.valid {
-			result.Valid++
-		}
-		if r.invalidDisabled {
-			result.InvalidDisabled++
-		}
-		if r.failed {
-			result.Failed++
-		}
-		result.Results = append(result.Results, r.item)
-	}
-
-	response.Success(c, result)
+	h.hcState.mu.Lock()
+	h.hcState.running = false
+	h.hcState.mu.Unlock()
 }
 
 func (h *AccountHandler) resolveAPIKeyHealthCheckAccounts(ctx context.Context, accountIDs []int64) ([]*service.Account, error) {
@@ -364,11 +419,10 @@ func (h *AccountHandler) resolveAPIKeyHealthCheckAccounts(ctx context.Context, a
 			return nil, err
 		}
 		for i := range items {
-			account := items[i]
-			accCopy := account
+			accCopy := items[i]
 			allAccounts = append(allAccounts, &accCopy)
 		}
-		if len(allAccounts) >= int(total) || len(items) == 0 {
+		if len(items) == 0 || len(allAccounts) >= int(total) {
 			break
 		}
 		page++

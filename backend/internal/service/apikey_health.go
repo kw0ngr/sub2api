@@ -11,7 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 )
 
-const apiKeyProbeCooldown = 60 * time.Minute
+const apiKeyProbeCooldown = 72 * time.Hour
 
 type APIKeyHealthCheckResult struct {
 	Platform   string `json:"platform"`
