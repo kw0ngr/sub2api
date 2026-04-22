@@ -74,6 +74,73 @@ func NewOpsHandler(opsService *service.OpsService) *OpsHandler {
 	return &OpsHandler{opsService: opsService}
 }
 
+// ListDebugTraces lists recent in-memory debug traces.
+// GET /api/v1/admin/ops/debug-traces
+func (h *OpsHandler) ListDebugTraces(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	filter := service.DebugTraceFilter{}
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		limit, err := strconv.Atoi(v)
+		if err != nil || limit <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		filter.Limit = limit
+	}
+	filter.RequestID = strings.TrimSpace(c.Query("request_id"))
+	filter.Path = strings.TrimSpace(c.Query("path"))
+	filter.Platform = strings.TrimSpace(c.Query("platform"))
+	filter.ReasonCode = strings.TrimSpace(c.Query("reason"))
+	filter.OnlyErrors = parseBoolQueryWithDefault(c.Query("only_errors"), true)
+	filter.OnlyFallback = parseBoolQueryWithDefault(c.Query("only_fallback"), false)
+	if v := strings.TrimSpace(c.Query("account_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid account_id")
+			return
+		}
+		filter.AccountID = &id
+	}
+
+	items := service.ListDebugTraces(filter)
+	response.Success(c, gin.H{
+		"items": items,
+		"count": len(items),
+	})
+}
+
+// GetDebugTrace returns a single debug trace by id.
+// GET /api/v1/admin/ops/debug-traces/:id
+func (h *OpsHandler) GetDebugTrace(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		response.BadRequest(c, "Invalid debug trace id")
+		return
+	}
+	trace, ok := service.GetDebugTrace(id)
+	if !ok || trace == nil {
+		response.NotFound(c, "Debug trace not found")
+		return
+	}
+	response.Success(c, trace)
+}
+
 // GetErrorLogs lists ops error logs.
 // GET /api/v1/admin/ops/errors
 func (h *OpsHandler) GetErrorLogs(c *gin.Context) {

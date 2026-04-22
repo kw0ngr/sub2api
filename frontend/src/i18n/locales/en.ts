@@ -3869,6 +3869,27 @@ export default {
         suggestPlatform: 'Platform error: prioritize investigation and fix',
         suggestGeneric: 'See details for more context'
       },
+      debugTraces: {
+        title: 'Recent Debug Traces',
+        subtitle: 'Short-lived structured request traces for troubleshooting without full request logging',
+        onlyFallback: 'Fallback Only',
+        requestIdPlaceholder: 'Filter by request_id / client_request_id',
+        pathPlaceholder: 'Filter by path (default /responses)',
+        time: 'Time',
+        reason: 'Reason',
+        route: 'Route',
+        target: 'Target',
+        status: 'Status',
+        body: 'Body',
+        action: 'Action',
+        truncated: 'Preview truncated',
+        detailTitle: 'Debug Trace Detail',
+        requestPreview: 'Request Preview',
+        responsePreview: 'Response Preview',
+        truncatedPaths: 'Truncated paths',
+        scheduler: 'Scheduler',
+        latency: 'Latency'
+      },
       requestDetails: {
         title: 'Request Details',
         details: 'Details',

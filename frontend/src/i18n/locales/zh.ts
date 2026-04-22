@@ -4033,6 +4033,27 @@ export default {
         suggestPlatform: '🚨 平台错误，建议立即排查修复',
         suggestGeneric: '查看详情了解更多信息'
       },
+      debugTraces: {
+        title: '最近调试追踪',
+        subtitle: '短时保留的结构化请求追踪，用于排障而不需要全量请求日志',
+        onlyFallback: '仅看回退',
+        requestIdPlaceholder: '按 request_id / client_request_id 过滤',
+        pathPlaceholder: '按路径过滤（默认 /responses）',
+        time: '时间',
+        reason: '原因',
+        route: '路由',
+        target: '目标',
+        status: '状态',
+        body: '请求体',
+        action: '操作',
+        truncated: '预览已截断',
+        detailTitle: '调试追踪详情',
+        requestPreview: '请求预览',
+        responsePreview: '响应预览',
+        truncatedPaths: '截断路径',
+        scheduler: '调度层',
+        latency: '耗时'
+      },
       requestDetails: {
         title: '请求明细',
         details: '明细',

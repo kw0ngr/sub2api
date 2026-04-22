@@ -725,6 +725,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				}
 			}
 
+			recordDebugTraceFromContext(c, status, parsedOpsError{
+				ErrorType: "upstream_error",
+				Message:   recoveredMsg,
+			}, nil)
 			enqueueOpsErrorLog(ops, entry)
 			return
 		}
@@ -919,6 +923,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		entry.RequestHeadersJSON = extractOpsRetryRequestHeaders(c)
 		attachOpsRequestBodyToEntry(c, entry)
 
+		recordDebugTraceFromContext(c, status, parsed, body)
 		enqueueOpsErrorLog(ops, entry)
 	}
 }

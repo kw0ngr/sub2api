@@ -96,6 +96,13 @@
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="opsEnabled && showAlertEvents && !(loading && !hasLoadedOnce)" />
 
+      <!-- Recent Debug Traces -->
+      <OpsDebugTracePanel
+        v-if="opsEnabled && !(loading && !hasLoadedOnce)"
+        :platform-filter="platform"
+        :refresh-token="dashboardRefreshToken"
+      />
+
       <!-- System Logs -->
       <OpsSystemLogTable
         v-if="opsEnabled && !(loading && !hasLoadedOnce)"
@@ -165,6 +172,7 @@ import OpsThroughputTrendChart from './components/OpsThroughputTrendChart.vue'
 import OpsSwitchRateTrendChart from './components/OpsSwitchRateTrendChart.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
 import OpsOpenAITokenStatsCard from './components/OpsOpenAITokenStatsCard.vue'
+import OpsDebugTracePanel from './components/OpsDebugTracePanel.vue'
 import OpsSystemLogTable from './components/OpsSystemLogTable.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
 import OpsSettingsDialog from './components/OpsSettingsDialog.vue'
