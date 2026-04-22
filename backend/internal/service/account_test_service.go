@@ -919,7 +919,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, ctx context.Con
 						for _, part := range parts {
 							if partMap, ok := part.(map[string]any); ok {
 								if text, ok := partMap["text"].(string); ok && text != "" {
-									accumulated.WriteString(text)
+									_, _ = accumulated.WriteString(text)
 									s.sendEvent(c, TestEvent{Type: "content", Text: text})
 								}
 								if inlineData, ok := partMap["inlineData"].(map[string]any); ok {
@@ -1036,7 +1036,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Con
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
 				if text, ok := delta["text"].(string); ok {
-					accumulated.WriteString(text)
+					_, _ = accumulated.WriteString(text)
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
 			}
@@ -1217,7 +1217,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 					switch eventType {
 					case "response.output_text.delta":
 						if delta, ok := data["delta"].(string); ok && delta != "" {
-							accumulatedText.WriteString(delta)
+							_, _ = accumulatedText.WriteString(delta)
 							deltaCount++
 							s.sendEvent(c, TestEvent{Type: "content", Text: delta})
 						}

@@ -72,6 +72,38 @@ func TestRequestBodyLimit_LimitsBody(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestRequestBodyLimit_UsesResponsesOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(RequestBodyLimit(4, 8))
+	r.POST("/v1/responses", func(c *gin.Context) {
+		body, err := io.ReadAll(c.Request.Body)
+		require.NoError(t, err)
+		require.Equal(t, "123456", string(body))
+		c.Status(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewBufferString("123456"))
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRequestBodyLimitHandler_UsesResponsesOverride(t *testing.T) {
+	handler := RequestBodyLimitHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, "123456", string(body))
+		w.WriteHeader(http.StatusOK)
+	}), 4, 8)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewBufferString("123456"))
+	handler.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestForcePlatform_SetsContextAndGinValue(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -48,6 +48,15 @@ func AllPlatforms() []string {
 	return []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity}
 }
 
+// NormalizeDeprecatedFields clears legacy fields that remain only for historical
+// config compatibility and must never affect runtime behavior.
+func (r *ErrorPassthroughRule) NormalizeDeprecatedFields() {
+	if r == nil {
+		return
+	}
+	r.PassthroughBody = false
+}
+
 // Validate 验证规则配置的有效性
 func (r *ErrorPassthroughRule) Validate() error {
 	if r.Name == "" {

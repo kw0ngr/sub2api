@@ -60,6 +60,17 @@ func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {
 	return c, rec
 }
 
+func newSoraTestContext() (*gin.Context, *httptest.ResponseRecorder) {
+	return newTestContext()
+}
+
+func newOpenAISuccessStream(text string) io.ReadCloser {
+	return io.NopCloser(strings.NewReader(
+		fmt.Sprintf("data: {\"type\":\"response.output_text.delta\",\"delta\":%q}\n\n", text) +
+			"data: {\"type\":\"response.completed\"}\n\n",
+	))
+}
+
 type openAIAccountTestRepo struct {
 	mockAccountRepoForGemini
 	updatedExtra  map[string]any
@@ -83,9 +94,7 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	ctx, recorder := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
-
-`))
+	resp.Body = newOpenAISuccessStream("successful")
 	resp.Header.Set("x-codex-primary-used-percent", "88")
 	resp.Header.Set("x-codex-primary-reset-after-seconds", "604800")
 	resp.Header.Set("x-codex-primary-window-minutes", "10080")
@@ -112,7 +121,7 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
-func TestAccountTestService_OpenAI429PersistsSnapshotWithoutRateLimit(t *testing.T) {
+func TestAccountTestService_OpenAI429PersistsSnapshotAndRateLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := newTestContext()
 
@@ -139,9 +148,9 @@ func TestAccountTestService_OpenAI429PersistsSnapshotWithoutRateLimit(t *testing
 	require.Error(t, err)
 	require.NotEmpty(t, repo.updatedExtra)
 	require.Equal(t, 100.0, repo.updatedExtra["codex_5h_used_percent"])
-	require.Zero(t, repo.rateLimitedID)
-	require.Nil(t, repo.rateLimitedAt)
-	require.Nil(t, account.RateLimitResetAt)
+	require.Equal(t, int64(88), repo.rateLimitedID)
+	require.NotNil(t, repo.rateLimitedAt)
+	require.NotNil(t, account.RateLimitResetAt)
 }
 
 func TestAccountTestService_OpenAIApiKeyUsesV1ResponsesEndpoint(t *testing.T) {
@@ -149,9 +158,7 @@ func TestAccountTestService_OpenAIApiKeyUsesV1ResponsesEndpoint(t *testing.T) {
 	ctx, recorder := newSoraTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
-
-`))
+	resp.Body = newOpenAISuccessStream("successful")
 
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
 	svc := &AccountTestService{
@@ -212,42 +219,43 @@ func TestAccountTestService_OpenAIApiKey_StreamBehavior(t *testing.T) {
 			wantSuccess: false,
 		},
 		{
-			// Same error phrase but stream ends with response.completed → normal reply, no disable
+			// Completed stream with expected token should not be treated as disable-worthy.
 			name: "error_phrase_with_completed_event_not_flagged",
 			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Your account is not active, please check your billing details on our website.\"}\n\n" +
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\" successful\"}\n\n" +
 				"data: {\"type\":\"response.completed\"}\n\n",
 			wantDisable: false,
 			wantSuccess: true,
 		},
 		{
-			// Multiple deltas → normal multi-token reply, no disable even if one delta matches
+			// Multiple deltas with the expected token should succeed without disable.
 			name: "multiple_deltas_not_flagged",
 			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Your account is not active\"}\n\n" +
-				"data: {\"type\":\"response.output_text.delta\",\"delta\":\", please check your billing details.\"}\n\n" +
-				"data: [DONE]\n\n",
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\", please check your billing details. successful\"}\n\n" +
+				"data: {\"type\":\"response.completed\"}\n\n",
 			wantDisable: false,
 			wantSuccess: true,
 		},
 		{
-			// Normal AI reply: no disable
+			// Normal successful reply: no disable.
 			name: "normal_response_not_flagged",
-			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello! How can I help you?\"}\n\n" +
+			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"successful\"}\n\n" +
 				"data: {\"type\":\"response.completed\"}\n\n",
 			wantDisable: false,
 			wantSuccess: true,
 		},
 		{
-			// The original bug: "Hi — what can I help with?" must never trigger disable
+			// The original bug phrase must not trigger disable when the stream still completes successfully.
 			name: "hi_response_not_flagged",
-			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi \\u2014 what can I help with?\"}\n\n" +
+			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi \\u2014 what can I help with? successful\"}\n\n" +
 				"data: {\"type\":\"response.completed\"}\n\n",
 			wantDisable: false,
 			wantSuccess: true,
 		},
 		{
-			// Single delta, no completed, but text does not match any known error phrase → success
+			// Single delta, no completed, but expected token present and no known error phrase → success.
 			name: "single_delta_unknown_text_not_flagged",
-			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Sure, happy to help!\"}\n\n" +
+			sseBody: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"successful\"}\n\n" +
 				"data: [DONE]\n\n",
 			wantDisable: false,
 			wantSuccess: true,

@@ -1141,6 +1141,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.max_body_size",
 		},
 		{
+			name:    "gateway responses max body size",
+			mutate:  func(c *Config) { c.Gateway.ResponsesMaxBodySize = 0 },
+			wantErr: "gateway.responses_max_body_size",
+		},
+		{
+			name:    "gateway responses max body size smaller than default",
+			mutate:  func(c *Config) { c.Gateway.ResponsesMaxBodySize = c.Gateway.MaxBodySize - 1 },
+			wantErr: "gateway.responses_max_body_size",
+		},
+		{
 			name:    "gateway max idle conns",
 			mutate:  func(c *Config) { c.Gateway.MaxIdleConns = 0 },
 			wantErr: "gateway.max_idle_conns",

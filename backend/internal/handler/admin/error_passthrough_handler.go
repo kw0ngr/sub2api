@@ -119,8 +119,6 @@ func (h *ErrorPassthroughHandler) Create(c *gin.Context) {
 	} else {
 		rule.PassthroughCode = true
 	}
-	// Deprecated capability removed: never passthrough upstream raw error body.
-	rule.PassthroughBody = false
 	if req.SkipMonitoring != nil {
 		rule.SkipMonitoring = *req.SkipMonitoring
 	}
@@ -190,7 +188,6 @@ func (h *ErrorPassthroughHandler) Update(c *gin.Context) {
 		Platforms:       existing.Platforms,
 		PassthroughCode: existing.PassthroughCode,
 		ResponseCode:    existing.ResponseCode,
-		PassthroughBody: existing.PassthroughBody,
 		CustomMessage:   existing.CustomMessage,
 		SkipMonitoring:  existing.SkipMonitoring,
 		Description:     existing.Description,
@@ -224,8 +221,6 @@ func (h *ErrorPassthroughHandler) Update(c *gin.Context) {
 	if req.ResponseCode != nil {
 		rule.ResponseCode = req.ResponseCode
 	}
-	// Deprecated capability removed: never passthrough upstream raw error body.
-	rule.PassthroughBody = false
 	if req.CustomMessage != nil {
 		rule.CustomMessage = req.CustomMessage
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -338,88 +337,6 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 		Invalid:  invalid,
 		Message:  message,
 	}, nil
-}
-
-func buildAPIKeyProbeErrorMessage(statusCode int, upstreamMsg string) string {
-	msg := strings.TrimSpace(upstreamMsg)
-	if msg == "" {
-		msg = http.StatusText(statusCode)
-	}
-	return fmt.Sprintf("API key permanently disabled after probe (%d): %s", statusCode, msg)
-}
-
-func (s *AccountTestService) buildAPIKeyProbeRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	switch account.Platform {
-	case PlatformAnthropic:
-		return s.buildAnthropicAPIKeyProbeRequest(ctx, account)
-	case PlatformOpenAI:
-		return s.buildOpenAIAPIKeyProbeRequest(ctx, account)
-	case PlatformGemini:
-		return s.buildGeminiAPIKeyProbeRequest(ctx, account)
-	default:
-		return nil, fmt.Errorf("unsupported apikey platform: %s", account.Platform)
-	}
-}
-
-func (s *AccountTestService) buildAnthropicAPIKeyProbeRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	baseURL := strings.TrimSpace(account.GetBaseURL())
-	if baseURL == "" {
-		baseURL = DefaultAPIKeyBaseURL(account.Platform)
-	}
-	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid anthropic base url: %w", err)
-	}
-
-	// Use GET /v1/models for probe - no token consumption, pure auth check.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		strings.TrimSuffix(normalizedBaseURL, "/")+"/v1/models",
-		nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("x-api-key", account.GetCredential("api_key"))
-	req.Header.Set("User-Agent", proxyQualityClientUserAgent)
-	return req, nil
-}
-
-func (s *AccountTestService) buildOpenAIAPIKeyProbeRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	baseURL := strings.TrimSpace(account.GetOpenAIBaseURL())
-	if baseURL == "" {
-		baseURL = DefaultAPIKeyBaseURL(account.Platform)
-	}
-	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid openai base url: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(normalizedBaseURL, "/")+"/v1/models", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+account.GetCredential("api_key"))
-	req.Header.Set("User-Agent", proxyQualityClientUserAgent)
-	return req, nil
-}
-
-func (s *AccountTestService) buildGeminiAPIKeyProbeRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	baseURL := strings.TrimSpace(account.GetBaseURL())
-	if baseURL == "" {
-		baseURL = DefaultAPIKeyBaseURL(account.Platform)
-	}
-	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid gemini base url: %w", err)
-	}
-
-	endpoint := strings.TrimSuffix(normalizedBaseURL, "/") + "/v1beta/models?key=" + url.QueryEscape(account.GetCredential("api_key"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", proxyQualityClientUserAgent)
-	return req, nil
 }
 
 func containsAny(haystack string, needles ...string) bool {

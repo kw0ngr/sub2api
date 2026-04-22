@@ -1051,6 +1051,10 @@ func (s *stubAccountRepo) GetByCRSAccountID(ctx context.Context, crsAccountID st
 	return nil, errors.New("not implemented")
 }
 
+func (s *stubAccountRepo) FindByAPIKey(ctx context.Context, platform, apiKey, baseURL string) (*service.Account, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *stubAccountRepo) FindByExtraField(ctx context.Context, key string, value any) ([]service.Account, error) {
 	return nil, errors.New("not implemented")
 }

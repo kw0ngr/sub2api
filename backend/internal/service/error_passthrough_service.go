@@ -290,8 +290,7 @@ func normalizeErrorPassthroughRule(rule *model.ErrorPassthroughRule) {
 	if rule == nil {
 		return
 	}
-	// Deprecated capability removal: never expose upstream raw body text via rules.
-	rule.PassthroughBody = false
+	rule.NormalizeDeprecatedFields()
 	if rule.CustomMessage != nil {
 		trimmed := strings.TrimSpace(*rule.CustomMessage)
 		if trimmed == "" {

@@ -26,7 +26,7 @@ func (r *rateLimitAccountRepoStubWithSchedulable) SetSchedulable(ctx context.Con
 	return nil
 }
 
-func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey403ModelAccessIgnored(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey403ModelAccessCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	account := &Account{
@@ -43,8 +43,9 @@ func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey403ModelAccessIgnored(
 		[]byte(`{"error":{"message":"model not allowed for this project","code":"forbidden"}}`),
 	)
 
-	require.False(t, shouldDisable)
+	require.True(t, shouldDisable)
 	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
 }
 
 func TestRateLimitService_HandleUpstreamError_GeminiAPIKey400InvalidDisables(t *testing.T) {
@@ -115,13 +116,13 @@ func TestRateLimitService_HandleUpstreamError_APIKey529UsesTemporaryCooldown(t *
 	)
 	after := time.Now()
 
-	require.True(t, shouldDisable)
+	require.False(t, shouldDisable)
 	require.Equal(t, 0, repo.setErrorCalls)
 	require.Equal(t, 0, repo.rateLimitedCalls)
 	require.Equal(t, 1, repo.overloadedCalls)
 	require.Equal(t, 0, repo.tempCalls)
 	require.NotNil(t, repo.lastOverloadedUntil)
-	require.WithinDuration(t, before.Add(apiKey529Cooldown), *repo.lastOverloadedUntil, after.Sub(before)+time.Second)
+	require.WithinDuration(t, before.Add(10*time.Minute), *repo.lastOverloadedUntil, after.Sub(before)+time.Second)
 }
 
 func TestRateLimitService_HandleUpstreamError_APIKey503UsesTemporaryCooldown(t *testing.T) {
@@ -253,10 +254,10 @@ func TestClassifyAPIKeyStatusAction_OpenAIAccountNotActive(t *testing.T) {
 			expected:   APIKeyStatusActionPermanentDisable,
 		},
 		{
-			name:       "403 model access forbidden should be ignored",
+			name:       "403 model access forbidden should cooldown",
 			statusCode: http.StatusForbidden,
 			body:       []byte(`{"error":{"message":"model not allowed for this project","code":"forbidden"}}`),
-			expected:   APIKeyStatusActionIgnore,
+			expected:   APIKeyStatusActionTemporaryCooldown,
 		},
 	}
 
@@ -323,9 +324,9 @@ func TestClassifyAPIKeyStatusAction_AnthropicCreditBalance(t *testing.T) {
 			expected: APIKeyStatusActionPermanentDisable,
 		},
 		{
-			name:     "400 unrelated bad request should be ignored",
+			name:     "400 unrelated bad request should cooldown",
 			body:     []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens is required"}}`),
-			expected: APIKeyStatusActionIgnore,
+			expected: APIKeyStatusActionTemporaryCooldown,
 		},
 	}
 	for _, tt := range tests {

@@ -106,9 +106,19 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 	if globalMaxSize <= 0 {
 		globalMaxSize = cfg.Gateway.MaxBodySize
 	}
+	responsesMaxSize := cfg.Gateway.ResponsesMaxBodySize
+	if responsesMaxSize <= 0 {
+		responsesMaxSize = globalMaxSize
+	}
 	if globalMaxSize > 0 {
-		httpHandler = http.MaxBytesHandler(httpHandler, globalMaxSize)
-		log.Printf("Global max request body size: %d bytes (%.2f MB)", globalMaxSize, float64(globalMaxSize)/(1<<20))
+		httpHandler = middleware2.RequestBodyLimitHandler(httpHandler, globalMaxSize, responsesMaxSize)
+		log.Printf(
+			"Global max request body size: default=%d bytes (%.2f MB), responses=%d bytes (%.2f MB)",
+			globalMaxSize,
+			float64(globalMaxSize)/(1<<20),
+			responsesMaxSize,
+			float64(responsesMaxSize)/(1<<20),
+		)
 	}
 
 	// 根据配置决定是否启用 H2C
