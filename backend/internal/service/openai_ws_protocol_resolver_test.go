@@ -215,3 +215,14 @@ func TestOpenAIWSProtocolResolver_Resolve_ModeRouterV2(t *testing.T) {
 		require.Equal(t, "account_concurrency_invalid", decision.Reason)
 	})
 }
+
+func TestShouldDisableOpenAIWSForModel(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.DisableGPT55WS = true
+
+	require.True(t, ShouldDisableOpenAIWSForModel(cfg, "gpt-5.5"))
+	require.True(t, ShouldDisableOpenAIWSForModel(cfg, "gpt-5.5-pro"))
+	require.True(t, ShouldDisableOpenAIWSForModel(cfg, "gpt-5.5-xhigh"))
+	require.False(t, ShouldDisableOpenAIWSForModel(cfg, "gpt-5.4"))
+	require.False(t, ShouldDisableOpenAIWSForModel(nil, "gpt-5.5"))
+}

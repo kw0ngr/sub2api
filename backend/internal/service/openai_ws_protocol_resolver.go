@@ -1,6 +1,10 @@
 package service
 
-import "github.com/Wei-Shaw/sub2api/internal/config"
+import (
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+)
 
 // OpenAIUpstreamTransport 表示 OpenAI 上游传输协议。
 type OpenAIUpstreamTransport string
@@ -117,4 +121,16 @@ func openAIWSHTTPDecision(reason string) OpenAIWSProtocolDecision {
 		Transport: OpenAIUpstreamTransportHTTPSSE,
 		Reason:    reason,
 	}
+}
+
+func isGPT55FamilyModel(model string) bool {
+	normalized := normalizeCodexModel(strings.TrimSpace(model))
+	return normalized == "gpt-5.5" || normalized == "gpt-5.5-pro"
+}
+
+func ShouldDisableOpenAIWSForModel(cfg *config.Config, model string) bool {
+	if cfg == nil || !cfg.Gateway.OpenAIWS.DisableGPT55WS {
+		return false
+	}
+	return isGPT55FamilyModel(model)
 }

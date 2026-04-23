@@ -1094,6 +1094,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
 		return
 	}
+	if service.ShouldDisableOpenAIWSForModel(h.cfg, reqModel) {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "gpt-5.5 family is temporarily forced to HTTP by server policy")
+		return
+	}
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(firstMessage, "previous_response_id").String())
 	previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	if previousResponseID != "" && previousResponseIDKind == service.OpenAIPreviousResponseIDKindMessageID {
