@@ -23,6 +23,27 @@ import (
 var (
 	openAIModelDatePattern     = regexp.MustCompile(`-\d{8}$`)
 	openAIModelBasePattern     = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
+	openAIGPT55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:               5e-06,    // $5 per MTok
+		InputCostPerTokenPriority:       12.5e-06, // $12.5 per MTok
+		OutputCostPerToken:              3e-05,    // $30 per MTok
+		OutputCostPerTokenPriority:      7.5e-05,  // $75 per MTok
+		CacheReadInputTokenCost:         5e-07,    // $0.50 per MTok
+		CacheReadInputTokenCostPriority: 1.25e-06,
+		LiteLLMProvider:                 "openai",
+		Mode:                            "chat",
+		SupportsPromptCaching:           true,
+		SupportsServiceTier:             true,
+	}
+	openAIGPT55ProFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:          3e-05,   // $30 per MTok
+		InputCostPerTokenPriority:  7.5e-05, // $75 per MTok
+		OutputCostPerToken:         1.8e-04, // $180 per MTok
+		OutputCostPerTokenPriority: 4.5e-04, // $450 per MTok
+		LiteLLMProvider:            "openai",
+		Mode:                       "chat",
+		SupportsServiceTier:        true,
+	}
 	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:               2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:              1.5e-05, // $15 per MTok
@@ -773,6 +794,18 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 				Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.1-codex"))
 			return pricing
 		}
+	}
+
+	if strings.HasPrefix(model, "gpt-5.5-pro") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.5-pro(static)"))
+		return openAIGPT55ProFallbackPricing
+	}
+
+	if strings.HasPrefix(model, "gpt-5.5") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.5(static)"))
+		return openAIGPT55FallbackPricing
 	}
 
 	// 尝试的回退变体
