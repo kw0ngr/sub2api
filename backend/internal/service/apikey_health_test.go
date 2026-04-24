@@ -78,3 +78,33 @@ func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 	require.False(t, invalid)
 	require.True(t, cooldown)
 }
+
+func TestBuildAPIKeyHealthCheckResultFromScheduledResult_InvalidFailure(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	result := &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: `API returned 401: {"error":{"message":"invalid api key","code":"invalid_api_key"}}`,
+	}
+
+	health := buildAPIKeyHealthCheckResultFromScheduledResult(account, result)
+
+	require.False(t, health.Valid)
+	require.True(t, health.Invalid)
+	require.Equal(t, http.StatusUnauthorized, health.StatusCode)
+	require.Contains(t, health.Message, "invalid api key")
+}
+
+func TestBuildAPIKeyHealthCheckResultFromScheduledResult_CooldownFailure(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	result := &ScheduledTestResult{
+		Status:       "failed",
+		ErrorMessage: `API returned 429: {"error":{"message":"rate limited","code":"rate_limit_exceeded"}}`,
+	}
+
+	health := buildAPIKeyHealthCheckResultFromScheduledResult(account, result)
+
+	require.False(t, health.Valid)
+	require.False(t, health.Invalid)
+	require.Equal(t, http.StatusTooManyRequests, health.StatusCode)
+	require.Contains(t, health.Message, "rate limited")
+}

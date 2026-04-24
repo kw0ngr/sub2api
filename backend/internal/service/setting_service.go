@@ -337,6 +337,45 @@ func (s *SettingService) SetVersion(version string) {
 	s.version = version
 }
 
+type PublicSettingsInjectionPayload struct {
+	RegistrationEnabled                  bool            `json:"registration_enabled"`
+	EmailVerifyEnabled                   bool            `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist     []string        `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                     bool            `json:"promo_code_enabled"`
+	PasswordResetEnabled                 bool            `json:"password_reset_enabled"`
+	InvitationCodeEnabled                bool            `json:"invitation_code_enabled"`
+	TotpEnabled                          bool            `json:"totp_enabled"`
+	TurnstileEnabled                     bool            `json:"turnstile_enabled"`
+	TurnstileSiteKey                     string          `json:"turnstile_site_key,omitempty"`
+	SiteName                             string          `json:"site_name"`
+	SiteLogo                             string          `json:"site_logo,omitempty"`
+	SiteSubtitle                         string          `json:"site_subtitle,omitempty"`
+	APIBaseURL                           string          `json:"api_base_url,omitempty"`
+	ContactInfo                          string          `json:"contact_info,omitempty"`
+	DocURL                               string          `json:"doc_url,omitempty"`
+	HomeContent                          string          `json:"home_content,omitempty"`
+	HideCcsImportButton                  bool            `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled          bool            `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL              string          `json:"purchase_subscription_url,omitempty"`
+	TableDefaultPageSize                 int             `json:"table_default_page_size"`
+	TablePageSizeOptions                 []int           `json:"table_page_size_options"`
+	CustomMenuItems                      json.RawMessage `json:"custom_menu_items"`
+	CustomEndpoints                      json.RawMessage `json:"custom_endpoints"`
+	LinuxDoOAuthEnabled                  bool            `json:"linuxdo_oauth_enabled"`
+	BackendModeEnabled                   bool            `json:"backend_mode_enabled"`
+	PaymentEnabled                       bool            `json:"payment_enabled"`
+	OIDCOAuthEnabled                     bool            `json:"oidc_oauth_enabled"`
+	OIDCOAuthProviderName                string          `json:"oidc_oauth_provider_name"`
+	Version                              string          `json:"version,omitempty"`
+	BalanceLowNotifyEnabled              bool            `json:"balance_low_notify_enabled"`
+	AccountQuotaNotifyEnabled            bool            `json:"account_quota_notify_enabled"`
+	BalanceLowNotifyThreshold            float64         `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL          string          `json:"balance_low_notify_recharge_url"`
+	ChannelMonitorEnabled                bool            `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds int             `json:"channel_monitor_default_interval_seconds"`
+	AvailableChannelsEnabled             bool            `json:"available_channels_enabled"`
+}
+
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection
 // This implements the web.PublicSettingsProvider interface
 func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any, error) {
@@ -345,45 +384,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		return nil, err
 	}
 
-	// Return a struct that matches the frontend's expected format
-	return &struct {
-		RegistrationEnabled                  bool            `json:"registration_enabled"`
-		EmailVerifyEnabled                   bool            `json:"email_verify_enabled"`
-		RegistrationEmailSuffixWhitelist     []string        `json:"registration_email_suffix_whitelist"`
-		PromoCodeEnabled                     bool            `json:"promo_code_enabled"`
-		PasswordResetEnabled                 bool            `json:"password_reset_enabled"`
-		InvitationCodeEnabled                bool            `json:"invitation_code_enabled"`
-		TotpEnabled                          bool            `json:"totp_enabled"`
-		TurnstileEnabled                     bool            `json:"turnstile_enabled"`
-		TurnstileSiteKey                     string          `json:"turnstile_site_key,omitempty"`
-		SiteName                             string          `json:"site_name"`
-		SiteLogo                             string          `json:"site_logo,omitempty"`
-		SiteSubtitle                         string          `json:"site_subtitle,omitempty"`
-		APIBaseURL                           string          `json:"api_base_url,omitempty"`
-		ContactInfo                          string          `json:"contact_info,omitempty"`
-		DocURL                               string          `json:"doc_url,omitempty"`
-		HomeContent                          string          `json:"home_content,omitempty"`
-		HideCcsImportButton                  bool            `json:"hide_ccs_import_button"`
-		PurchaseSubscriptionEnabled          bool            `json:"purchase_subscription_enabled"`
-		PurchaseSubscriptionURL              string          `json:"purchase_subscription_url,omitempty"`
-		TableDefaultPageSize                 int             `json:"table_default_page_size"`
-		TablePageSizeOptions                 []int           `json:"table_page_size_options"`
-		CustomMenuItems                      json.RawMessage `json:"custom_menu_items"`
-		CustomEndpoints                      json.RawMessage `json:"custom_endpoints"`
-		LinuxDoOAuthEnabled                  bool            `json:"linuxdo_oauth_enabled"`
-		BackendModeEnabled                   bool            `json:"backend_mode_enabled"`
-		PaymentEnabled                       bool            `json:"payment_enabled"`
-		OIDCOAuthEnabled                     bool            `json:"oidc_oauth_enabled"`
-		OIDCOAuthProviderName                string          `json:"oidc_oauth_provider_name"`
-		Version                              string          `json:"version,omitempty"`
-		BalanceLowNotifyEnabled              bool            `json:"balance_low_notify_enabled"`
-		AccountQuotaNotifyEnabled            bool            `json:"account_quota_notify_enabled"`
-		BalanceLowNotifyThreshold            float64         `json:"balance_low_notify_threshold"`
-		BalanceLowNotifyRechargeURL          string          `json:"balance_low_notify_recharge_url"`
-		ChannelMonitorEnabled                bool            `json:"channel_monitor_enabled"`
-		ChannelMonitorDefaultIntervalSeconds int             `json:"channel_monitor_default_interval_seconds"`
-		AvailableChannelsEnabled             bool            `json:"available_channels_enabled"`
-	}{
+	return &PublicSettingsInjectionPayload{
 		RegistrationEnabled:                  settings.RegistrationEnabled,
 		EmailVerifyEnabled:                   settings.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:     settings.RegistrationEmailSuffixWhitelist,

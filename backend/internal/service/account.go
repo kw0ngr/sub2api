@@ -925,6 +925,18 @@ func (a *Account) GetOpenAIOrganizationID() string {
 	return a.GetCredential("organization_id")
 }
 
+func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapability) bool {
+	if !a.IsOpenAI() {
+		return false
+	}
+	switch capability {
+	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	default:
+		return true
+	}
+}
+
 func (a *Account) GetOpenAITokenExpiresAt() *time.Time {
 	if !a.IsOpenAIOAuth() {
 		return nil

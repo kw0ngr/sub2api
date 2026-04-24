@@ -480,7 +480,6 @@ func (c *Channel) SupportedModels() []SupportedModel {
 			srcPrefix, srcWild := splitWildcardSuffix(src)
 			targetPrefix, targetWild := splitWildcardSuffix(target)
 			if !srcWild {
-				displayName := src
 				pricingName := target
 				if pricingName == "" || targetWild {
 					pricingName = src

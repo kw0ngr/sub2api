@@ -855,6 +855,75 @@ func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	})
 }
 
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredCapability OpenAIImagesCapability,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	selection, decision, err := s.selectAccountWithSchedulerForImageCapability(ctx, groupID, sessionHash, requestedModel, excludedIDs, requiredCapability)
+	if err == nil && selection != nil && selection.Account != nil {
+		return selection, decision, nil
+	}
+	// Native-only options prefer API-key/native-capable accounts, but prompt-only image
+	// requests can fall back to the OAuth Responses bridge when no native account is available.
+	if requiredCapability == OpenAIImagesCapabilityNative {
+		return s.selectAccountWithSchedulerForImageCapability(ctx, groupID, sessionHash, requestedModel, excludedIDs, OpenAIImagesCapabilityBasic)
+	}
+	return selection, decision, err
+}
+
+func (s *OpenAIGatewayService) selectAccountWithSchedulerForImageCapability(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredCapability OpenAIImagesCapability,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	effectiveExcludedIDs := cloneExcludedAccountIDs(excludedIDs)
+	for {
+		selection, decision, err := s.SelectAccountWithScheduler(
+			ctx,
+			groupID,
+			"",
+			sessionHash,
+			requestedModel,
+			effectiveExcludedIDs,
+			OpenAIUpstreamTransportHTTPSSE,
+		)
+		if err != nil || selection == nil || selection.Account == nil {
+			return selection, decision, err
+		}
+		if selection.Account.SupportsOpenAIImageCapability(requiredCapability) {
+			return selection, decision, nil
+		}
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		if effectiveExcludedIDs == nil {
+			effectiveExcludedIDs = make(map[int64]struct{})
+		}
+		if _, exists := effectiveExcludedIDs[selection.Account.ID]; exists {
+			return nil, decision, ErrNoAvailableAccounts
+		}
+		effectiveExcludedIDs[selection.Account.ID] = struct{}{}
+	}
+}
+
+func cloneExcludedAccountIDs(excludedIDs map[int64]struct{}) map[int64]struct{} {
+	if len(excludedIDs) == 0 {
+		return nil
+	}
+	cloned := make(map[int64]struct{}, len(excludedIDs))
+	for id := range excludedIDs {
+		cloned[id] = struct{}{}
+	}
+	return cloned
+}
+
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64, success bool, firstTokenMs *int) {
 	scheduler := s.getOpenAIAccountScheduler()
 	if scheduler == nil {

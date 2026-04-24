@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -324,19 +325,59 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 		return nil, err
 	}
 
-	valid := result.Status == "success"
-	invalid := false
-	message := result.ResponseText
-	if !valid {
-		message = result.ErrorMessage
+	return buildAPIKeyHealthCheckResultFromScheduledResult(account, result), nil
+}
+
+func buildAPIKeyHealthCheckResultFromScheduledResult(account *Account, result *ScheduledTestResult) *APIKeyHealthCheckResult {
+	health := &APIKeyHealthCheckResult{}
+	if account != nil {
+		health.Platform = account.Platform
+	}
+	if result == nil {
+		health.Message = "empty test result"
+		return health
 	}
 
-	return &APIKeyHealthCheckResult{
-		Platform: account.Platform,
-		Valid:    valid,
-		Invalid:  invalid,
-		Message:  message,
-	}, nil
+	if result.Status == "success" {
+		health.StatusCode = http.StatusOK
+		health.Valid = true
+		health.Message = strings.TrimSpace(result.ResponseText)
+		return health
+	}
+
+	statusCode, responseBody, ok := parseAPIReturnedError(result.ErrorMessage)
+	health.StatusCode = statusCode
+	if !ok {
+		health.Message = strings.TrimSpace(result.ErrorMessage)
+		return health
+	}
+
+	valid, invalid, _, message := ClassifyAPIKeyProbeResponse(account, statusCode, responseBody)
+	health.Valid = valid
+	health.Invalid = invalid
+	if message == "" {
+		message = strings.TrimSpace(result.ErrorMessage)
+	}
+	health.Message = message
+	return health
+}
+
+func parseAPIReturnedError(message string) (int, []byte, bool) {
+	trimmed := strings.TrimSpace(message)
+	const prefix = "API returned "
+	if !strings.HasPrefix(trimmed, prefix) {
+		return 0, nil, false
+	}
+	rest := strings.TrimPrefix(trimmed, prefix)
+	parts := strings.SplitN(rest, ":", 2)
+	if len(parts) != 2 {
+		return 0, nil, false
+	}
+	statusCode, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, nil, false
+	}
+	return statusCode, []byte(strings.TrimSpace(parts[1])), true
 }
 
 func containsAny(haystack string, needles ...string) bool {
