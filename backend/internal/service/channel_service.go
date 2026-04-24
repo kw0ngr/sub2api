@@ -141,17 +141,26 @@ const (
 // ChannelService 渠道管理服务
 type ChannelService struct {
 	repo                 ChannelRepository
+	groupRepo            GroupRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	pricingService       *PricingService
 
 	cache   atomic.Value // *channelCache
 	cacheSF singleflight.Group
 }
 
-// NewChannelService 创建渠道服务实例
-func NewChannelService(repo ChannelRepository, authCacheInvalidator APIKeyAuthCacheInvalidator) *ChannelService {
+// NewChannelService 创建渠道服务实例。
+func NewChannelService(
+	repo ChannelRepository,
+	groupRepo GroupRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	pricingService *PricingService,
+) *ChannelService {
 	s := &ChannelService{
 		repo:                 repo,
+		groupRepo:            groupRepo,
 		authCacheInvalidator: authCacheInvalidator,
+		pricingService:       pricingService,
 	}
 	return s
 }

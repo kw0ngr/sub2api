@@ -54,74 +54,10 @@ export type OpsUpstreamErrorEvent = {
   account_name?: string
   upstream_status_code?: number
   upstream_request_id?: string
-  upstream_url?: string
   upstream_request_body?: string
-  upstream_response_body?: string
   kind?: string
   message?: string
   detail?: string
-}
-
-export interface OpsDebugTrace {
-  id: string
-  created_at: string
-  request_id?: string
-  client_request_id?: string
-  method?: string
-  path?: string
-  inbound_endpoint?: string
-  upstream_endpoint?: string
-  user_id?: number | null
-  api_key_id?: number | null
-  account_id?: number | null
-  group_id?: number | null
-  platform?: string
-  model?: string
-  upstream_model?: string
-  stream?: boolean
-  user_agent?: string
-  status_code: number
-  upstream_status_code?: number | null
-  error_type?: string
-  error_code?: string
-  error_message?: string
-  reason_code?: string
-  reason_hint?: string
-  request_body_bytes?: number | null
-  request_body_preview_json?: string | null
-  request_body_preview_strategy?: string
-  request_body_preview_truncated?: boolean
-  request_body_truncated_paths?: string[]
-  response_body_preview?: string | null
-  response_body_truncated?: boolean
-  request_headers_json?: string | null
-  fallback_triggered?: boolean
-  account_switch_count?: number | null
-  scheduler_layer?: string
-  sticky_session_hit?: boolean | null
-  sticky_previous_hit?: boolean | null
-  auth_latency_ms?: number | null
-  routing_latency_ms?: number | null
-  upstream_latency_ms?: number | null
-  response_latency_ms?: number | null
-  time_to_first_token_ms?: number | null
-  upstream_errors?: OpsUpstreamErrorEvent[]
-}
-
-export interface OpsDebugTraceListResponse {
-  items: OpsDebugTrace[]
-  count: number
-}
-
-export interface OpsDebugTraceQuery {
-  limit?: number
-  request_id?: string
-  path?: string
-  platform?: string
-  reason?: string
-  account_id?: number | null
-  only_errors?: boolean
-  only_fallback?: boolean
 }
 
 export interface OpsRetryResult {
@@ -1294,16 +1230,6 @@ export async function listRequestDetails(params: OpsRequestDetailsParams): Promi
   return data
 }
 
-export async function listDebugTraces(params: OpsDebugTraceQuery = {}): Promise<OpsDebugTraceListResponse> {
-  const { data } = await apiClient.get<OpsDebugTraceListResponse>('/admin/ops/debug-traces', { params })
-  return data
-}
-
-export async function getDebugTrace(id: string): Promise<OpsDebugTrace> {
-  const { data } = await apiClient.get<OpsDebugTrace>(`/admin/ops/debug-traces/${encodeURIComponent(id)}`)
-  return data
-}
-
 // Alert rules
 export async function listAlertRules(): Promise<AlertRule[]> {
   const { data } = await apiClient.get<AlertRule[]>('/admin/ops/alert-rules')
@@ -1471,8 +1397,6 @@ export const opsAPI = {
   listRequestErrorUpstreamErrors,
 
   listRequestDetails,
-  listDebugTraces,
-  getDebugTrace,
   listAlertRules,
   createAlertRule,
   updateAlertRule,

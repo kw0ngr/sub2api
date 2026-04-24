@@ -92,9 +92,6 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if !cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 {
 		t.Fatalf("Gateway.OpenAIWS.ResponsesWebsocketsV2 = false, want true")
 	}
-	if cfg.Gateway.OpenAIWS.DisableGPT55WS {
-		t.Fatalf("Gateway.OpenAIWS.DisableGPT55WS = true, want false")
-	}
 	if cfg.Gateway.OpenAIWS.ResponsesWebsockets {
 		t.Fatalf("Gateway.OpenAIWS.ResponsesWebsockets = true, want false")
 	}

@@ -4,10 +4,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,5 +97,17 @@ func TestWebhookConstants(t *testing.T) {
 
 	t.Run("webhookLogTruncateLen is 200", func(t *testing.T) {
 		assert.Equal(t, 200, webhookLogTruncateLen)
+	})
+}
+
+func TestShouldAckPaymentNotificationError(t *testing.T) {
+	t.Run("unknown order is acked", func(t *testing.T) {
+		err := errors.New("wrapper")
+		err = errors.Join(err, service.ErrOrderNotFound)
+		assert.True(t, shouldAckPaymentNotificationError(err))
+	})
+
+	t.Run("other errors are not acked", func(t *testing.T) {
+		assert.False(t, shouldAckPaymentNotificationError(errors.New("boom")))
 	})
 }

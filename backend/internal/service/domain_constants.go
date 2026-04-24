@@ -259,6 +259,13 @@ const (
 	SettingKeyAccountQuotaNotifyEnabled = "account_quota_notify_enabled" // 全局开关
 	SettingKeyAccountQuotaNotifyEmails  = "account_quota_notify_emails"  // 管理员通知邮箱列表（JSON 数组）
 
+	// Channel Monitor
+	SettingKeyChannelMonitorEnabled                = "channel_monitor_enabled"
+	SettingKeyChannelMonitorDefaultIntervalSeconds = "channel_monitor_default_interval_seconds"
+
+	// Available Channels
+	SettingKeyAvailableChannelsEnabled = "available_channels_enabled" // 用户侧「可用渠道」聚合视图开关
+
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
 )

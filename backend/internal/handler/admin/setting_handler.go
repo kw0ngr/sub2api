@@ -180,6 +180,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		BalanceLowNotifyRechargeURL:          settings.BalanceLowNotifyRechargeURL,
 		AccountQuotaNotifyEnabled:            settings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:             dto.NotifyEmailEntriesFromService(settings.AccountQuotaNotifyEmails),
+		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
+		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
+		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		PaymentEnabled:                       paymentCfg.Enabled,
 		PaymentMinAmount:                     paymentCfg.MinAmount,
 		PaymentMaxAmount:                     paymentCfg.MaxAmount,
@@ -312,11 +315,14 @@ type UpdateSettingsRequest struct {
 	EnableCCHSigning             *bool `json:"enable_cch_signing"`
 
 	// Balance low notification
-	BalanceLowNotifyEnabled     *bool                   `json:"balance_low_notify_enabled"`
-	BalanceLowNotifyThreshold   *float64                `json:"balance_low_notify_threshold"`
-	BalanceLowNotifyRechargeURL *string                 `json:"balance_low_notify_recharge_url"`
-	AccountQuotaNotifyEnabled   *bool                   `json:"account_quota_notify_enabled"`
-	AccountQuotaNotifyEmails    *[]dto.NotifyEmailEntry `json:"account_quota_notify_emails"`
+	BalanceLowNotifyEnabled              *bool                   `json:"balance_low_notify_enabled"`
+	BalanceLowNotifyThreshold            *float64                `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL          *string                 `json:"balance_low_notify_recharge_url"`
+	AccountQuotaNotifyEnabled            *bool                   `json:"account_quota_notify_enabled"`
+	AccountQuotaNotifyEmails             *[]dto.NotifyEmailEntry `json:"account_quota_notify_emails"`
+	ChannelMonitorEnabled                *bool                   `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds *int                    `json:"channel_monitor_default_interval_seconds"`
+	AvailableChannelsEnabled             *bool                   `json:"available_channels_enabled"`
 
 	// Payment configuration (integrated into settings, full replace)
 	PaymentEnabled                   *bool    `json:"payment_enabled"`
@@ -927,6 +933,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AccountQuotaNotifyEmails
 		}(),
+		ChannelMonitorEnabled: func() bool {
+			if req.ChannelMonitorEnabled != nil {
+				return *req.ChannelMonitorEnabled
+			}
+			return previousSettings.ChannelMonitorEnabled
+		}(),
+		ChannelMonitorDefaultIntervalSeconds: func() int {
+			if req.ChannelMonitorDefaultIntervalSeconds != nil {
+				return *req.ChannelMonitorDefaultIntervalSeconds
+			}
+			return previousSettings.ChannelMonitorDefaultIntervalSeconds
+		}(),
+		AvailableChannelsEnabled: func() bool {
+			if req.AvailableChannelsEnabled != nil {
+				return *req.AvailableChannelsEnabled
+			}
+			return previousSettings.AvailableChannelsEnabled
+		}(),
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -1080,6 +1104,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		BalanceLowNotifyRechargeURL:          updatedSettings.BalanceLowNotifyRechargeURL,
 		AccountQuotaNotifyEnabled:            updatedSettings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:             dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
+		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
+		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
+		AvailableChannelsEnabled:             updatedSettings.AvailableChannelsEnabled,
 		PaymentEnabled:                       updatedPaymentCfg.Enabled,
 		PaymentMinAmount:                     updatedPaymentCfg.MinAmount,
 		PaymentMaxAmount:                     updatedPaymentCfg.MaxAmount,
@@ -1391,6 +1418,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if !equalNotifyEmailEntries(before.AccountQuotaNotifyEmails, after.AccountQuotaNotifyEmails) {
 		changed = append(changed, "account_quota_notify_emails")
+	}
+	if before.ChannelMonitorEnabled != after.ChannelMonitorEnabled {
+		changed = append(changed, "channel_monitor_enabled")
+	}
+	if before.ChannelMonitorDefaultIntervalSeconds != after.ChannelMonitorDefaultIntervalSeconds {
+		changed = append(changed, "channel_monitor_default_interval_seconds")
+	}
+	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
+		changed = append(changed, "available_channels_enabled")
 	}
 	return changed
 }

@@ -618,7 +618,10 @@ func TestAPIContracts(t *testing.T) {
 					"account_quota_notify_enabled": false,
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
-					"account_quota_notify_emails": []
+					"account_quota_notify_emails": [],
+					"channel_monitor_enabled": true,
+					"channel_monitor_default_interval_seconds": 60,
+					"available_channels_enabled": false
 				}
 			}`,
 		},

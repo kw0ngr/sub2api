@@ -406,56 +406,6 @@ export interface BatchTodayStatsResponse {
   stats: Record<string, WindowStats>
 }
 
-export interface RawAPIKeyImportLineResult {
-  line: number
-  key_preview?: string
-  platform?: string
-  account_id?: number
-  created: boolean
-  checked: boolean
-  valid: boolean
-  invalid_disabled: boolean
-  error?: string
-  message?: string
-  status_code?: number
-}
-
-export interface RawAPIKeyImportResult {
-  total_lines: number
-  created: number
-  checked: number
-  valid: number
-  invalid_disabled: number
-  failed: number
-  results: RawAPIKeyImportLineResult[]
-}
-
-export interface APIKeyHealthCheckItem {
-  account_id: number
-  name: string
-  platform: string
-  status_code?: number
-  valid: boolean
-  invalid_disabled: boolean
-  error?: string
-  message?: string
-}
-
-export interface APIKeyHealthCheckResult {
-  total: number
-  checked: number
-  valid: number
-  invalid_disabled: number
-  failed: number
-  results: APIKeyHealthCheckItem[]
-}
-
-export interface APIKeyHealthCheckStatusResponse {
-  status: 'idle' | 'running' | 'completed'
-  started_at?: string
-  result?: APIKeyHealthCheckResult
-}
-
 /**
  * 批量获取多个账号的今日统计
  * @param accountIds - 账号 ID 列表
@@ -594,27 +544,6 @@ export async function importData(payload: {
   return data
 }
 
-export async function importRawAPIKeys(payload: {
-  raw_text: string
-  validate_after_import?: boolean
-  skip_default_group_bind?: boolean
-}): Promise<RawAPIKeyImportResult> {
-  const { data } = await apiClient.post<RawAPIKeyImportResult>('/admin/accounts/raw-import', payload, {
-    timeout: 120000
-  })
-  return data
-}
-
-export async function checkAPIKeysHealth(accountIds?: number[]): Promise<void> {
-  const payload = accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}
-  await apiClient.post('/admin/accounts/apikey-health-check', payload)
-}
-
-export async function getAPIKeysHealthStatus(): Promise<APIKeyHealthCheckStatusResponse> {
-  const { data } = await apiClient.get<APIKeyHealthCheckStatusResponse>('/admin/accounts/apikey-health-check')
-  return data
-}
-
 /**
  * Get Antigravity default model mapping from backend
  * @returns Default model mapping (from -> to)
@@ -731,9 +660,6 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
-  importRawAPIKeys,
-  checkAPIKeysHealth,
-  getAPIKeysHealthStatus,
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,

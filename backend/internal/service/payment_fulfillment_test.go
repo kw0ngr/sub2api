@@ -4,8 +4,10 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -160,4 +162,63 @@ func TestResolveRedeemAction_IsUsedCanUseConsistency(t *testing.T) {
 	assert.False(t, unusedCode.IsUsed())
 	assert.True(t, unusedCode.CanUse())
 	assert.Equal(t, redeemActionRedeem, resolveRedeemAction(unusedCode, nil))
+}
+
+func TestParseLegacyPaymentOrderID(t *testing.T) {
+	t.Parallel()
+
+	notFoundErr := &dbent.NotFoundError{}
+
+	tests := []struct {
+		name      string
+		orderID   string
+		lookupErr error
+		wantID    int64
+		wantOK    bool
+	}{
+		{
+			name:      "legacy id from not found lookup",
+			orderID:   orderIDPrefix + "123",
+			lookupErr: notFoundErr,
+			wantID:    123,
+			wantOK:    true,
+		},
+		{
+			name:      "empty legacy suffix rejected",
+			orderID:   orderIDPrefix,
+			lookupErr: notFoundErr,
+			wantID:    0,
+			wantOK:    false,
+		},
+		{
+			name:      "non legacy order id rejected",
+			orderID:   "ORDER123",
+			lookupErr: notFoundErr,
+			wantID:    0,
+			wantOK:    false,
+		},
+		{
+			name:      "non notfound lookup does not trigger legacy parse",
+			orderID:   orderIDPrefix + "123",
+			lookupErr: errors.New("db unavailable"),
+			wantID:    0,
+			wantOK:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotID, gotOK := parseLegacyPaymentOrderID(tt.orderID, tt.lookupErr)
+			assert.Equal(t, tt.wantID, gotID)
+			assert.Equal(t, tt.wantOK, gotOK)
+		})
+	}
+}
+
+func TestErrOrderNotFoundWrapping(t *testing.T) {
+	t.Parallel()
+
+	err := fmt.Errorf("%w: out_trade_no=%s", ErrOrderNotFound, "ORDER123")
+	assert.ErrorIs(t, err, ErrOrderNotFound)
 }

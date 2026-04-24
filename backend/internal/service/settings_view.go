@@ -118,6 +118,13 @@ type SystemSettings struct {
 	// Account quota notification
 	AccountQuotaNotifyEnabled bool
 	AccountQuotaNotifyEmails  []NotifyEmailEntry
+
+	// Channel Monitor feature switch
+	ChannelMonitorEnabled                bool
+	ChannelMonitorDefaultIntervalSeconds int
+
+	// Available Channels feature switch
+	AvailableChannelsEnabled bool
 }
 
 type DefaultSubscriptionSetting struct {
@@ -162,6 +169,13 @@ type PublicSettings struct {
 	AccountQuotaNotifyEnabled   bool
 	BalanceLowNotifyThreshold   float64
 	BalanceLowNotifyRechargeURL string
+
+	// Channel Monitor feature switch
+	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
+
+	// Available Channels feature switch
+	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 }
 
 // StreamTimeoutSettings 流超时处理配置（仅控制超时后的处理方式，超时判定由网关配置控制）

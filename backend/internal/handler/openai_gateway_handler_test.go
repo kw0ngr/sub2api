@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -592,40 +591,6 @@ func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailu
 	require.ErrorAs(t, err, &closeErr)
 	require.Equal(t, coderws.StatusInternalError, closeErr.Code)
 	require.Contains(t, strings.ToLower(closeErr.Reason), "failed to acquire user concurrency slot")
-}
-
-func TestOpenAIResponsesWebSocket_RejectsGPT55WhenTemporaryPatchEnabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
-	h.cfg = &config.Config{}
-	h.cfg.Gateway.OpenAIWS.DisableGPT55WS = true
-	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
-	defer wsServer.Close()
-
-	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
-	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
-	cancelDial()
-	require.NoError(t, err)
-	defer func() {
-		_ = clientConn.CloseNow()
-	}()
-
-	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
-		`{"type":"response.create","model":"gpt-5.5","stream":false,"input":[{"type":"input_text","text":"hello"}]}`,
-	))
-	cancelWrite()
-	require.NoError(t, err)
-
-	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
-	_, _, err = clientConn.Read(readCtx)
-	cancelRead()
-	require.Error(t, err)
-	var closeErr coderws.CloseError
-	require.ErrorAs(t, err, &closeErr)
-	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
-	require.Contains(t, strings.ToLower(closeErr.Reason), "temporarily forced to http")
 }
 
 func TestSetOpenAIClientTransportHTTP(t *testing.T) {

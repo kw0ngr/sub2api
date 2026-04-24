@@ -121,12 +121,6 @@
               <button @click="showImportData = true" class="btn btn-secondary">
                 {{ t('admin.accounts.dataImport') }}
               </button>
-              <button @click="showRawKeyImport = true" class="btn btn-secondary">
-                {{ t('admin.accounts.rawKeyImport') }}
-              </button>
-              <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAllAPIKeys">
-                {{ checkingAllAPIKeys ? t('admin.accounts.apiKeyHealthChecking', { checked: hcChecked, total: hcTotal }) : t('admin.accounts.apiKeyHealthCheckAll') }}
-              </button>
               <button @click="openExportDataDialog" class="btn btn-secondary">
                 {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
               </button>
@@ -302,7 +296,6 @@
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
-    <RawKeyImportModal :show="showRawKeyImport" @close="showRawKeyImport = false" @imported="handleRawKeyImported" />
     <BulkEditAccountModal :show="showBulkEdit" :account-ids="selIds" :selected-platforms="selPlatforms" :selected-types="selTypes" :proxies="proxies" :groups="groups" @close="showBulkEdit = false" @updated="handleBulkUpdated" />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
@@ -338,7 +331,6 @@ import AccountTableFilters from '@/components/admin/account/AccountTableFilters.
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
-import RawKeyImportModal from '@/components/admin/account/RawKeyImportModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
@@ -385,7 +377,6 @@ const showCreate = ref(false)
 const showEdit = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
-const showRawKeyImport = ref(false)
 const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
@@ -396,10 +387,6 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
-const checkingAllAPIKeys = ref(false)
-const hcChecked = ref(0)
-const hcTotal = ref(0)
-let hcPollTimer: ReturnType<typeof setInterval> | null = null
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -768,7 +755,6 @@ const isAnyModalOpen = computed(() => {
     showEdit.value ||
     showSync.value ||
     showImportData.value ||
-    showRawKeyImport.value ||
     showExportDataDialog.value ||
     showBulkEdit.value ||
     showTempUnsched.value ||
@@ -1188,72 +1174,6 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
 }
 const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); reload() }
 const handleDataImported = () => { showImportData.value = false; reload() }
-const handleRawKeyImported = () => { showRawKeyImport.value = false; reload() }
-const stopHealthCheckPoll = () => {
-  if (hcPollTimer) {
-    clearInterval(hcPollTimer)
-    hcPollTimer = null
-  }
-}
-const handleHealthCheckComplete = (result: { checked: number; valid: number; invalid_disabled: number; failed: number }) => {
-  stopHealthCheckPoll()
-  checkingAllAPIKeys.value = false
-  hcChecked.value = 0
-  hcTotal.value = 0
-  if (result.invalid_disabled > 0 || result.failed > 0) {
-    appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAllResultWithIssues', {
-      checked: result.checked,
-      valid: result.valid,
-      invalid_disabled: result.invalid_disabled,
-      failed: result.failed
-    }))
-  } else {
-    appStore.showSuccess(t('admin.accounts.apiKeyHealthCheckAllResult', {
-      checked: result.checked,
-      valid: result.valid
-    }))
-  }
-  reload()
-}
-const startHealthCheckPoll = () => {
-  stopHealthCheckPoll()
-  hcPollTimer = setInterval(async () => {
-    try {
-      const status = await adminAPI.accounts.getAPIKeysHealthStatus()
-      if (status.status === 'running' && status.result) {
-        hcChecked.value = status.result.checked
-        hcTotal.value = status.result.total
-      } else if (status.status === 'completed' && status.result) {
-        handleHealthCheckComplete(status.result)
-      } else if (status.status === 'idle') {
-        stopHealthCheckPoll()
-        checkingAllAPIKeys.value = false
-      }
-    } catch {
-      stopHealthCheckPoll()
-      checkingAllAPIKeys.value = false
-    }
-  }, 2000)
-}
-const handleCheckAllAPIKeys = async () => {
-  if (!confirm(t('admin.accounts.apiKeyHealthCheckAllConfirm'))) return
-  checkingAllAPIKeys.value = true
-  hcChecked.value = 0
-  hcTotal.value = 0
-  try {
-    await adminAPI.accounts.checkAPIKeysHealth()
-    startHealthCheckPoll()
-  } catch (error: any) {
-    if (error?.status === 409) {
-      appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAlreadyRunning'))
-      startHealthCheckPoll()
-    } else {
-      console.error('Failed to start API keys health check:', error)
-      appStore.showError(error?.message || t('admin.accounts.apiKeyHealthCheckFailed'))
-      checkingAllAPIKeys.value = false
-    }
-  }
-}
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
 const buildAccountQueryFilters = () => ({
@@ -1527,21 +1447,9 @@ onMounted(async () => {
   } else {
     pauseAutoRefresh()
   }
-
-  // Resume polling if a health check is already running in the background.
-  try {
-    const status = await adminAPI.accounts.getAPIKeysHealthStatus()
-    if (status.status === 'running') {
-      checkingAllAPIKeys.value = true
-      hcChecked.value = status.result?.checked ?? 0
-      hcTotal.value = status.result?.total ?? 0
-      startHealthCheckPoll()
-    }
-  } catch { /* ignore */ }
 })
 
 onUnmounted(() => {
-  stopHealthCheckPoll()
   window.removeEventListener('scroll', handleScroll, true)
   document.removeEventListener('click', handleClickOutside)
 })

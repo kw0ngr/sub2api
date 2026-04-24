@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -108,6 +109,15 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	}
 
 	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, providerKey); err != nil {
+		if shouldAckPaymentNotificationError(err) {
+			slog.Warn("[Payment Webhook] unknown order, acking to stop retries",
+				"provider", providerKey,
+				"outTradeNo", notification.OrderID,
+				"tradeNo", notification.TradeNo,
+			)
+			writeSuccessResponse(c, providerKey)
+			return
+		}
 		slog.Error("[Payment Webhook] handle notification failed", "provider", providerKey, "error", err)
 		c.String(http.StatusInternalServerError, "handle failed")
 		return
@@ -129,6 +139,10 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
 	return ""
+}
+
+func shouldAckPaymentNotificationError(err error) bool {
+	return errors.Is(err, service.ErrOrderNotFound)
 }
 
 // wxpaySuccessResponse is the JSON response expected by WeChat Pay webhook.

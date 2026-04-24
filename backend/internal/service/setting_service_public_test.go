@@ -77,3 +77,41 @@ func TestSettingService_GetPublicSettings_ExposesTablePreferences(t *testing.T) 
 	require.Equal(t, 50, settings.TableDefaultPageSize)
 	require.Equal(t, []int{20, 50, 100}, settings.TablePageSizeOptions)
 }
+
+func TestSettingService_GetPublicSettings_ExposesAvailableChannelsEnabled(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyAvailableChannelsEnabled: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.AvailableChannelsEnabled)
+}
+
+func TestSettingService_GetAvailableChannelsRuntime_FailClosed(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	runtime := svc.GetAvailableChannelsRuntime(context.Background())
+	require.False(t, runtime.Enabled)
+}
+
+func TestSettingService_GetPublicSettings_ExposesChannelMonitorDefaults(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyChannelMonitorEnabled:                "false",
+			SettingKeyChannelMonitorDefaultIntervalSeconds: "5",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, settings.ChannelMonitorEnabled)
+	require.Equal(t, 15, settings.ChannelMonitorDefaultIntervalSeconds)
+}

@@ -463,6 +463,9 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
+	ProvideChannelMonitorService,
+	ProvideChannelMonitorRunner,
+	NewChannelMonitorRequestTemplateService,
 	ProvidePaymentConfigService,
 	NewPaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -485,4 +488,20 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService) *PaymentOrderE
 	svc := NewPaymentOrderExpiryService(paymentSvc, 60*time.Second)
 	svc.Start()
 	return svc
+}
+
+// ProvideChannelMonitorService 创建渠道监控服务（CRUD + RunCheck + 用户视图聚合）。
+func ProvideChannelMonitorService(
+	repo ChannelMonitorRepository,
+	encryptor SecretEncryptor,
+) *ChannelMonitorService {
+	return NewChannelMonitorService(repo, encryptor)
+}
+
+// ProvideChannelMonitorRunner 创建并启动渠道监控调度器。
+func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService) *ChannelMonitorRunner {
+	r := NewChannelMonitorRunner(svc, settingService)
+	svc.SetScheduler(r)
+	r.Start()
+	return r
 }

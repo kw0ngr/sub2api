@@ -111,6 +111,16 @@ func (c *Channel) IsActive() bool {
 	return c.Status == StatusActive
 }
 
+// normalizeBillingModelSource 若 BillingModelSource 为空则回填默认值 ChannelMapped。
+func (c *Channel) normalizeBillingModelSource() {
+	if c == nil {
+		return
+	}
+	if c.BillingModelSource == "" {
+		c.BillingModelSource = BillingModelSourceChannelMapped
+	}
+}
+
 // GetModelPricing 根据模型名查找渠道定价，未找到返回 nil。
 // 精确匹配，大小写不敏感。返回值拷贝，不污染缓存。
 func (c *Channel) GetModelPricing(model string) *ChannelModelPricing {
@@ -344,4 +354,176 @@ type ChannelUsageFields struct {
 	ChannelMappedModel string // 渠道映射后的模型名（无映射时等于 OriginalModel）
 	BillingModelSource string // 计费模型来源："requested" / "upstream" / "channel_mapped"
 	ModelMappingChain  string // 映射链描述，如 "a→b→c"
+}
+
+// SupportedModel 渠道的一个支持模型条目（无通配符、可直接展示给用户）
+type SupportedModel struct {
+	Name     string               // 用户侧模型名
+	Platform string               // 所属平台
+	Pricing  *ChannelModelPricing // 定价详情（nil 表示未配置定价）
+}
+
+// wildcardSuffix 是模型模式中的通配符后缀标记（仅支持尾部匹配）。
+const wildcardSuffix = "*"
+
+func splitWildcardSuffix(pattern string) (prefix string, isWildcard bool) {
+	if strings.HasSuffix(pattern, wildcardSuffix) {
+		return strings.TrimSuffix(pattern, wildcardSuffix), true
+	}
+	return pattern, false
+}
+
+// GetModelPricingByPlatform 在指定平台下查找精确模型的定价，未找到返回 nil。
+func (c *Channel) GetModelPricingByPlatform(platform, model string) *ChannelModelPricing {
+	if c == nil {
+		return nil
+	}
+	modelLower := strings.ToLower(model)
+	for i := range c.ModelPricing {
+		if c.ModelPricing[i].Platform != platform {
+			continue
+		}
+		for _, m := range c.ModelPricing[i].Models {
+			if strings.ToLower(m) == modelLower {
+				cp := c.ModelPricing[i].Clone()
+				return &cp
+			}
+		}
+	}
+	return nil
+}
+
+type platformPricingIndex struct {
+	byLower      map[string]*ChannelModelPricing
+	originalCase map[string]string
+	names        []string
+}
+
+func buildPricingIndex(pricings []ChannelModelPricing) map[string]*platformPricingIndex {
+	idx := make(map[string]*platformPricingIndex)
+	for i := range pricings {
+		p := pricings[i]
+		pidx, ok := idx[p.Platform]
+		if !ok {
+			pidx = &platformPricingIndex{
+				byLower:      make(map[string]*ChannelModelPricing),
+				originalCase: make(map[string]string),
+				names:        make([]string, 0),
+			}
+			idx[p.Platform] = pidx
+		}
+		for _, m := range p.Models {
+			if _, wild := splitWildcardSuffix(m); wild {
+				continue
+			}
+			lower := strings.ToLower(m)
+			if _, exists := pidx.byLower[lower]; exists {
+				continue
+			}
+			cp := pricings[i].Clone()
+			pidx.byLower[lower] = &cp
+			pidx.originalCase[lower] = m
+			pidx.names = append(pidx.names, m)
+		}
+	}
+	return idx
+}
+
+// SupportedModels 计算渠道的支持模型列表，结果保证不含通配符。
+func (c *Channel) SupportedModels() []SupportedModel {
+	if c == nil {
+		return nil
+	}
+	if len(c.ModelMapping) == 0 && len(c.ModelPricing) == 0 {
+		return nil
+	}
+
+	idx := buildPricingIndex(c.ModelPricing)
+
+	type dedupKey struct {
+		platform string
+		name     string
+	}
+	seen := make(map[dedupKey]struct{})
+	result := make([]SupportedModel, 0)
+
+	lookup := func(pidx *platformPricingIndex, name string) (display string, pricing *ChannelModelPricing) {
+		if pidx == nil || name == "" {
+			return name, nil
+		}
+		lower := strings.ToLower(name)
+		if p, ok := pidx.byLower[lower]; ok {
+			return pidx.originalCase[lower], p
+		}
+		return name, nil
+	}
+
+	add := func(platform, displayName string, pricing *ChannelModelPricing) {
+		key := dedupKey{platform: platform, name: strings.ToLower(displayName)}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, SupportedModel{
+			Name:     displayName,
+			Platform: platform,
+			Pricing:  pricing,
+		})
+	}
+
+	for platform, mapping := range c.ModelMapping {
+		if len(mapping) == 0 {
+			continue
+		}
+		pidx := idx[platform]
+		for src, target := range mapping {
+			srcPrefix, srcWild := splitWildcardSuffix(src)
+			targetPrefix, targetWild := splitWildcardSuffix(target)
+			if !srcWild {
+				displayName := src
+				pricingName := target
+				if pricingName == "" || targetWild {
+					pricingName = src
+				}
+				displayName, pricing := lookup(pidx, pricingName)
+				if pricing == nil {
+					displayName = src
+				}
+				add(platform, displayName, pricing)
+				continue
+			}
+
+			if pidx == nil {
+				continue
+			}
+			srcPrefixLower := strings.ToLower(srcPrefix)
+			targetPrefixLower := strings.ToLower(targetPrefix)
+			for _, pricedName := range pidx.names {
+				pricedLower := strings.ToLower(pricedName)
+				if !strings.HasPrefix(pricedLower, srcPrefixLower) {
+					continue
+				}
+				if targetWild && targetPrefixLower != "" && !strings.HasPrefix(pricedLower, targetPrefixLower) {
+					continue
+				}
+				displayName, pricing := lookup(pidx, pricedName)
+				add(platform, displayName, pricing)
+			}
+		}
+	}
+
+	for platform, pidx := range idx {
+		for _, pricedName := range pidx.names {
+			displayName, pricing := lookup(pidx, pricedName)
+			add(platform, displayName, pricing)
+		}
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Platform != result[j].Platform {
+			return result[i].Platform < result[j].Platform
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result
 }

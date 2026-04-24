@@ -186,6 +186,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyBalanceLowNotifyThreshold,
 		SettingKeyBalanceLowNotifyRechargeURL,
 		SettingKeyAccountQuotaNotifyEnabled,
+		SettingKeyChannelMonitorEnabled,
+		SettingKeyChannelMonitorDefaultIntervalSeconds,
+		SettingKeyAvailableChannelsEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -230,39 +233,97 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	}
 
 	return &PublicSettings{
-		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
-		EmailVerifyEnabled:               emailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: registrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
-		PasswordResetEnabled:             passwordResetEnabled,
-		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
-		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
-		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
-		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
-		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
-		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
-		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
-		ContactInfo:                      settings[SettingKeyContactInfo],
-		DocURL:                           settings[SettingKeyDocURL],
-		HomeContent:                      settings[SettingKeyHomeContent],
-		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
-		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
-		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
-		TableDefaultPageSize:             tableDefaultPageSize,
-		TablePageSizeOptions:             tablePageSizeOptions,
-		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
-		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
-		LinuxDoOAuthEnabled:              linuxDoEnabled,
-		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
-		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
-		OIDCOAuthEnabled:                 oidcEnabled,
-		OIDCOAuthProviderName:            oidcProviderName,
-		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
-		AccountQuotaNotifyEnabled:        settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
-		BalanceLowNotifyThreshold:        balanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:      settings[SettingKeyBalanceLowNotifyRechargeURL],
+		RegistrationEnabled:                  settings[SettingKeyRegistrationEnabled] == "true",
+		EmailVerifyEnabled:                   emailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:     registrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                     settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
+		PasswordResetEnabled:                 passwordResetEnabled,
+		InvitationCodeEnabled:                settings[SettingKeyInvitationCodeEnabled] == "true",
+		TotpEnabled:                          settings[SettingKeyTotpEnabled] == "true",
+		TurnstileEnabled:                     settings[SettingKeyTurnstileEnabled] == "true",
+		TurnstileSiteKey:                     settings[SettingKeyTurnstileSiteKey],
+		SiteName:                             s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
+		SiteLogo:                             settings[SettingKeySiteLogo],
+		SiteSubtitle:                         s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		APIBaseURL:                           settings[SettingKeyAPIBaseURL],
+		ContactInfo:                          settings[SettingKeyContactInfo],
+		DocURL:                               settings[SettingKeyDocURL],
+		HomeContent:                          settings[SettingKeyHomeContent],
+		HideCcsImportButton:                  settings[SettingKeyHideCcsImportButton] == "true",
+		PurchaseSubscriptionEnabled:          settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
+		PurchaseSubscriptionURL:              strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		TableDefaultPageSize:                 tableDefaultPageSize,
+		TablePageSizeOptions:                 tablePageSizeOptions,
+		CustomMenuItems:                      settings[SettingKeyCustomMenuItems],
+		CustomEndpoints:                      settings[SettingKeyCustomEndpoints],
+		LinuxDoOAuthEnabled:                  linuxDoEnabled,
+		BackendModeEnabled:                   settings[SettingKeyBackendModeEnabled] == "true",
+		PaymentEnabled:                       settings[SettingPaymentEnabled] == "true",
+		OIDCOAuthEnabled:                     oidcEnabled,
+		OIDCOAuthProviderName:                oidcProviderName,
+		BalanceLowNotifyEnabled:              settings[SettingKeyBalanceLowNotifyEnabled] == "true",
+		AccountQuotaNotifyEnabled:            settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
+		BalanceLowNotifyThreshold:            balanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL:          settings[SettingKeyBalanceLowNotifyRechargeURL],
+		ChannelMonitorEnabled:                !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
+		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorDefaultInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
+		AvailableChannelsEnabled:             settings[SettingKeyAvailableChannelsEnabled] == "true",
 	}, nil
+}
+
+func parseChannelMonitorDefaultInterval(raw string) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return 60
+	}
+	if v < 15 {
+		return 15
+	}
+	if v > 3600 {
+		return 3600
+	}
+	return v
+}
+
+// ChannelMonitorRuntime is the lightweight view of the channel monitor feature
+// consumed by the runner and user-facing handlers.
+type ChannelMonitorRuntime struct {
+	Enabled                bool
+	DefaultIntervalSeconds int
+}
+
+// GetChannelMonitorRuntime reads the channel monitor feature flags directly from
+// the settings store. Fail-open: on error returns Enabled=true with the default interval.
+func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyChannelMonitorEnabled,
+		SettingKeyChannelMonitorDefaultIntervalSeconds,
+	})
+	if err != nil {
+		return ChannelMonitorRuntime{Enabled: true, DefaultIntervalSeconds: 60}
+	}
+	return ChannelMonitorRuntime{
+		Enabled:                !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
+		DefaultIntervalSeconds: parseChannelMonitorDefaultInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
+	}
+}
+
+// AvailableChannelsRuntime is the lightweight view of the available-channels feature
+// switch consumed by the user-facing handler.
+type AvailableChannelsRuntime struct {
+	Enabled bool
+}
+
+// GetAvailableChannelsRuntime reads the available-channels feature switch directly
+// from the settings store. Fail-closed: on error returns Enabled=false.
+func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) AvailableChannelsRuntime {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyAvailableChannelsEnabled})
+	if err != nil {
+		return AvailableChannelsRuntime{Enabled: false}
+	}
+	return AvailableChannelsRuntime{
+		Enabled: vals[SettingKeyAvailableChannelsEnabled] == "true",
+	}
 }
 
 // SetOnUpdateCallback sets a callback function to be called when settings are updated
@@ -286,73 +347,79 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 
 	// Return a struct that matches the frontend's expected format
 	return &struct {
-		RegistrationEnabled              bool            `json:"registration_enabled"`
-		EmailVerifyEnabled               bool            `json:"email_verify_enabled"`
-		RegistrationEmailSuffixWhitelist []string        `json:"registration_email_suffix_whitelist"`
-		PromoCodeEnabled                 bool            `json:"promo_code_enabled"`
-		PasswordResetEnabled             bool            `json:"password_reset_enabled"`
-		InvitationCodeEnabled            bool            `json:"invitation_code_enabled"`
-		TotpEnabled                      bool            `json:"totp_enabled"`
-		TurnstileEnabled                 bool            `json:"turnstile_enabled"`
-		TurnstileSiteKey                 string          `json:"turnstile_site_key,omitempty"`
-		SiteName                         string          `json:"site_name"`
-		SiteLogo                         string          `json:"site_logo,omitempty"`
-		SiteSubtitle                     string          `json:"site_subtitle,omitempty"`
-		APIBaseURL                       string          `json:"api_base_url,omitempty"`
-		ContactInfo                      string          `json:"contact_info,omitempty"`
-		DocURL                           string          `json:"doc_url,omitempty"`
-		HomeContent                      string          `json:"home_content,omitempty"`
-		HideCcsImportButton              bool            `json:"hide_ccs_import_button"`
-		PurchaseSubscriptionEnabled      bool            `json:"purchase_subscription_enabled"`
-		PurchaseSubscriptionURL          string          `json:"purchase_subscription_url,omitempty"`
-		TableDefaultPageSize             int             `json:"table_default_page_size"`
-		TablePageSizeOptions             []int           `json:"table_page_size_options"`
-		CustomMenuItems                  json.RawMessage `json:"custom_menu_items"`
-		CustomEndpoints                  json.RawMessage `json:"custom_endpoints"`
-		LinuxDoOAuthEnabled              bool            `json:"linuxdo_oauth_enabled"`
-		BackendModeEnabled               bool            `json:"backend_mode_enabled"`
-		PaymentEnabled                   bool            `json:"payment_enabled"`
-		OIDCOAuthEnabled                 bool            `json:"oidc_oauth_enabled"`
-		OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
-		Version                          string          `json:"version,omitempty"`
-		BalanceLowNotifyEnabled          bool            `json:"balance_low_notify_enabled"`
-		AccountQuotaNotifyEnabled        bool            `json:"account_quota_notify_enabled"`
-		BalanceLowNotifyThreshold        float64         `json:"balance_low_notify_threshold"`
-		BalanceLowNotifyRechargeURL      string          `json:"balance_low_notify_recharge_url"`
+		RegistrationEnabled                  bool            `json:"registration_enabled"`
+		EmailVerifyEnabled                   bool            `json:"email_verify_enabled"`
+		RegistrationEmailSuffixWhitelist     []string        `json:"registration_email_suffix_whitelist"`
+		PromoCodeEnabled                     bool            `json:"promo_code_enabled"`
+		PasswordResetEnabled                 bool            `json:"password_reset_enabled"`
+		InvitationCodeEnabled                bool            `json:"invitation_code_enabled"`
+		TotpEnabled                          bool            `json:"totp_enabled"`
+		TurnstileEnabled                     bool            `json:"turnstile_enabled"`
+		TurnstileSiteKey                     string          `json:"turnstile_site_key,omitempty"`
+		SiteName                             string          `json:"site_name"`
+		SiteLogo                             string          `json:"site_logo,omitempty"`
+		SiteSubtitle                         string          `json:"site_subtitle,omitempty"`
+		APIBaseURL                           string          `json:"api_base_url,omitempty"`
+		ContactInfo                          string          `json:"contact_info,omitempty"`
+		DocURL                               string          `json:"doc_url,omitempty"`
+		HomeContent                          string          `json:"home_content,omitempty"`
+		HideCcsImportButton                  bool            `json:"hide_ccs_import_button"`
+		PurchaseSubscriptionEnabled          bool            `json:"purchase_subscription_enabled"`
+		PurchaseSubscriptionURL              string          `json:"purchase_subscription_url,omitempty"`
+		TableDefaultPageSize                 int             `json:"table_default_page_size"`
+		TablePageSizeOptions                 []int           `json:"table_page_size_options"`
+		CustomMenuItems                      json.RawMessage `json:"custom_menu_items"`
+		CustomEndpoints                      json.RawMessage `json:"custom_endpoints"`
+		LinuxDoOAuthEnabled                  bool            `json:"linuxdo_oauth_enabled"`
+		BackendModeEnabled                   bool            `json:"backend_mode_enabled"`
+		PaymentEnabled                       bool            `json:"payment_enabled"`
+		OIDCOAuthEnabled                     bool            `json:"oidc_oauth_enabled"`
+		OIDCOAuthProviderName                string          `json:"oidc_oauth_provider_name"`
+		Version                              string          `json:"version,omitempty"`
+		BalanceLowNotifyEnabled              bool            `json:"balance_low_notify_enabled"`
+		AccountQuotaNotifyEnabled            bool            `json:"account_quota_notify_enabled"`
+		BalanceLowNotifyThreshold            float64         `json:"balance_low_notify_threshold"`
+		BalanceLowNotifyRechargeURL          string          `json:"balance_low_notify_recharge_url"`
+		ChannelMonitorEnabled                bool            `json:"channel_monitor_enabled"`
+		ChannelMonitorDefaultIntervalSeconds int             `json:"channel_monitor_default_interval_seconds"`
+		AvailableChannelsEnabled             bool            `json:"available_channels_enabled"`
 	}{
-		RegistrationEnabled:              settings.RegistrationEnabled,
-		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: settings.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 settings.PromoCodeEnabled,
-		PasswordResetEnabled:             settings.PasswordResetEnabled,
-		InvitationCodeEnabled:            settings.InvitationCodeEnabled,
-		TotpEnabled:                      settings.TotpEnabled,
-		TurnstileEnabled:                 settings.TurnstileEnabled,
-		TurnstileSiteKey:                 settings.TurnstileSiteKey,
-		SiteName:                         settings.SiteName,
-		SiteLogo:                         settings.SiteLogo,
-		SiteSubtitle:                     settings.SiteSubtitle,
-		APIBaseURL:                       settings.APIBaseURL,
-		ContactInfo:                      settings.ContactInfo,
-		DocURL:                           settings.DocURL,
-		HomeContent:                      settings.HomeContent,
-		HideCcsImportButton:              settings.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
-		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
-		TableDefaultPageSize:             settings.TableDefaultPageSize,
-		TablePageSizeOptions:             settings.TablePageSizeOptions,
-		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
-		CustomEndpoints:                  safeRawJSONArray(settings.CustomEndpoints),
-		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
-		BackendModeEnabled:               settings.BackendModeEnabled,
-		PaymentEnabled:                   settings.PaymentEnabled,
-		OIDCOAuthEnabled:                 settings.OIDCOAuthEnabled,
-		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
-		Version:                          s.version,
-		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
-		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
-		BalanceLowNotifyThreshold:        settings.BalanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:      settings.BalanceLowNotifyRechargeURL,
+		RegistrationEnabled:                  settings.RegistrationEnabled,
+		EmailVerifyEnabled:                   settings.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:     settings.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                     settings.PromoCodeEnabled,
+		PasswordResetEnabled:                 settings.PasswordResetEnabled,
+		InvitationCodeEnabled:                settings.InvitationCodeEnabled,
+		TotpEnabled:                          settings.TotpEnabled,
+		TurnstileEnabled:                     settings.TurnstileEnabled,
+		TurnstileSiteKey:                     settings.TurnstileSiteKey,
+		SiteName:                             settings.SiteName,
+		SiteLogo:                             settings.SiteLogo,
+		SiteSubtitle:                         settings.SiteSubtitle,
+		APIBaseURL:                           settings.APIBaseURL,
+		ContactInfo:                          settings.ContactInfo,
+		DocURL:                               settings.DocURL,
+		HomeContent:                          settings.HomeContent,
+		HideCcsImportButton:                  settings.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:          settings.PurchaseSubscriptionEnabled,
+		PurchaseSubscriptionURL:              settings.PurchaseSubscriptionURL,
+		TableDefaultPageSize:                 settings.TableDefaultPageSize,
+		TablePageSizeOptions:                 settings.TablePageSizeOptions,
+		CustomMenuItems:                      filterUserVisibleMenuItems(settings.CustomMenuItems),
+		CustomEndpoints:                      safeRawJSONArray(settings.CustomEndpoints),
+		LinuxDoOAuthEnabled:                  settings.LinuxDoOAuthEnabled,
+		BackendModeEnabled:                   settings.BackendModeEnabled,
+		PaymentEnabled:                       settings.PaymentEnabled,
+		OIDCOAuthEnabled:                     settings.OIDCOAuthEnabled,
+		OIDCOAuthProviderName:                settings.OIDCOAuthProviderName,
+		Version:                              s.version,
+		BalanceLowNotifyEnabled:              settings.BalanceLowNotifyEnabled,
+		AccountQuotaNotifyEnabled:            settings.AccountQuotaNotifyEnabled,
+		BalanceLowNotifyThreshold:            settings.BalanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL:          settings.BalanceLowNotifyRechargeURL,
+		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
+		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
+		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 	}, nil
 }
 
@@ -633,6 +700,9 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyBalanceLowNotifyRechargeURL] = settings.BalanceLowNotifyRechargeURL
 	updates[SettingKeyAccountQuotaNotifyEnabled] = strconv.FormatBool(settings.AccountQuotaNotifyEnabled)
 	updates[SettingKeyAccountQuotaNotifyEmails] = MarshalNotifyEmails(settings.AccountQuotaNotifyEmails)
+	updates[SettingKeyChannelMonitorEnabled] = strconv.FormatBool(settings.ChannelMonitorEnabled)
+	updates[SettingKeyChannelMonitorDefaultIntervalSeconds] = strconv.Itoa(parseChannelMonitorDefaultInterval(strconv.Itoa(settings.ChannelMonitorDefaultIntervalSeconds)))
+	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -974,6 +1044,13 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 		// 分组隔离（默认不允许未分组 Key 调度）
 		SettingKeyAllowUngroupedKeyScheduling: "false",
+
+		// Channel monitor defaults
+		SettingKeyChannelMonitorEnabled:                "true",
+		SettingKeyChannelMonitorDefaultIntervalSeconds: "60",
+
+		// Available channels 默认关闭（opt-in）
+		SettingKeyAvailableChannelsEnabled: "false",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -1279,6 +1356,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	if result.AccountQuotaNotifyEmails == nil {
 		result.AccountQuotaNotifyEmails = []NotifyEmailEntry{}
 	}
+
+	// Channel monitor
+	result.ChannelMonitorEnabled = !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled])
+	result.ChannelMonitorDefaultIntervalSeconds = parseChannelMonitorDefaultInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds])
+
+	// Available channels
+	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 
 	return result
 }
