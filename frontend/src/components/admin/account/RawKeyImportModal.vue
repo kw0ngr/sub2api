@@ -170,6 +170,11 @@ const handleImport = async () => {
     result.value = res
     emit('imported', res)
 
+    if (res.health_job_error) {
+      appStore.showWarning(res.health_job_error)
+      return
+    }
+
     if (res.failed > 0 || res.invalid_disabled > 0) {
       appStore.showWarning(t('admin.accounts.rawKeyImportFinishedWithIssues', {
         created: res.created,
@@ -179,10 +184,16 @@ const handleImport = async () => {
       return
     }
 
-    appStore.showSuccess(t('admin.accounts.rawKeyImportFinished', {
-      created: res.created,
-      valid: res.valid
-    }))
+    if (res.health_job_started) {
+      appStore.showSuccess(t('admin.accounts.rawKeyImportFinishedValidationQueued', {
+        created: res.created
+      }))
+    } else {
+      appStore.showSuccess(t('admin.accounts.rawKeyImportFinished', {
+        created: res.created,
+        valid: res.valid
+      }))
+    }
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.accounts.rawKeyImportFailed'))
   } finally {

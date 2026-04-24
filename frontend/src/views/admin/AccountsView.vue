@@ -1191,6 +1191,11 @@ const handleRawKeyImported = (result: RawAPIKeyImportResult) => {
   if (result.created > 0 || result.checked > 0 || result.invalid_disabled > 0) {
     reload()
   }
+  if (result.health_job_started) {
+    appStore.showInfo(t('admin.accounts.apiKeyHealthCheckStarted', { total: result.created }), 4000)
+  } else if (result.health_job_error) {
+    appStore.showWarning(result.health_job_error, 5000)
+  }
   if (result.failed === 0 && result.invalid_disabled === 0) {
     showRawKeyImport.value = false
   }
@@ -1224,6 +1229,9 @@ const pollAPIKeyHealthStatus = async () => {
 
     const status = await adminAPI.accounts.getAPIKeysHealthStatus()
     const result = status.result
+    if (status.status === 'failed') {
+      throw new Error(status.error || t('admin.accounts.apiKeyHealthCheckFailed'))
+    }
     if (status.status !== 'running') {
       return result ?? null
     }

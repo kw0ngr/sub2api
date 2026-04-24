@@ -5,18 +5,27 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"net/http"
 	"strings"
 )
 
 const rawAPIKeyImportPageSize = 500
+
+const (
+	apiKeyHealthStatusIdle      = "idle"
+	apiKeyHealthStatusRunning   = "running"
+	apiKeyHealthStatusCompleted = "completed"
+	apiKeyHealthStatusFailed    = "failed"
+)
 
 type RawAPIKeyImportRequest struct {
 	RawText              string `json:"raw_text" binding:"required"`
@@ -39,13 +48,16 @@ type RawAPIKeyImportLineResult struct {
 }
 
 type RawAPIKeyImportResult struct {
-	TotalLines      int                         `json:"total_lines"`
-	Created         int                         `json:"created"`
-	Checked         int                         `json:"checked"`
-	Valid           int                         `json:"valid"`
-	InvalidDisabled int                         `json:"invalid_disabled"`
-	Failed          int                         `json:"failed"`
-	Results         []RawAPIKeyImportLineResult `json:"results"`
+	TotalLines       int                         `json:"total_lines"`
+	Created          int                         `json:"created"`
+	Checked          int                         `json:"checked"`
+	Valid            int                         `json:"valid"`
+	InvalidDisabled  int                         `json:"invalid_disabled"`
+	Failed           int                         `json:"failed"`
+	HealthJobStarted bool                        `json:"health_job_started"`
+	HealthJobID      string                      `json:"health_job_id,omitempty"`
+	HealthJobError   string                      `json:"health_job_error,omitempty"`
+	Results          []RawAPIKeyImportLineResult `json:"results"`
 }
 
 type APIKeyHealthCheckRequest struct {
@@ -74,17 +86,24 @@ type APIKeyHealthCheckResult struct {
 
 // APIKeyHealthCheckStatusResponse is the response for polling health check progress.
 type APIKeyHealthCheckStatusResponse struct {
-	Status    string                   `json:"status"` // "idle" | "running" | "completed"
-	StartedAt *time.Time               `json:"started_at,omitempty"`
-	Result    *APIKeyHealthCheckResult `json:"result,omitempty"`
+	Status      string                   `json:"status"` // "idle" | "running" | "completed" | "failed"
+	JobID       string                   `json:"job_id,omitempty"`
+	StartedAt   *time.Time               `json:"started_at,omitempty"`
+	CompletedAt *time.Time               `json:"completed_at,omitempty"`
+	Error       string                   `json:"error,omitempty"`
+	Result      *APIKeyHealthCheckResult `json:"result,omitempty"`
 }
 
 // healthCheckState holds the background health check state.
 type healthCheckState struct {
-	mu        sync.RWMutex
-	running   bool
-	startedAt time.Time
-	result    *APIKeyHealthCheckResult
+	mu          sync.RWMutex
+	jobID       string
+	status      string
+	running     bool
+	startedAt   time.Time
+	completedAt *time.Time
+	errorMsg    string
+	result      *APIKeyHealthCheckResult
 }
 
 type rawAPIKeyImportLine struct {
@@ -123,6 +142,88 @@ func (h *AccountHandler) recoverValidAPIKeyAccount(ctx context.Context, account 
 		}
 	}
 	return nil
+}
+
+func newAPIKeyHealthJobID() string {
+	return "apikey-health-" + uuid.NewString()
+}
+
+func cloneTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	cp := *t
+	return &cp
+}
+
+func (h *AccountHandler) isAPIKeyHealthCheckRunning() bool {
+	h.hcState.mu.RLock()
+	defer h.hcState.mu.RUnlock()
+	return h.hcState.running
+}
+
+func (h *AccountHandler) startAPIKeyHealthCheckJob(accounts []*service.Account) (string, time.Time, bool) {
+	h.hcState.mu.Lock()
+	if h.hcState.running {
+		h.hcState.mu.Unlock()
+		return "", time.Time{}, false
+	}
+
+	now := time.Now()
+	jobID := newAPIKeyHealthJobID()
+	h.hcState.jobID = jobID
+	h.hcState.status = apiKeyHealthStatusRunning
+	h.hcState.running = true
+	h.hcState.startedAt = now
+	h.hcState.completedAt = nil
+	h.hcState.errorMsg = ""
+	h.hcState.result = &APIKeyHealthCheckResult{
+		Total:   len(accounts),
+		Results: make([]APIKeyHealthCheckItem, 0, len(accounts)),
+	}
+	h.hcState.mu.Unlock()
+
+	// Detached from the request context: page refreshes must not cancel checks.
+	go h.runHealthCheckBackground(jobID, accounts)
+	return jobID, now, true
+}
+
+func (h *AccountHandler) appendAPIKeyHealthCheckResult(jobID string, item APIKeyHealthCheckItem, valid, invalidDisabled, failed bool) {
+	h.hcState.mu.Lock()
+	defer h.hcState.mu.Unlock()
+
+	if h.hcState.jobID != jobID || h.hcState.result == nil {
+		return
+	}
+	h.hcState.result.Checked++
+	if valid {
+		h.hcState.result.Valid++
+	}
+	if invalidDisabled {
+		h.hcState.result.InvalidDisabled++
+	}
+	if failed {
+		h.hcState.result.Failed++
+	}
+	h.hcState.result.Results = append(h.hcState.result.Results, item)
+}
+
+func (h *AccountHandler) finishAPIKeyHealthCheckJob(jobID string, status string, errorMsg string) {
+	if status == "" {
+		status = apiKeyHealthStatusCompleted
+	}
+	completedAt := time.Now()
+
+	h.hcState.mu.Lock()
+	defer h.hcState.mu.Unlock()
+
+	if h.hcState.jobID != jobID {
+		return
+	}
+	h.hcState.running = false
+	h.hcState.status = status
+	h.hcState.completedAt = &completedAt
+	h.hcState.errorMsg = strings.TrimSpace(errorMsg)
 }
 
 func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
@@ -164,6 +265,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 		return
 	}
 
+	createdForHealthCheck := make([]*service.Account, 0, len(lines))
 	for _, line := range lines {
 		identity := buildAPIKeyIdentity(line.Platform, line.Key, line.BaseURL)
 		if existing, ok := existingByIdentity[identity]; ok && existing != nil {
@@ -214,35 +316,25 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 		item.AccountID = account.ID
 		result.Created++
 		existingByIdentity[identity] = account
-
-		if req.ValidateAfterImport {
-			item.Checked = true
-			result.Checked++
-			health, healthErr := h.accountTestService.CheckAPIKeyValidity(c.Request.Context(), account)
-			if healthErr != nil {
-				item.Error = healthErr.Error()
-				result.Failed++
-			} else {
-				item.StatusCode = health.StatusCode
-				item.Message = health.Message
-				item.Valid = health.Valid
-				if health.Valid {
-					result.Valid++
-				}
-				if health.Invalid {
-					item.InvalidDisabled = true
-					result.InvalidDisabled++
-					if err := h.disableInvalidAPIKeyAccount(c.Request.Context(), account, health.Message); err != nil {
-						item.Error = err.Error()
-						item.InvalidDisabled = false
-						result.InvalidDisabled--
-						result.Failed++
-					}
-				}
-			}
+		healthAccount := *account
+		healthAccount.Platform = line.Platform
+		healthAccount.Type = service.AccountTypeAPIKey
+		if healthAccount.Credentials == nil {
+			healthAccount.Credentials = credentials
 		}
+		createdForHealthCheck = append(createdForHealthCheck, &healthAccount)
 
 		result.Results = append(result.Results, item)
+	}
+
+	if req.ValidateAfterImport && len(createdForHealthCheck) > 0 {
+		jobID, _, ok := h.startAPIKeyHealthCheckJob(createdForHealthCheck)
+		if ok {
+			result.HealthJobStarted = true
+			result.HealthJobID = jobID
+		} else {
+			result.HealthJobError = "health check is already running"
+		}
 	}
 
 	response.Success(c, result)
@@ -260,36 +352,27 @@ func (h *AccountHandler) CheckAPIKeysHealth(c *gin.Context) {
 		return
 	}
 
-	h.hcState.mu.Lock()
-	if h.hcState.running {
-		h.hcState.mu.Unlock()
+	if h.isAPIKeyHealthCheckRunning() {
 		response.Error(c, http.StatusConflict, "Health check is already running")
 		return
 	}
 
-	// Resolve accounts while we still have the HTTP context for DB access.
 	accounts, err := h.resolveAPIKeyHealthCheckAccounts(c.Request.Context(), req.AccountIDs)
 	if err != nil {
-		h.hcState.mu.Unlock()
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	now := time.Now()
-	h.hcState.running = true
-	h.hcState.startedAt = now
-	h.hcState.result = &APIKeyHealthCheckResult{
-		Total:   len(accounts),
-		Results: make([]APIKeyHealthCheckItem, 0, len(accounts)),
+	jobID, startedAt, ok := h.startAPIKeyHealthCheckJob(accounts)
+	if !ok {
+		response.Error(c, http.StatusConflict, "Health check is already running")
+		return
 	}
-	h.hcState.mu.Unlock()
-
-	// Run in background with a detached context so page refresh won't cancel it.
-	go h.runHealthCheckBackground(accounts)
 
 	response.Accepted(c, gin.H{
+		"job_id":     jobID,
 		"status":     "running",
-		"started_at": now,
+		"started_at": startedAt,
 		"total":      len(accounts),
 	})
 }
@@ -300,25 +383,39 @@ func (h *AccountHandler) GetAPIKeysHealthStatus(c *gin.Context) {
 	defer h.hcState.mu.RUnlock()
 
 	if h.hcState.result == nil && !h.hcState.running {
-		response.Success(c, APIKeyHealthCheckStatusResponse{Status: "idle"})
+		response.Success(c, APIKeyHealthCheckStatusResponse{Status: apiKeyHealthStatusIdle})
 		return
 	}
 
-	status := "completed"
-	if h.hcState.running {
-		status = "running"
+	status := h.hcState.status
+	if status == "" {
+		status = apiKeyHealthStatusCompleted
+		if h.hcState.running {
+			status = apiKeyHealthStatusRunning
+		}
 	}
 	startedAt := h.hcState.startedAt
+	completedAt := cloneTimePtr(h.hcState.completedAt)
 	resp := APIKeyHealthCheckStatusResponse{
-		Status:    status,
-		StartedAt: &startedAt,
-		Result:    h.hcState.result,
+		Status:      status,
+		JobID:       h.hcState.jobID,
+		StartedAt:   &startedAt,
+		CompletedAt: completedAt,
+		Error:       h.hcState.errorMsg,
+		Result:      h.hcState.result,
 	}
 	response.Success(c, resp)
 }
 
-func (h *AccountHandler) runHealthCheckBackground(accounts []*service.Account) {
+func (h *AccountHandler) runHealthCheckBackground(jobID string, accounts []*service.Account) {
 	ctx := context.Background()
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("health check job panic: %v", r)
+			slog.Error("API key health check job panic", "job_id", jobID, "panic", r)
+			h.finishAPIKeyHealthCheckJob(jobID, apiKeyHealthStatusFailed, errMsg)
+		}
+	}()
 
 	const maxConcurrency = 8
 	g, gctx := errgroup.WithContext(ctx)
@@ -327,13 +424,28 @@ func (h *AccountHandler) runHealthCheckBackground(accounts []*service.Account) {
 	for _, account := range accounts {
 		acc := account
 		g.Go(func() error {
-			item := APIKeyHealthCheckItem{
+			var item APIKeyHealthCheckItem
+			var valid, invalidDisabled, failed bool
+			appended := false
+			defer func() {
+				if r := recover(); r != nil {
+					item.Error = fmt.Sprintf("health check panic: %v", r)
+					failed = true
+					slog.Error("API key health check account panic", "job_id", jobID, "account_id", item.AccountID, "panic", r)
+					if !appended {
+						h.appendAPIKeyHealthCheckResult(jobID, item, false, false, true)
+					}
+				}
+			}()
+
+			if acc == nil {
+				panic("nil API key account")
+			}
+			item = APIKeyHealthCheckItem{
 				AccountID: acc.ID,
 				Name:      acc.Name,
 				Platform:  acc.Platform,
 			}
-
-			var valid, invalidDisabled, failed bool
 
 			health, healthErr := h.accountTestService.CheckAPIKeyValidity(gctx, acc)
 
@@ -377,29 +489,18 @@ func (h *AccountHandler) runHealthCheckBackground(accounts []*service.Account) {
 				}
 			}
 
-			h.hcState.mu.Lock()
-			h.hcState.result.Checked++
-			if valid {
-				h.hcState.result.Valid++
-			}
-			if invalidDisabled {
-				h.hcState.result.InvalidDisabled++
-			}
-			if failed {
-				h.hcState.result.Failed++
-			}
-			h.hcState.result.Results = append(h.hcState.result.Results, item)
-			h.hcState.mu.Unlock()
+			h.appendAPIKeyHealthCheckResult(jobID, item, valid, invalidDisabled, failed)
+			appended = true
 
 			return nil
 		})
 	}
 
-	_ = g.Wait()
-
-	h.hcState.mu.Lock()
-	h.hcState.running = false
-	h.hcState.mu.Unlock()
+	if err := g.Wait(); err != nil {
+		h.finishAPIKeyHealthCheckJob(jobID, apiKeyHealthStatusFailed, err.Error())
+		return
+	}
+	h.finishAPIKeyHealthCheckJob(jobID, apiKeyHealthStatusCompleted, "")
 }
 
 func (h *AccountHandler) resolveAPIKeyHealthCheckAccounts(ctx context.Context, accountIDs []int64) ([]*service.Account, error) {
@@ -552,7 +653,8 @@ func buildAPIKeyIdentity(platform, key, baseURL string) string {
 	if normalizedBaseURL == "" {
 		normalizedBaseURL = service.DefaultAPIKeyBaseURL(normalizedPlatform)
 	}
-	return normalizedPlatform + "|" + normalizedKey + "|" + normalizedBaseURL
+	sum := sha256.Sum256([]byte(normalizedPlatform + "|" + normalizedBaseURL + "|" + normalizedKey))
+	return hex.EncodeToString(sum[:])
 }
 
 func maskRawAPIKey(key string) string {

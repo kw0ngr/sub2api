@@ -427,6 +427,9 @@ export interface RawAPIKeyImportResult {
   valid: number
   invalid_disabled: number
   failed: number
+  health_job_started: boolean
+  health_job_id?: string
+  health_job_error?: string
   results: RawAPIKeyImportLineResult[]
 }
 
@@ -452,13 +455,17 @@ export interface APIKeyHealthCheckResult {
 
 export interface APIKeyHealthCheckStartResponse {
   status: 'running'
+  job_id: string
   started_at: string
   total: number
 }
 
 export interface APIKeyHealthCheckStatusResponse {
-  status: 'idle' | 'running' | 'completed'
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  job_id?: string
   started_at?: string
+  completed_at?: string
+  error?: string
   result?: APIKeyHealthCheckResult
 }
 

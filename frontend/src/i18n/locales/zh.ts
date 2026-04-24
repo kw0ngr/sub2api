@@ -2564,6 +2564,7 @@ export default {
       rawKeyImportStatusCreated: '已创建',
       rawKeyImportStatusInvalidDisabled: '失效并已禁用',
       rawKeyImportFinished: '导入完成：创建 {created}，有效 {valid}',
+      rawKeyImportFinishedValidationQueued: '导入完成：创建 {created}，后台巡检已开始',
       rawKeyImportFinishedWithIssues: '导入完成：创建 {created}，自动禁用 {invalid_disabled}，失败 {failed}',
       apiKeyHealthCheckAll: '巡检全部 Key',
       apiKeyHealthChecking: '巡检中...',

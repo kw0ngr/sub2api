@@ -2488,6 +2488,7 @@ export default {
       rawKeyImportStatusCreated: 'created',
       rawKeyImportStatusInvalidDisabled: 'invalid and disabled',
       rawKeyImportFinished: 'Import completed: created {created}, valid {valid}',
+      rawKeyImportFinishedValidationQueued: 'Import completed: created {created}; background health check started',
       rawKeyImportFinishedWithIssues: 'Import completed: created {created}, auto-disabled {invalid_disabled}, failed {failed}',
       apiKeyHealthCheckAll: 'Check All Keys',
       apiKeyHealthChecking: 'Checking...',
