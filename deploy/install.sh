@@ -7,6 +7,11 @@
 
 set -e
 
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "Sub2API installer requires Bash 4+ (Linux distributions usually provide it by default)." >&2
+    exit 1
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -472,7 +477,40 @@ check_dependencies() {
 }
 
 get_releases_json() {
-    curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20" 2>/dev/null
+    curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20" 2>/dev/null || true
+}
+
+get_latest_version_from_redirect() {
+    local effective_url
+    effective_url=$(curl -fsSLI --connect-timeout 10 --max-time 30 -o /dev/null -w "%{url_effective}" "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
+    case "$effective_url" in
+        */releases/tag/*)
+            effective_url="${effective_url##*/releases/tag/}"
+            effective_url="${effective_url%%\?*}"
+            effective_url="${effective_url%%\#*}"
+            echo "$effective_url"
+            ;;
+    esac
+}
+
+release_tag_exists() {
+    local version="$1"
+    local http_code
+    http_code=$(curl -sL -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "https://github.com/${GITHUB_REPO}/releases/tag/${version}" 2>/dev/null || true)
+    [ "$http_code" = "200" ]
+}
+
+sha256_file() {
+    local file="$1"
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum &> /dev/null; then
+        shasum -a 256 "$file" | awk '{print $1}'
+        return 0
+    fi
+    return 1
 }
 
 print_no_releases_guidance() {
@@ -500,11 +538,14 @@ get_latest_version() {
     print_info "$(msg 'fetching_version')"
     local releases_json
     releases_json=$(get_releases_json)
-    ensure_releases_available "$releases_json"
 
-    LATEST_VERSION=$(curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    LATEST_VERSION=$(echo "$releases_json" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$LATEST_VERSION" ]; then
+        LATEST_VERSION=$(get_latest_version_from_redirect)
+    fi
 
     if [ -z "$LATEST_VERSION" ]; then
+        ensure_releases_available "$releases_json"
         print_error "$(msg 'failed_get_version')"
         print_info "Please check your network connection or try again later."
         exit 1
@@ -520,10 +561,13 @@ list_versions() {
     local versions
     local releases_json
     releases_json=$(get_releases_json)
-    ensure_releases_available "$releases_json"
     versions=$(echo "$releases_json" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -20)
+    if [ -z "$versions" ]; then
+        versions=$(get_latest_version_from_redirect)
+    fi
 
     if [ -z "$versions" ]; then
+        ensure_releases_available "$releases_json"
         print_error "$(msg 'failed_get_version')"
         print_info "Please check your network connection or try again later."
         exit 1
@@ -554,30 +598,10 @@ validate_version() {
         version="v$version"
     fi
 
-    local releases_json
-    releases_json=$(get_releases_json)
-    if echo "$releases_json" | grep -q '"message"[[:space:]]*:[[:space:]]*"Not Found"'; then
-        print_no_releases_guidance >&2
-        exit 1
-    fi
-    if ! echo "$releases_json" | grep -q '"tag_name"'; then
-        print_no_releases_guidance >&2
-        exit 1
-    fi
-
     print_info "$(msg 'validating_version') $version" >&2
 
-    # Check if the release exists
-    local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${version}" 2>/dev/null)
-
-    # Check for network errors (empty or non-numeric response)
-    if [ -z "$http_code" ] || ! [[ "$http_code" =~ ^[0-9]+$ ]]; then
-        print_error "Network error: Failed to connect to GitHub API" >&2
-        exit 1
-    fi
-
-    if [ "$http_code" != "200" ]; then
+    # Check the public release page first to avoid unauthenticated GitHub API rate limits.
+    if ! release_tag_exists "$version"; then
         print_error "$(msg 'version_not_found'): $version" >&2
         echo "" >&2
         list_versions >&2
@@ -612,24 +636,31 @@ download_and_extract() {
     trap "rm -rf $TEMP_DIR" EXIT
 
     # Download archive
-    if ! curl -sL "$download_url" -o "$TEMP_DIR/$archive_name"; then
+    if ! curl -fsSL --connect-timeout 10 --max-time 300 "$download_url" -o "$TEMP_DIR/$archive_name"; then
         print_error "$(msg 'download_failed')"
         exit 1
     fi
 
     # Download and verify checksum
     print_info "$(msg 'verifying_checksum')"
-    if curl -sL "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
         local expected_checksum=$(grep "$archive_name" "$TEMP_DIR/checksums.txt" | awk '{print $1}')
-        local actual_checksum=$(sha256sum "$TEMP_DIR/$archive_name" | awk '{print $1}')
+        if [ -z "$expected_checksum" ]; then
+            print_warning "$(msg 'checksum_not_found')"
+        else
+            local actual_checksum
+            if ! actual_checksum=$(sha256_file "$TEMP_DIR/$archive_name"); then
+                print_warning "sha256sum/shasum not found; skipping checksum verification"
+            elif [ "$expected_checksum" != "$actual_checksum" ]; then
+                print_error "$(msg 'checksum_failed')"
+                print_error "Expected: $expected_checksum"
+                print_error "Actual: $actual_checksum"
+                exit 1
+            else
+                print_success "$(msg 'checksum_verified')"
+            fi
 
-        if [ "$expected_checksum" != "$actual_checksum" ]; then
-            print_error "$(msg 'checksum_failed')"
-            print_error "Expected: $expected_checksum"
-            print_error "Actual: $actual_checksum"
-            exit 1
         fi
-        print_success "$(msg 'checksum_verified')"
     else
         print_warning "$(msg 'checksum_not_found')"
     fi
