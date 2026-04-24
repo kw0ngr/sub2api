@@ -68,6 +68,7 @@ const (
 	betaStructuredOutputs            = "structured-outputs-2025-12-15"
 	claudeCodeSessionTTLMin          = 30 * time.Minute
 	claudeCodeSessionTTLMax          = 300 * time.Minute
+	claudeCodeSessionCacheMaxEntries = 4096
 )
 
 const (
@@ -293,6 +294,21 @@ func getOrCreateClaudeCodeSessionID(apiKeyHash string) string {
 		}
 	}
 
+	for len(claudeCodeSessionCache) >= claudeCodeSessionCacheMaxEntries {
+		oldestKey := ""
+		var oldestUsed time.Time
+		for key, entry := range claudeCodeSessionCache {
+			if oldestKey == "" || entry.lastUsed.Before(oldestUsed) {
+				oldestKey = key
+				oldestUsed = entry.lastUsed
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		delete(claudeCodeSessionCache, oldestKey)
+	}
+
 	id := generateRandomUUID()
 	claudeCodeSessionCache[apiKeyHash] = claudeCodeSessionEntry{
 		id:       id,
@@ -341,6 +357,13 @@ func forceClaudeOAuthMetadataUserID(body []byte, userID string) ([]byte, bool) {
 		return body, false
 	}
 	return setJSONRawBytes(body, "metadata", raw)
+}
+
+func applyClaudeOAuthMetadataUserID(body []byte, userID string, passthrough bool) ([]byte, bool) {
+	if passthrough {
+		return ensureClaudeOAuthMetadataUserID(body, userID)
+	}
+	return forceClaudeOAuthMetadataUserID(body, userID)
 }
 
 func extractSystemPreviewFromBody(body []byte) string {
@@ -4410,17 +4433,22 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 未重写时（haiku / 已含 CC 前缀）剥离客户端 cache_control，与原有行为一致。
 		// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
-		if s.identityService != nil {
+		mimicEnableFP, mimicMPT := true, false
+		if s.settingService != nil {
+			mimicEnableFP, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
+		}
+		var mimicFingerprint *Fingerprint
+		if mimicEnableFP && s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 			if err == nil && fp != nil {
-				// metadata 透传开启时跳过 metadata 注入
-				_, mimicMPT, _ := s.settingService.GetGatewayForwardingSettings(ctx)
-				if !mimicMPT {
-					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
-						normalizeOpts.injectMetadata = true
-						normalizeOpts.metadataUserID = metadataUserID
-					}
-				}
+				mimicFingerprint = fp
+			}
+		}
+		// metadata 透传开启时跳过预注入；最终 buildUpstreamRequest 仍会按同一设置兜底。
+		if !mimicMPT {
+			if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, mimicFingerprint); metadataUserID != "" {
+				normalizeOpts.injectMetadata = true
+				normalizeOpts.metadataUserID = metadataUserID
 			}
 		}
 
@@ -6067,9 +6095,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	if account.IsOAuth() {
-		cliVersion := resolveClaudeCodeCLIVersion("")
+		clientUserAgent := getHeaderRaw(clientHeaders, "User-Agent")
+		cliVersion := resolveClaudeCodeCLIVersion(clientUserAgent)
 		deviceID := ""
-		if s.identityService != nil {
+		if enableFP && s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 			if err != nil {
 				logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
@@ -6095,14 +6124,16 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			strings.TrimSpace(account.GetExtraString("account_uuid")),
 			sessionID,
 		)
-		if next, changed := forceClaudeOAuthMetadataUserID(body, metadataUserID); changed {
+		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, enableMPT); changed {
 			body = next
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if fingerprint != nil {
+	if fingerprint != nil && enableFP {
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
+	} else if account.IsOAuth() {
+		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
 	}
 	// CCH 签名：将 cch=00000 占位符替换为 xxHash64 签名（需在所有 body 修改之后）
 	if enableCCH {
@@ -6133,7 +6164,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	}
 
 	// OAuth账号：应用缓存的指纹到请求头（覆盖白名单透传的头）
-	if fingerprint != nil && s.identityService != nil {
+	if fingerprint != nil && enableFP && s.identityService != nil {
 		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 
@@ -9106,7 +9137,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	var ctFingerprint *Fingerprint
-	if account.IsOAuth() && s.identityService != nil {
+	if account.IsOAuth() && ctEnableFP && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil && fp != nil {
 			ctFingerprint = fp
@@ -9118,6 +9149,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
 	if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
+	} else if account.IsOAuth() {
+		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
 	}
 	if ctEnableCCH {
 		body = signBillingHeaderCCH(body)
@@ -9147,7 +9180,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// OAuth 账号：应用指纹到请求头
-	if ctFingerprint != nil && s.identityService != nil {
+	if ctFingerprint != nil && ctEnableFP && s.identityService != nil {
 		s.identityService.ApplyFingerprint(req, ctFingerprint)
 	}
 
