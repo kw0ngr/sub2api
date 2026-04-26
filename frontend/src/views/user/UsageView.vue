@@ -85,8 +85,9 @@
         </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div class="card relative overflow-hidden p-4 xl:col-span-1">
+        <div v-if="showSelfInsightArea" class="user-usage-insights mt-4">
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -95,31 +96,31 @@
             </div>
             <div class="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">我的使用画像</h3>
+                <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">我的使用画像</h3>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   当前时间范围内的工具、模型和缓存效率。
                 </p>
               </div>
-              <span class="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-300">
+              <span class="self-insight-pill rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-300">
                 缓存 {{ formatPercent(selfInsights?.cache_share || 0) }}
               </span>
             </div>
             <div v-if="selfInsights && selfInsights.total_tokens > 0" class="space-y-3">
               <div class="grid grid-cols-2 gap-2">
-                <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                <div class="self-insight-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                   <p class="text-xs text-gray-500 dark:text-gray-400">Token</p>
                   <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
                     {{ formatTokens(selfInsights.total_tokens) }}
                   </p>
                 </div>
-                <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                <div class="self-insight-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                   <p class="text-xs text-gray-500 dark:text-gray-400">请求</p>
                   <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
                     {{ selfInsights.total_requests.toLocaleString() }}
                   </p>
                 </div>
               </div>
-              <div v-if="topSelfModel" class="rounded-xl border border-blue-400/20 bg-blue-500/10 p-3">
+              <div v-if="topSelfModel" class="self-insight-focus rounded-xl border border-blue-400/20 bg-blue-500/10 p-3">
                 <p class="text-xs text-blue-600 dark:text-blue-300">主要模型</p>
                 <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white" :title="topSelfModel.model">
                   {{ topSelfModel.model }}
@@ -134,14 +135,14 @@
             </div>
           </div>
 
-          <div class="card relative overflow-hidden p-4">
+          <div v-if="showSelfClientCard" class="card self-insight-card relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
             >
               <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             </div>
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">客户端 / 工具分布</h3>
+            <h3 class="self-insight-title mb-4 text-sm font-semibold text-gray-900 dark:text-white">客户端 / 工具分布</h3>
             <div v-if="selfClientItems.length" class="space-y-3">
               <div v-for="client in selfClientItems" :key="client.client" class="space-y-1.5">
                 <div class="flex items-center justify-between gap-3 text-xs">
@@ -152,9 +153,9 @@
                     {{ formatPercent(client.token_share) }} / {{ formatTokens(client.total_tokens) }}
                   </span>
                 </div>
-                <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                <div class="self-progress-track h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                   <div
-                    class="h-full rounded-full bg-cyan-500"
+                    class="self-progress-fill self-progress-fill-cyan h-full rounded-full bg-cyan-500"
                     :style="{ width: `${clientShareWidth(client.token_share)}%` }"
                   />
                 </div>
@@ -165,19 +166,19 @@
             </div>
           </div>
 
-          <div class="card relative overflow-hidden p-4">
+          <div v-if="showSelfSessionCard" class="card self-insight-card relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
             >
               <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             </div>
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">请求会话</h3>
+            <h3 class="self-insight-title mb-4 text-sm font-semibold text-gray-900 dark:text-white">请求会话</h3>
             <div v-if="selfSessionItems.length" class="space-y-2">
               <div
                 v-for="session in selfSessionItems"
                 :key="session.session_id"
-                class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
+                class="self-session-row rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -199,19 +200,17 @@
               暂无会话数据
             </div>
           </div>
-        </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div class="card p-4">
+          <div v-if="showSelfModelCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
+              <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
             </div>
             <div v-if="selfModelItems.length" class="space-y-2">
               <div
                 v-for="model in selfModelItems"
                 :key="model.model"
-                class="rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+                class="self-model-row rounded-xl border border-gray-100 p-3 dark:border-gray-700"
               >
                 <div class="flex items-center justify-between gap-3">
                   <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="model.model">
@@ -221,9 +220,9 @@
                     {{ formatPercent(model.share_of_member) }}
                   </p>
                 </div>
-                <div class="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                <div class="self-progress-track mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                   <div
-                    class="h-full rounded-full bg-blue-500"
+                    class="self-progress-fill self-progress-fill-blue h-full rounded-full bg-blue-500"
                     :style="{ width: `${clientShareWidth(model.share_of_member)}%` }"
                   />
                 </div>
@@ -237,9 +236,9 @@
             </div>
           </div>
 
-          <div class="card p-4">
+          <div v-if="showSelfCacheCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
+              <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">
                 读 {{ formatPercent(selfInsights?.cache_share || 0) }}
               </span>
@@ -248,7 +247,7 @@
               <div
                 v-for="item in selfCacheItems"
                 :key="`${item.scope}-${item.model || item.label}`"
-                class="rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+                class="self-cache-row rounded-xl border border-gray-100 p-3 dark:border-gray-700"
               >
                 <div class="flex items-center justify-between gap-3">
                   <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="item.label || item.model">
@@ -267,6 +266,7 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无缓存数据
             </div>
+          </div>
           </div>
         </div>
       </template>
@@ -881,6 +881,20 @@ const selfModelItems = computed(() => selfInsights.value?.model_matrix?.slice(0,
 const selfCacheItems = computed(() => selfInsights.value?.cache_efficiency?.slice(0, 5) || [])
 const selfSessionItems = computed(() => selfInsights.value?.sessions?.slice(0, 5) || [])
 const topSelfModel = computed(() => selfModelItems.value[0] || null)
+const hasSelfProfileData = computed(() => (selfInsights.value?.total_tokens || 0) > 0)
+const showSelfProfileCard = computed(() => selfInsightsLoading.value || hasSelfProfileData.value)
+const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClientItems.value.length > 0)
+const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
+const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
+const showSelfCacheCard = computed(() => selfInsightsLoading.value || selfCacheItems.value.length > 0)
+const showSelfInsightArea = computed(
+  () =>
+    showSelfProfileCard.value ||
+    showSelfClientCard.value ||
+    showSelfSessionCard.value ||
+    showSelfModelCard.value ||
+    showSelfCacheCard.value
+)
 
 type UsageTableQueryParams = UsageQueryParams & {
   sort_by?: string
@@ -1162,3 +1176,109 @@ onMounted(() => {
   loadSelfInsights()
 })
 </script>
+
+<style scoped>
+.user-usage-insights {
+  position: relative;
+}
+
+.self-insight-card {
+  position: relative;
+  border-color: rgb(226 232 240 / 0.92);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(248 250 252 / 0.92)),
+    radial-gradient(circle at 100% 0%, rgb(59 130 246 / 0.08), transparent 34%);
+  box-shadow: 0 16px 36px rgb(15 23 42 / 0.06);
+  transition:
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.dark .self-insight-card {
+  border-color: rgb(51 65 85 / 0.88);
+  background:
+    linear-gradient(180deg, rgb(15 23 42 / 0.95), rgb(15 23 42 / 0.88)),
+    radial-gradient(circle at 100% 0%, rgb(56 189 248 / 0.12), transparent 36%);
+  box-shadow: 0 20px 46px rgb(0 0 0 / 0.22);
+}
+
+.self-insight-card:hover {
+  border-color: rgb(148 163 184 / 0.86);
+  box-shadow: 0 18px 42px rgb(15 23 42 / 0.09);
+  transform: translateY(-1px);
+}
+
+.dark .self-insight-card:hover {
+  border-color: rgb(71 85 105 / 0.95);
+  box-shadow: 0 22px 52px rgb(0 0 0 / 0.28);
+}
+
+.self-insight-card-feature::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgb(59 130 246 / 0.10), transparent 42%);
+}
+
+.self-insight-title {
+  letter-spacing: -0.01em;
+}
+
+.self-insight-pill {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55);
+}
+
+.self-insight-metric,
+.self-insight-focus,
+.self-session-row,
+.self-model-row,
+.self-cache-row {
+  background: rgb(255 255 255 / 0.72);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.dark .self-insight-metric,
+.dark .self-insight-focus,
+.dark .self-session-row,
+.dark .self-model-row,
+.dark .self-cache-row {
+  background: rgb(15 23 42 / 0.58);
+}
+
+.self-session-row:hover,
+.self-model-row:hover,
+.self-cache-row:hover {
+  border-color: rgb(96 165 250 / 0.42);
+  background: rgb(239 246 255 / 0.74);
+  transform: translateX(1px);
+}
+
+.dark .self-session-row:hover,
+.dark .self-model-row:hover,
+.dark .self-cache-row:hover {
+  border-color: rgb(96 165 250 / 0.34);
+  background: rgb(30 41 59 / 0.74);
+}
+
+.self-progress-track {
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.10);
+}
+
+.self-progress-fill {
+  min-width: 0.35rem;
+  box-shadow: 0 0 14px currentColor;
+}
+
+.self-progress-fill-cyan {
+  color: rgb(6 182 212 / 0.35);
+}
+
+.self-progress-fill-blue {
+  color: rgb(59 130 246 / 0.35);
+}
+</style>

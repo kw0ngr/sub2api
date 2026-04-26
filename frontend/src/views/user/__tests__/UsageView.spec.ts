@@ -201,6 +201,156 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('$30.0000 / 1M tokens')
   })
 
+  it('hides optional self insight cards when selected range has no insight data', async () => {
+    query.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      avg_duration_ms: 0,
+    })
+    getDashboardSelfInsights.mockResolvedValue({
+      insights: {
+        total_requests: 0,
+        total_tokens: 0,
+        cache_tokens: 0,
+        cache_share: 0,
+        client_distribution: [],
+        model_matrix: [],
+        cache_efficiency: [],
+        sessions: [],
+      },
+      start_date: '',
+      end_date: '',
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).not.toContain('我的使用画像')
+    expect(text).not.toContain('客户端 / 工具分布')
+    expect(text).not.toContain('请求会话')
+    expect(text).not.toContain('模型使用矩阵')
+    expect(text).not.toContain('缓存效率')
+  })
+
+  it('renders self-service insight cards when data exists', async () => {
+    query.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 3,
+      total_tokens: 1234,
+      total_cost: 0,
+      avg_duration_ms: 0,
+    })
+    getDashboardSelfInsights.mockResolvedValue({
+      insights: {
+        total_requests: 3,
+        total_tokens: 1234,
+        cache_tokens: 234,
+        cache_share: 0.19,
+        client_distribution: [
+          {
+            client: 'Claude Code',
+            total_requests: 2,
+            total_tokens: 900,
+            token_share: 0.73,
+          },
+        ],
+        model_matrix: [
+          {
+            member: 'me@example.com',
+            model: 'claude-sonnet-4-6',
+            total_requests: 2,
+            total_tokens: 900,
+            share_of_member: 0.73,
+            cache_tokens: 200,
+            cache_share: 0.22,
+          },
+        ],
+        cache_efficiency: [
+          {
+            scope: 'model',
+            model: 'claude-sonnet-4-6',
+            label: 'claude-sonnet-4-6',
+            total_requests: 2,
+            total_tokens: 900,
+            cache_read_tokens: 160,
+            cache_creation_tokens: 40,
+            cache_tokens: 200,
+            cache_share: 0.22,
+            ttl_override_count: 1,
+          },
+        ],
+        sessions: [
+          {
+            session_id: 'session-1',
+            client: 'Claude Code',
+            model: 'claude-sonnet-4-6',
+            api_key_id: 1,
+            api_key_name: 'work-key',
+            total_requests: 2,
+            total_tokens: 900,
+            first_seen: '2026-04-26T00:00:00Z',
+            last_seen: '2026-04-26T00:05:00Z',
+          },
+        ],
+      },
+      start_date: '',
+      end_date: '',
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('我的使用画像')
+    expect(text).toContain('客户端 / 工具分布')
+    expect(text).toContain('请求会话')
+    expect(text).toContain('模型使用矩阵')
+    expect(text).toContain('缓存效率')
+    expect(text).toContain('Claude Code')
+    expect(text).toContain('claude-sonnet-4-6')
+  })
+
   it('exports csv with input and output unit price columns', async () => {
     const exportedLogs = [
       {
