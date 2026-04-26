@@ -1210,6 +1210,16 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 		if line != "" && sseDataPrefix.MatchString(line) {
 			jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 
+			if jsonStr == "[DONE]" {
+				if completedSeen {
+					return applyExpectedOutputCheck()
+				}
+				if triggered, errResult := applyStreamErrorText(); triggered {
+					return errResult
+				}
+				return s.sendErrorAndEnd(c, "Stream ended before response.completed")
+			}
+
 			if jsonStr != "" && jsonStr != "[DONE]" {
 				var data map[string]any
 				if jsonErr := json.Unmarshal([]byte(jsonStr), &data); jsonErr == nil {
@@ -1224,9 +1234,19 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 						if !isEOF {
 							continue
 						}
-					case "response.completed":
+					case "response.completed", "response.done":
 						completedSeen = true
 						return applyExpectedOutputCheck()
+					case "response.failed":
+						errorMsg := "OpenAI response failed"
+						if responseData, ok := data["response"].(map[string]any); ok {
+							if errData, ok := responseData["error"].(map[string]any); ok {
+								if msg, ok := errData["message"].(string); ok && msg != "" {
+									errorMsg = msg
+								}
+							}
+						}
+						return s.sendErrorAndEnd(c, errorMsg)
 					case "error":
 						errorMsg := "Unknown error"
 						errorCode := ""
@@ -1265,7 +1285,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 			if triggered, errResult := applyStreamErrorText(); triggered {
 				return errResult
 			}
-			return applyExpectedOutputCheck()
+			return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 		}
 	}
 }
