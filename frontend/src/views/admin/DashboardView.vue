@@ -706,6 +706,25 @@
                 </div>
 
                 <div v-if="teamInsights && hasTeamInsightsData" class="space-y-5">
+                  <div v-if="teamSignalTips.length" class="grid grid-cols-1 gap-2">
+                    <div
+                      v-for="tip in teamSignalTips"
+                      :key="tip.title"
+                      class="rounded-2xl border px-3 py-2 text-xs"
+                      :class="teamSignalToneClass(tip.tone)"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="font-semibold">{{ tip.title }}</p>
+                          <p class="mt-1 leading-5 opacity-80">{{ tip.description }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-white/50 px-2 py-0.5 text-[10px] font-semibold dark:bg-black/20">
+                          {{ tip.badge }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="grid grid-cols-2 gap-2">
                     <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                       <p class="text-xs text-gray-500 dark:text-gray-400">团队缓存率</p>
@@ -1477,6 +1496,82 @@ const teamClientItems = computed(() => teamInsights.value?.client_distribution?.
 const teamProfileItems = computed(() => teamInsights.value?.member_profiles?.slice(0, 4) || [])
 const teamCacheItems = computed(() => teamInsights.value?.cache_efficiency?.slice(0, 5) || [])
 const teamSessionItems = computed(() => teamInsights.value?.sessions?.slice(0, 5) || [])
+
+type TeamSignalTip = {
+  title: string
+  description: string
+  badge: string
+  tone: 'blue' | 'emerald' | 'amber' | 'violet'
+}
+
+const teamSignalTips = computed<TeamSignalTip[]>(() => {
+  if (!hasTeamInsightsData.value || !teamInsights.value) return []
+
+  const tips: TeamSignalTip[] = []
+  const topMember = teamProfileItems.value[0]
+  const topClient = teamClientItems.value[0]
+  const cacheShare = teamInsights.value.cache_share || 0
+  const latestSession = teamSessionItems.value[0]
+
+  if (topMember) {
+    const concentrated = topMember.token_share >= 0.55
+    tips.push({
+      title: concentrated ? '成员用量集中' : '最高贡献成员',
+      description: `${memberDisplayName(topMember)} 占团队 ${formatPercent(topMember.token_share)}，主要使用 ${topMember.top_model || '-'}。`,
+      badge: formatTokens(topMember.total_tokens),
+      tone: concentrated ? 'amber' : 'blue'
+    })
+  }
+
+  if (topClient) {
+    tips.push({
+      title: '主要客户端',
+      description: `${topClient.client || 'Unknown'} 覆盖 ${formatNumber(topClient.member_count)} 名成员，占 ${formatPercent(topClient.token_share)} 用量。`,
+      badge: formatTokens(topClient.total_tokens),
+      tone: 'violet'
+    })
+  }
+
+  if (cacheShare >= 0.45) {
+    tips.push({
+      title: '缓存效率健康',
+      description: `团队缓存占比 ${formatPercent(cacheShare)}，长上下文复用情况较好。`,
+      badge: formatTokens(teamInsights.value.cache_tokens),
+      tone: 'emerald'
+    })
+  } else if (cacheShare > 0) {
+    tips.push({
+      title: '缓存效率可优化',
+      description: `团队缓存占比 ${formatPercent(cacheShare)}，建议关注高频提示词和上下文复用策略。`,
+      badge: formatTokens(teamInsights.value.cache_tokens),
+      tone: 'amber'
+    })
+  }
+
+  if (latestSession && tips.length < 3) {
+    tips.push({
+      title: '最近活跃会话',
+      description: `${sessionDisplayName(latestSession)} 通过 ${latestSession.client || 'Unknown'} 使用 ${latestSession.model || '-'}。`,
+      badge: formatCompactDateTime(latestSession.last_seen),
+      tone: 'emerald'
+    })
+  }
+
+  return tips.slice(0, 3)
+})
+
+const teamSignalToneClass = (tone: TeamSignalTip['tone']): string => {
+  switch (tone) {
+    case 'amber':
+      return 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    case 'emerald':
+      return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+    case 'violet':
+      return 'border-violet-400/30 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+    default:
+      return 'border-blue-400/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+  }
+}
 
 type MatrixMember = {
   user_id: number

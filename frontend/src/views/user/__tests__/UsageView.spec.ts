@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { query, getStatsByDateRange, getDashboardSelfInsights, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
+const { query, getStatsByDateRange, getDashboardSelfInsights, list, showError, showWarning, showSuccess, showInfo, copyToClipboard } = vi.hoisted(() => ({
   query: vi.fn(),
   getStatsByDateRange: vi.fn(),
   getDashboardSelfInsights: vi.fn(),
@@ -13,6 +13,7 @@ const { query, getStatsByDateRange, getDashboardSelfInsights, list, showError, s
   showWarning: vi.fn(),
   showSuccess: vi.fn(),
   showInfo: vi.fn(),
+  copyToClipboard: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
@@ -59,6 +60,10 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
 }))
 
+vi.mock('@/composables/useClipboard', () => ({
+  useClipboard: () => ({ copyToClipboard }),
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -84,6 +89,8 @@ describe('user UsageView tooltip', () => {
     showWarning.mockReset()
     showSuccess.mockReset()
     showInfo.mockReset()
+    copyToClipboard.mockReset()
+    copyToClipboard.mockResolvedValue(true)
 
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       x: 0,
@@ -354,6 +361,12 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('缓存仍可优化')
     expect(text).toContain('Claude Code')
     expect(text).toContain('claude-sonnet-4-6')
+
+    await wrapper.find('button[title="复制个人使用洞察摘要"]').trigger('click')
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      expect.stringContaining('个人使用洞察'),
+      '洞察摘要已复制'
+    )
   })
 
   it('exports csv with input and output unit price columns', async () => {

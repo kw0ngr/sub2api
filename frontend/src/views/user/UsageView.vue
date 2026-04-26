@@ -95,9 +95,20 @@
                   </p>
                   <h3 class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">个人使用洞察</h3>
                 </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  基于当前时间范围，优先提示模型、工具、缓存和会话变化。
-                </p>
+                <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    基于当前时间范围，优先提示模型、工具、缓存和会话变化。
+                  </p>
+                  <button
+                    type="button"
+                    class="self-insight-copy"
+                    title="复制个人使用洞察摘要"
+                    :disabled="!selfInsightSummary"
+                    @click="copySelfInsightSummary"
+                  >
+                    复制摘要
+                  </button>
+                </div>
               </div>
               <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div
@@ -737,6 +748,7 @@ import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, SelfUsageI
 import type { Column } from '@/components/common/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useClipboard } from '@/composables/useClipboard'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
@@ -745,6 +757,7 @@ import { getBillingModeLabel, getBillingModeBadgeClass } from '@/utils/billingMo
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 let abortController: AbortController | null = null
 
@@ -984,6 +997,20 @@ const selfInsightTips = computed<SelfInsightTip[]>(() => {
 
   return tips.slice(0, 3)
 })
+
+const selfInsightSummary = computed(() => {
+  if (!selfInsightTips.value.length || !selfInsights.value) return ''
+  const dateRange = `${filters.value.start_date || startDate.value} ~ ${filters.value.end_date || endDate.value}`
+  return [
+    `个人使用洞察（${dateRange}）`,
+    `请求 ${selfInsights.value.total_requests.toLocaleString()} / Token ${formatTokens(selfInsights.value.total_tokens)} / 缓存 ${formatPercent(selfInsights.value.cache_share)}`,
+    ...selfInsightTips.value.map((tip) => `- ${tip.title}: ${tip.description}`)
+  ].join('\n')
+})
+
+const copySelfInsightSummary = async () => {
+  await copyToClipboard(selfInsightSummary.value, '洞察摘要已复制')
+}
 
 type UsageTableQueryParams = UsageQueryParams & {
   sort_by?: string
@@ -1387,6 +1414,42 @@ onMounted(() => {
 .self-insight-tip-violet .self-insight-tip-dot {
   background: rgb(139 92 246);
   box-shadow: 0 0 0 4px rgb(139 92 246 / 0.12);
+}
+
+.self-insight-copy {
+  border-radius: 9999px;
+  border: 1px solid rgb(147 197 253 / 0.56);
+  background: rgb(239 246 255 / 0.82);
+  padding: 0.3rem 0.7rem;
+  color: rgb(37 99 235);
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease;
+}
+
+.self-insight-copy:hover:not(:disabled) {
+  border-color: rgb(96 165 250 / 0.86);
+  background: rgb(219 234 254 / 0.92);
+  transform: translateY(-1px);
+}
+
+.self-insight-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.dark .self-insight-copy {
+  border-color: rgb(59 130 246 / 0.34);
+  background: rgb(30 41 59 / 0.78);
+  color: rgb(147 197 253);
+}
+
+.dark .self-insight-copy:hover:not(:disabled) {
+  border-color: rgb(96 165 250 / 0.52);
+  background: rgb(30 64 175 / 0.32);
 }
 
 .self-insight-metric,
