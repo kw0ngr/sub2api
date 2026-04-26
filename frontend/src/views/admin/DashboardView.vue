@@ -268,6 +268,197 @@
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
+          <!-- Project and Insight Widgets -->
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div class="card relative overflow-hidden p-4">
+              <div
+                v-if="chartsLoading"
+                class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+              >
+                <LoadingSpinner size="md" />
+              </div>
+              <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.dashboard.projectDistribution') }}
+              </h3>
+              <div v-if="projectStats.length" class="space-y-3">
+                <div v-for="project in topProjects" :key="project.project_key" class="space-y-1">
+                  <div class="flex items-center justify-between gap-3 text-xs">
+                    <span
+                      class="truncate font-medium text-gray-900 dark:text-white"
+                      :title="project.project_label"
+                    >
+                      {{ project.project_label || project.project_key }}
+                    </span>
+                    <span class="shrink-0 text-gray-500 dark:text-gray-400">
+                      {{ formatTokens(project.total_tokens) }}
+                    </span>
+                  </div>
+                  <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                    <div
+                      class="h-full rounded-full bg-cyan-500"
+                      :style="{ width: `${projectShare(project.total_tokens)}%` }"
+                    />
+                  </div>
+                </div>
+                <table class="mt-4 w-full text-xs">
+                  <thead>
+                    <tr class="text-gray-500 dark:text-gray-400">
+                      <th class="pb-2 text-left">{{ t('admin.dashboard.project') }}</th>
+                      <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
+                      <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="project in topProjects"
+                      :key="`row-${project.project_key}`"
+                      class="border-t border-gray-100 dark:border-gray-700"
+                    >
+                      <td
+                        class="max-w-[160px] truncate py-1.5 font-medium text-gray-900 dark:text-white"
+                        :title="project.project_label"
+                      >
+                        {{ project.project_label || project.project_key }}
+                      </td>
+                      <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
+                        {{ formatNumber(project.requests) }}
+                      </td>
+                      <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
+                        {{ formatTokens(project.total_tokens) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div
+                v-else
+                class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ t('admin.dashboard.noDataAvailable') }}
+              </div>
+            </div>
+
+            <div class="card relative overflow-hidden p-4">
+              <div
+                v-if="chartsLoading"
+                class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+              >
+                <LoadingSpinner size="md" />
+              </div>
+              <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.dashboard.usageInsights') }}
+              </h3>
+              <div
+                v-if="usageInsights && usageInsights.total_tokens > 0"
+                class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+              >
+                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.topModel') }}
+                  </p>
+                  <p
+                    class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                    :title="usageInsights.top_model"
+                  >
+                    {{ usageInsights.top_model || '-' }}
+                  </p>
+                  <p class="text-xs text-blue-600 dark:text-blue-400">
+                    {{ formatPercent(usageInsights.top_model_share) }} /
+                    {{ formatTokens(usageInsights.top_model_tokens) }}
+                  </p>
+                </div>
+                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.topProject') }}
+                  </p>
+                  <p
+                    class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                    :title="usageInsights.top_project_label"
+                  >
+                    {{ usageInsights.top_project_label || '-' }}
+                  </p>
+                  <p class="text-xs text-cyan-600 dark:text-cyan-400">
+                    {{ formatPercent(usageInsights.top_project_share) }} /
+                    {{ formatTokens(usageInsights.top_project_tokens) }}
+                  </p>
+                </div>
+                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.cacheShare') }}
+                  </p>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ formatPercent(usageInsights.cache_share) }}
+                  </p>
+                  <p class="text-xs text-amber-600 dark:text-amber-400">
+                    {{ formatTokens(usageInsights.cache_tokens) }}
+                  </p>
+                </div>
+                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.variety') }}
+                  </p>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
+                    {{ usageInsights.project_count }} {{ t('admin.dashboard.project') }}
+                  </p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
+                  </p>
+                </div>
+              </div>
+              <div
+                v-else
+                class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ t('admin.dashboard.noDataAvailable') }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Hourly Activity Heatmap -->
+          <div class="card relative overflow-hidden p-4">
+            <div
+              v-if="chartsLoading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <LoadingSpinner size="md" />
+            </div>
+            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.dashboard.hourlyActivity') }}
+            </h3>
+            <div v-if="hourlyActivity.length" class="overflow-x-auto">
+              <div class="grid min-w-[720px] grid-cols-[48px_repeat(24,minmax(20px,1fr))] gap-1 text-[10px]">
+                <div />
+                <div
+                  v-for="hour in hours"
+                  :key="`h-${hour}`"
+                  class="text-center text-gray-400"
+                >
+                  {{ hour % 3 === 0 ? hour.toString().padStart(2, '0') : '' }}
+                </div>
+                <template v-for="weekday in weekdays" :key="`weekday-${weekday.value}`">
+                  <div class="flex items-center text-gray-500 dark:text-gray-400">
+                    {{ weekday.label }}
+                  </div>
+                  <div
+                    v-for="hour in hours"
+                    :key="`${weekday.value}-${hour}`"
+                    :data-testid="`admin-hourly-activity-cell-${weekday.value}-${hour}`"
+                    class="h-5 rounded"
+                    :class="heatmapCellClass(getHeatmapCell(weekday.value, hour)?.total_tokens || 0)"
+                    :title="heatmapTitle(weekday.value, hour)"
+                  />
+                </template>
+              </div>
+            </div>
+            <div
+              v-else
+              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+            >
+              {{ t('admin.dashboard.noDataAvailable') }}
+            </div>
+          </div>
+
           <!-- User Usage Trend (Full Width) -->
           <div class="card p-4">
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
@@ -304,6 +495,9 @@ import type {
   DashboardStats,
   TrendDataPoint,
   ModelStat,
+  ProjectStat,
+  UsageInsightSummary,
+  HourlyActivityHeatmapCell,
   UserUsageTrendPoint,
   UserSpendingRankingItem
 } from '@/types'
@@ -350,6 +544,9 @@ const rankingError = ref(false)
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
+const projectStats = ref<ProjectStat[]>([])
+const usageInsights = ref<UsageInsightSummary | null>(null)
+const hourlyActivity = ref<HourlyActivityHeatmapCell[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
@@ -372,6 +569,10 @@ const getLast24HoursRangeDates = (): { start: string; end: string } => {
     start: formatLocalDate(start),
     end: formatLocalDate(end)
   }
+}
+
+const dashboardTimezone = (): string | undefined => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
 }
 
 // Date range
@@ -537,15 +738,16 @@ const formatNumber = (value: number): string => {
   return value.toLocaleString()
 }
 
-const formatCost = (value: number): string => {
-  if (value >= 1000) {
-    return (value / 1000).toFixed(2) + 'K'
-  } else if (value >= 1) {
-    return value.toFixed(2)
-  } else if (value >= 0.01) {
-    return value.toFixed(3)
+const formatCost = (value: number | null | undefined): string => {
+  const safeValue = Number.isFinite(value) ? Number(value) : 0
+  if (safeValue >= 1000) {
+    return (safeValue / 1000).toFixed(2) + 'K'
+  } else if (safeValue >= 1) {
+    return safeValue.toFixed(2)
+  } else if (safeValue >= 0.01) {
+    return safeValue.toFixed(3)
   }
-  return value.toFixed(4)
+  return safeValue.toFixed(4)
 }
 
 const formatDuration = (ms: number): string => {
@@ -564,6 +766,43 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
       end_date: endDate.value
     }
   })
+}
+
+const topProjects = computed(() => projectStats.value.slice(0, 8))
+const totalProjectTokens = computed(() => topProjects.value.reduce((sum, project) => sum + project.total_tokens, 0))
+const projectShare = (tokens: number): number => {
+  if (totalProjectTokens.value <= 0) return 0
+  return Math.max(4, Math.round((tokens / totalProjectTokens.value) * 100))
+}
+const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+const hours = Array.from({ length: 24 }, (_, index) => index)
+const weekdays = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' }
+]
+const maxHourlyTokens = computed(() => Math.max(0, ...hourlyActivity.value.map((cell) => cell.total_tokens)))
+const getHeatmapCell = (weekday: number, hour: number) => {
+  return hourlyActivity.value.find((cell) => cell.weekday === weekday && cell.hour === hour)
+}
+const heatmapCellClass = (tokens: number): string => {
+  if (!tokens || maxHourlyTokens.value <= 0) return 'bg-gray-100 dark:bg-gray-800'
+  const ratio = tokens / maxHourlyTokens.value
+  if (ratio >= 0.75) return 'bg-emerald-600'
+  if (ratio >= 0.5) return 'bg-emerald-500'
+  if (ratio >= 0.25) return 'bg-emerald-400'
+  return 'bg-emerald-200 dark:bg-emerald-700'
+}
+const heatmapTitle = (weekday: number, hour: number): string => {
+  const cell = getHeatmapCell(weekday, hour)
+  const tokens = cell?.total_tokens || 0
+  const requests = cell?.requests || 0
+  return `${weekdays[weekday]?.label || weekday} ${hour.toString().padStart(2, '0')}:00 - ${formatTokens(tokens)} tokens - ${formatNumber(requests)} requests`
 }
 
 // Date range change handler
@@ -595,17 +834,53 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   }
   chartsLoading.value = true
   try {
-    const response = await adminAPI.dashboard.getSnapshotV2({
+    const params = {
       start_date: startDate.value,
-      end_date: endDate.value,
-      granularity: granularity.value,
-      include_stats: includeStats,
-      include_trend: true,
-      include_model_stats: true,
-      include_group_stats: false,
-      include_users_trend: false
-    })
+      end_date: endDate.value
+    }
+    const [snapshotResult, projectsResult, insightsResult, activityResult] = await Promise.allSettled([
+      adminAPI.dashboard.getSnapshotV2({
+        ...params,
+        granularity: granularity.value,
+        include_stats: includeStats,
+        include_trend: true,
+        include_model_stats: true,
+        include_group_stats: false,
+        include_users_trend: false
+      }),
+      adminAPI.dashboard.getProjectStats(params),
+      adminAPI.dashboard.getUsageInsights(params),
+      adminAPI.dashboard.getHourlyActivity({
+        ...params,
+        timezone: dashboardTimezone()
+      })
+    ])
+
     if (currentSeq !== chartLoadSeq) return
+    if (snapshotResult.status === 'rejected') {
+      throw snapshotResult.reason
+    }
+
+    const response = snapshotResult.value
+    if (projectsResult.status === 'fulfilled') {
+      projectStats.value = projectsResult.value.projects || []
+    } else {
+      projectStats.value = []
+      console.error('Error loading admin project stats:', projectsResult.reason)
+    }
+    if (insightsResult.status === 'fulfilled') {
+      usageInsights.value = insightsResult.value.insights || null
+    } else {
+      usageInsights.value = null
+      console.error('Error loading admin usage insights:', insightsResult.reason)
+    }
+    if (activityResult.status === 'fulfilled') {
+      hourlyActivity.value = activityResult.value.hourly_activity || []
+    } else {
+      hourlyActivity.value = []
+      console.error('Error loading admin hourly activity:', activityResult.reason)
+    }
+
     if (includeStats && response.stats) {
       stats.value = response.stats
     }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -179,6 +180,42 @@ func (s *DashboardService) GetProjectStatsWithFilters(ctx context.Context, start
 		return nil, fmt.Errorf("get project stats with filters: %w", err)
 	}
 	return stats, nil
+}
+
+func (s *DashboardService) GetUsageInsightsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) (*usagestats.UsageInsightSummary, error) {
+	models, err := s.GetModelStatsWithFilters(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.GetProjectStatsWithFilters(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
+	if err != nil {
+		return nil, err
+	}
+
+	return BuildUsageInsightSummary(filterModelStatsByName(models, model), projects), nil
+}
+
+func filterModelStatsByName(models []usagestats.ModelStat, model string) []usagestats.ModelStat {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return models
+	}
+
+	filtered := make([]usagestats.ModelStat, 0, len(models))
+	for _, item := range models {
+		if item.Model == model {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func (s *DashboardService) GetHourlyActivityWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, userTZ string) ([]usagestats.HourlyActivityHeatmapCell, error) {
+	trend, err := s.GetUsageTrendWithFilters(ctx, startTime, endTime, "hour", userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
+	if err != nil {
+		return nil, err
+	}
+	return BuildHourlyActivityHeatmap(trend, usageDashboardLocation(userTZ)), nil
 }
 
 // GetGroupUsageSummary returns today's and cumulative cost for all groups.

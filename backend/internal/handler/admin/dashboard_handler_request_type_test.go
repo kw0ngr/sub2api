@@ -20,6 +20,8 @@ type dashboardUsageRepoCapture struct {
 	modelRequestType *int16
 	modelStream      *bool
 	projectUserID    int64
+	insightUserID    int64
+	heatmapUserID    int64
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
@@ -37,6 +39,9 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 ) ([]usagestats.TrendDataPoint, error) {
 	s.trendRequestType = requestType
 	s.trendStream = stream
+	if granularity == "hour" && userID > 0 {
+		s.heatmapUserID = userID
+	}
 	return []usagestats.TrendDataPoint{}, nil
 }
 
@@ -50,6 +55,9 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 ) ([]usagestats.ModelStat, error) {
 	s.modelRequestType = requestType
 	s.modelStream = stream
+	if userID > 0 {
+		s.insightUserID = userID
+	}
 	return []usagestats.ModelStat{}, nil
 }
 
@@ -93,6 +101,8 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
 	router.GET("/admin/dashboard/projects", handler.GetProjectStats)
+	router.GET("/admin/dashboard/insights", handler.GetUsageInsights)
+	router.GET("/admin/dashboard/hourly-activity", handler.GetHourlyActivity)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }
@@ -159,6 +169,35 @@ func TestDashboardProjectStats(t *testing.T) {
 	require.Equal(t, int64(42), repo.projectUserID)
 	require.Contains(t, rec.Body.String(), `"projects"`)
 	require.Contains(t, rec.Body.String(), `"project_label":"internal-tools"`)
+}
+
+func TestDashboardUsageInsights(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/insights?user_id=42", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.insightUserID)
+	require.Contains(t, rec.Body.String(), `"insights"`)
+	require.Contains(t, rec.Body.String(), `"top_project_label":"internal-tools"`)
+}
+
+func TestDashboardHourlyActivity(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/hourly-activity?user_id=42&timezone=Asia/Shanghai", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.heatmapUserID)
+	require.Contains(t, rec.Body.String(), `"hourly_activity"`)
+	require.Contains(t, rec.Body.String(), `"weekday":0`)
+	require.Contains(t, rec.Body.String(), `"hour":0`)
 }
 
 func TestDashboardModelStatsInvalidRequestType(t *testing.T) {

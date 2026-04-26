@@ -102,6 +102,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"total_tokens":                stats.TotalTokens,
 		"total_cost":                  stats.TotalCost,       // 标准计费
 		"total_actual_cost":           stats.TotalActualCost, // 实际扣除
+		"total_account_cost":          stats.TotalAccountCost,
 
 		// 今日 Token 使用统计
 		"today_requests":              stats.TodayRequests,
@@ -112,6 +113,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"today_tokens":                stats.TodayTokens,
 		"today_cost":                  stats.TodayCost,       // 今日标准计费
 		"today_actual_cost":           stats.TodayActualCost, // 今日实际扣除
+		"today_account_cost":          stats.TodayAccountCost,
 
 		// 系统运行统计
 		"average_duration_ms": stats.AverageDurationMs,
@@ -131,6 +133,68 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 type DashboardAggregationBackfillRequest struct {
 	Start string `json:"start"`
 	End   string `json:"end"`
+}
+
+type dashboardUsageFilters struct {
+	userID      int64
+	apiKeyID    int64
+	accountID   int64
+	groupID     int64
+	model       string
+	requestType *int16
+	stream      *bool
+	billingType *int8
+}
+
+func parseDashboardUsageFilters(c *gin.Context) (dashboardUsageFilters, error) {
+	var filters dashboardUsageFilters
+
+	if userIDStr := c.Query("user_id"); userIDStr != "" {
+		if id, err := strconv.ParseInt(userIDStr, 10, 64); err == nil {
+			filters.userID = id
+		}
+	}
+	if apiKeyIDStr := c.Query("api_key_id"); apiKeyIDStr != "" {
+		if id, err := strconv.ParseInt(apiKeyIDStr, 10, 64); err == nil {
+			filters.apiKeyID = id
+		}
+	}
+	if accountIDStr := c.Query("account_id"); accountIDStr != "" {
+		if id, err := strconv.ParseInt(accountIDStr, 10, 64); err == nil {
+			filters.accountID = id
+		}
+	}
+	if groupIDStr := c.Query("group_id"); groupIDStr != "" {
+		if id, err := strconv.ParseInt(groupIDStr, 10, 64); err == nil {
+			filters.groupID = id
+		}
+	}
+	filters.model = strings.TrimSpace(c.Query("model"))
+
+	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {
+		parsed, err := service.ParseUsageRequestType(requestTypeStr)
+		if err != nil {
+			return filters, err
+		}
+		value := int16(parsed)
+		filters.requestType = &value
+	} else if streamStr := c.Query("stream"); streamStr != "" {
+		streamVal, err := strconv.ParseBool(streamStr)
+		if err != nil {
+			return filters, errors.New("Invalid stream value, use true or false")
+		}
+		filters.stream = &streamVal
+	}
+	if billingTypeStr := c.Query("billing_type"); billingTypeStr != "" {
+		v, err := strconv.ParseInt(billingTypeStr, 10, 8)
+		if err != nil {
+			return filters, errors.New("Invalid billing_type")
+		}
+		bt := int8(v)
+		filters.billingType = &bt
+	}
+
+	return filters, nil
 }
 
 // BackfillAggregation handles triggering aggregation backfill
@@ -495,6 +559,79 @@ func (h *DashboardHandler) GetProjectStats(c *gin.Context) {
 		"projects":   stats,
 		"start_date": startTime.Format("2006-01-02"),
 		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// GetUsageInsights handles getting lightweight dashboard insight metrics.
+// GET /api/v1/admin/dashboard/insights
+// Query params: start_date, end_date (YYYY-MM-DD), user_id, api_key_id, account_id, group_id, model, request_type, stream, billing_type
+func (h *DashboardHandler) GetUsageInsights(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	filters, err := parseDashboardUsageFilters(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	insights, err := h.dashboardService.GetUsageInsightsWithFilters(
+		c.Request.Context(),
+		startTime,
+		endTime,
+		filters.userID,
+		filters.apiKeyID,
+		filters.accountID,
+		filters.groupID,
+		filters.model,
+		filters.requestType,
+		filters.stream,
+		filters.billingType,
+	)
+	if err != nil {
+		response.Error(c, 500, "Failed to get usage insights")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"insights":   insights,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// GetHourlyActivity handles getting hourly usage grouped into a 7x24 heatmap.
+// GET /api/v1/admin/dashboard/hourly-activity
+// Query params: start_date, end_date (YYYY-MM-DD), timezone, user_id, api_key_id, account_id, group_id, model, request_type, stream, billing_type
+func (h *DashboardHandler) GetHourlyActivity(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	filters, err := parseDashboardUsageFilters(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	activity, err := h.dashboardService.GetHourlyActivityWithFilters(
+		c.Request.Context(),
+		startTime,
+		endTime,
+		filters.userID,
+		filters.apiKeyID,
+		filters.accountID,
+		filters.groupID,
+		filters.model,
+		filters.requestType,
+		filters.stream,
+		filters.billingType,
+		c.Query("timezone"),
+	)
+	if err != nil {
+		response.Error(c, 500, "Failed to get hourly activity")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"hourly_activity": activity,
+		"start_date":      startTime.Format("2006-01-02"),
+		"end_date":        endTime.Add(-24 * time.Hour).Format("2006-01-02"),
 	})
 }
 

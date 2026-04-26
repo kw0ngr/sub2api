@@ -4,10 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getProjectStats, getUsageInsights, getHourlyActivity } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
-  getUserSpendingRanking: vi.fn()
+  getUserSpendingRanking: vi.fn(),
+  getProjectStats: vi.fn(),
+  getUsageInsights: vi.fn(),
+  getHourlyActivity: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -15,7 +18,10 @@ vi.mock('@/api/admin', () => ({
     dashboard: {
       getSnapshotV2,
       getUserUsageTrend,
-      getUserSpendingRanking
+      getUserSpendingRanking,
+      getProjectStats,
+      getUsageInsights,
+      getHourlyActivity
     }
   }
 }))
@@ -71,6 +77,7 @@ const createDashboardStats = (): DashboardStats => ({
   total_tokens: 0,
   total_cost: 0,
   total_actual_cost: 0,
+  total_account_cost: 0,
   today_requests: 0,
   today_input_tokens: 0,
   today_output_tokens: 0,
@@ -79,6 +86,7 @@ const createDashboardStats = (): DashboardStats => ({
   today_tokens: 0,
   today_cost: 0,
   today_actual_cost: 0,
+  today_account_cost: 0,
   average_duration_ms: 0,
   uptime: 0,
   rpm: 0,
@@ -90,6 +98,9 @@ describe('admin DashboardView', () => {
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
     getUserSpendingRanking.mockReset()
+    getProjectStats.mockReset()
+    getUsageInsights.mockReset()
+    getHourlyActivity.mockReset()
 
     getSnapshotV2.mockResolvedValue({
       stats: createDashboardStats(),
@@ -107,6 +118,66 @@ describe('admin DashboardView', () => {
       total_actual_cost: 0,
       total_requests: 0,
       total_tokens: 0,
+      start_date: '',
+      end_date: ''
+    })
+    getProjectStats.mockResolvedValue({
+      projects: [{
+        project_key: 'p1',
+        project_label: 'internal-tools',
+        requests: 2,
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        total_tokens: 15,
+        cost: 0,
+        actual_cost: 0,
+        account_cost: 0
+      }],
+      start_date: '',
+      end_date: ''
+    })
+    getUsageInsights.mockResolvedValue({
+      insights: {
+        requests: 2,
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        cache_tokens: 0,
+        total_tokens: 15,
+        input_share: 0.6667,
+        output_share: 0.3333,
+        cache_creation_share: 0,
+        cache_read_share: 0,
+        cache_share: 0,
+        model_count: 1,
+        project_count: 1,
+        top_model: 'gpt-5.1',
+        top_model_tokens: 15,
+        top_model_share: 1,
+        top_project_key: 'p1',
+        top_project_label: 'internal-tools',
+        top_project_tokens: 15,
+        top_project_share: 1
+      },
+      start_date: '',
+      end_date: ''
+    })
+    getHourlyActivity.mockResolvedValue({
+      hourly_activity: Array.from({ length: 168 }, (_, index) => ({
+        weekday: Math.floor(index / 24),
+        hour: index % 24,
+        requests: index === 9 ? 2 : 0,
+        input_tokens: index === 9 ? 10 : 0,
+        output_tokens: index === 9 ? 5 : 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        total_tokens: index === 9 ? 15 : 0,
+        cost: 0,
+        actual_cost: 0
+      })),
       start_date: '',
       end_date: ''
     })
@@ -139,5 +210,33 @@ describe('admin DashboardView', () => {
       end_date: formatLocalDate(now),
       granularity: 'hour'
     }))
+  })
+
+  it('renders admin project insights and hourly activity widgets', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getProjectStats).toHaveBeenCalledTimes(1)
+    expect(getUsageInsights).toHaveBeenCalledTimes(1)
+    expect(getHourlyActivity).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('admin.dashboard.projectDistribution')
+    expect(wrapper.text()).toContain('internal-tools')
+    expect(wrapper.text()).toContain('admin.dashboard.usageInsights')
+    expect(wrapper.text()).toContain('gpt-5.1')
+    expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
 })

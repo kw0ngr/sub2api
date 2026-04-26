@@ -9,6 +9,8 @@ import type {
   TrendDataPoint,
   ModelStat,
   ProjectStat,
+  UsageInsightSummary,
+  HourlyActivityHeatmapCell,
   GroupStat,
   ApiKeyUsageTrendPoint,
   UserUsageTrendPoint,
@@ -143,6 +145,22 @@ export interface ProjectStatsResponse {
   end_date: string
 }
 
+export interface UsageInsightsResponse {
+  insights: UsageInsightSummary
+  start_date: string
+  end_date: string
+}
+
+export interface HourlyActivityParams extends ProjectStatsParams {
+  timezone?: string
+}
+
+export interface HourlyActivityResponse {
+  hourly_activity: HourlyActivityHeatmapCell[]
+  start_date: string
+  end_date: string
+}
+
 export interface DashboardSnapshotV2Params extends TrendParams {
   include_stats?: boolean
   include_trend?: boolean
@@ -180,6 +198,20 @@ export async function getGroupStats(params?: GroupStatsParams): Promise<GroupSta
 
 export async function getProjectStats(params?: ProjectStatsParams): Promise<ProjectStatsResponse> {
   const { data } = await apiClient.get<ProjectStatsResponse>('/admin/dashboard/projects', { params })
+  return data
+}
+
+export async function getUsageInsights(params?: ProjectStatsParams): Promise<UsageInsightsResponse> {
+  const { data } = await apiClient.get<UsageInsightsResponse>('/admin/dashboard/insights', { params })
+  return data
+}
+
+export async function getHourlyActivity(
+  params?: HourlyActivityParams
+): Promise<HourlyActivityResponse> {
+  const { data } = await apiClient.get<HourlyActivityResponse>('/admin/dashboard/hourly-activity', {
+    params
+  })
   return data
 }
 
@@ -347,6 +379,8 @@ export const dashboardAPI = {
   getModelStats,
   getGroupStats,
   getProjectStats,
+  getUsageInsights,
+  getHourlyActivity,
   getSnapshotV2,
   getApiKeyUsageTrend,
   getUserUsageTrend,
