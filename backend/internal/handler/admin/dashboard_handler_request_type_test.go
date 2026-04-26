@@ -15,16 +15,17 @@ import (
 
 type dashboardUsageRepoCapture struct {
 	service.UsageLogRepository
-	trendRequestType *int16
-	trendStream      *bool
-	modelRequestType *int16
-	modelStream      *bool
-	projectUserID    int64
-	insightUserID    int64
-	heatmapUserID    int64
-	rankingLimit     int
-	ranking          []usagestats.UserSpendingRankingItem
-	rankingTotal     float64
+	trendRequestType  *int16
+	trendStream       *bool
+	modelRequestType  *int16
+	modelStream       *bool
+	projectUserID     int64
+	insightUserID     int64
+	heatmapUserID     int64
+	rankingLimit      int
+	ranking           []usagestats.UserSpendingRankingItem
+	rankingTotal      float64
+	rankingTotalUsers int64
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -90,6 +91,7 @@ func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 		TotalActualCost: s.rankingTotal,
 		TotalRequests:   44,
 		TotalTokens:     1234,
+		TotalUsers:      s.rankingTotalUsers,
 	}, nil
 }
 
@@ -250,7 +252,8 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 		ranking: []usagestats.UserSpendingRankingItem{
 			{UserID: 7, Email: "rank@example.com", ActualCost: 10.5, Requests: 3, Tokens: 300},
 		},
-		rankingTotal: 88.8,
+		rankingTotal:      88.8,
+		rankingTotalUsers: 3,
 	}
 	router := newDashboardRequestTypeTestRouter(repo)
 
@@ -263,6 +266,7 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "\"total_actual_cost\":88.8")
 	require.Contains(t, rec.Body.String(), "\"total_requests\":44")
 	require.Contains(t, rec.Body.String(), "\"total_tokens\":1234")
+	require.Contains(t, rec.Body.String(), "\"total_users\":3")
 	require.Equal(t, "miss", rec.Header().Get("X-Snapshot-Cache"))
 
 	req2 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/users-ranking?limit=100&start_date=2025-01-01&end_date=2025-01-02", nil)

@@ -2319,9 +2319,10 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 				tokens,
 				COALESCE(SUM(actual_cost) OVER (), 0) as total_actual_cost,
 				COALESCE(SUM(requests) OVER (), 0) as total_requests,
-				COALESCE(SUM(tokens) OVER (), 0) as total_tokens
+				COALESCE(SUM(tokens) OVER (), 0) as total_tokens,
+				COUNT(*) OVER () as total_users
 			FROM user_spend
-			ORDER BY actual_cost DESC, tokens DESC, user_id ASC
+			ORDER BY tokens DESC, actual_cost DESC, user_id ASC
 			LIMIT $3
 		)
 		SELECT
@@ -2332,9 +2333,10 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			tokens,
 			total_actual_cost,
 			total_requests,
-			total_tokens
+			total_tokens,
+			total_users
 		FROM ranked
-		ORDER BY actual_cost DESC, tokens DESC, user_id ASC
+		ORDER BY tokens DESC, actual_cost DESC, user_id ASC
 	`
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit)
@@ -2352,9 +2354,10 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 	totalActualCost := 0.0
 	totalRequests := int64(0)
 	totalTokens := int64(0)
+	totalUsers := int64(0)
 	for rows.Next() {
 		var row UserSpendingRankingItem
-		if err = rows.Scan(&row.UserID, &row.Email, &row.ActualCost, &row.Requests, &row.Tokens, &totalActualCost, &totalRequests, &totalTokens); err != nil {
+		if err = rows.Scan(&row.UserID, &row.Email, &row.ActualCost, &row.Requests, &row.Tokens, &totalActualCost, &totalRequests, &totalTokens, &totalUsers); err != nil {
 			return nil, err
 		}
 		ranking = append(ranking, row)
@@ -2368,6 +2371,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 		TotalActualCost: totalActualCost,
 		TotalRequests:   totalRequests,
 		TotalTokens:     totalTokens,
+		TotalUsers:      totalUsers,
 	}, nil
 }
 

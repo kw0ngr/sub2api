@@ -114,10 +114,23 @@ describe('admin DashboardView', () => {
       granularity: 'hour'
     })
     getUserSpendingRanking.mockResolvedValue({
-      ranking: [],
-      total_actual_cost: 0,
-      total_requests: 0,
-      total_tokens: 0,
+      ranking: [{
+        user_id: 2,
+        email: 'alice@example.com',
+        actual_cost: 1.2,
+        requests: 8,
+        tokens: 900
+      }, {
+        user_id: 3,
+        email: 'bob@example.com',
+        actual_cost: 0.4,
+        requests: 4,
+        tokens: 100
+      }],
+      total_actual_cost: 1.6,
+      total_requests: 12,
+      total_tokens: 1000,
+      total_users: 2,
       start_date: '',
       end_date: ''
     })
@@ -212,7 +225,7 @@ describe('admin DashboardView', () => {
     }))
   })
 
-  it('renders admin project insights and hourly activity widgets', async () => {
+  it('renders admin member insights and hourly activity widgets', async () => {
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
@@ -230,11 +243,14 @@ describe('admin DashboardView', () => {
 
     await flushPromises()
 
-    expect(getProjectStats).toHaveBeenCalledTimes(1)
+    expect(getProjectStats).not.toHaveBeenCalled()
     expect(getUsageInsights).toHaveBeenCalledTimes(1)
     expect(getHourlyActivity).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('admin.dashboard.projectDistribution')
-    expect(wrapper.text()).toContain('internal-tools')
+    expect(wrapper.text()).toContain('admin.dashboard.userDistribution')
+    expect(wrapper.text()).toContain('admin.dashboard.memberContribution')
+    expect(wrapper.text()).toContain('admin.dashboard.topMember')
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.text()).not.toContain('admin.dashboard.projectDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
     expect(wrapper.text()).toContain('admin.dashboard.usageInsights')
     expect(wrapper.text()).toContain('admin.dashboard.peakActivity')
@@ -242,7 +258,7 @@ describe('admin DashboardView', () => {
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
 
-  it('renders unattributed project bucket with localized label', async () => {
+  it('keeps unattributed project data out of the admin team summary', async () => {
     getProjectStats.mockResolvedValueOnce({
       projects: [{
         project_key: '__unattributed__',
@@ -305,10 +321,12 @@ describe('admin DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.dashboard.unattributedProject')
-    expect(wrapper.text()).toContain('admin.dashboard.attributionQuality')
-    expect(wrapper.text()).toContain('admin.dashboard.attributedShare')
-    expect(wrapper.text()).toContain('admin.dashboard.configureProjectHint')
+    expect(getProjectStats).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('admin.dashboard.userDistribution')
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.text()).not.toContain('admin.dashboard.unattributedProject')
+    expect(wrapper.text()).not.toContain('admin.dashboard.attributionQuality')
+    expect(wrapper.text()).not.toContain('admin.dashboard.configureProjectHint')
     expect(wrapper.text()).not.toContain('Unattributed')
   })
 
@@ -377,6 +395,7 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
     expect(wrapper.text()).toContain('admin.dashboard.cacheRead')
     expect(wrapper.text()).toContain('admin.dashboard.cacheCreation')
+    expect(wrapper.text()).toContain('admin.dashboard.topMember')
     expect(wrapper.text()).toContain('admin.dashboard.peakActivity')
     expect(wrapper.text()).toContain('Mon 10:00')
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-1-10"]').attributes('title')).toContain('1.00K')

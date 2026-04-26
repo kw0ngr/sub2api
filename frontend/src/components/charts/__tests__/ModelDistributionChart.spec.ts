@@ -5,13 +5,13 @@ import ModelDistributionChart from '../ModelDistributionChart.vue'
 
 const messages: Record<string, string> = {
   'admin.dashboard.modelDistribution': 'Model Distribution',
-  'admin.dashboard.spendingRankingTitle': 'User Spending Ranking',
+  'admin.dashboard.spendingRankingTitle': 'User Usage Ranking',
   'admin.dashboard.viewModelDistribution': 'Model Distribution',
-  'admin.dashboard.viewSpendingRanking': 'User Spending Ranking',
+  'admin.dashboard.viewSpendingRanking': 'User Usage Ranking',
   'admin.dashboard.spendingRankingUser': 'User',
   'admin.dashboard.spendingRankingRequests': 'Requests',
   'admin.dashboard.spendingRankingTokens': 'Tokens',
-  'admin.dashboard.spendingRankingSpend': 'Spend',
+  'admin.dashboard.spendingRankingSpend': 'Actual Cost',
   'admin.dashboard.spendingRankingOther': 'Others',
   'admin.dashboard.model': 'Model',
   'admin.dashboard.requests': 'Requests',
@@ -53,6 +53,7 @@ describe('ModelDistributionChart', () => {
       total_tokens: 1000,
       cost: 1.5,
       actual_cost: 0.2,
+      account_cost: 0.1,
     },
     {
       model: 'model-b',
@@ -64,6 +65,7 @@ describe('ModelDistributionChart', () => {
       total_tokens: 500,
       cost: 0.5,
       actual_cost: 1.4,
+      account_cost: 0.7,
     },
   ]
 
@@ -126,7 +128,7 @@ describe('ModelDistributionChart', () => {
     expect(label).toBe('model-b: $1.40 (87.5%)')
   })
 
-  it('renders Others in the spending ranking table and uses a dedicated chart color', async () => {
+  it('renders Others in the usage ranking table and charts token share', async () => {
     const wrapper = mount(ModelDistributionChart, {
       props: {
         modelStats: [],
@@ -146,7 +148,7 @@ describe('ModelDistributionChart', () => {
       },
     })
 
-    const rankingButton = wrapper.findAll('button').find((button) => button.text() === 'User Spending Ranking')
+    const rankingButton = wrapper.findAll('button').find((button) => button.text() === 'User Usage Ranking')
     expect(rankingButton).toBeTruthy()
     await rankingButton!.trigger('click')
 
@@ -156,7 +158,7 @@ describe('ModelDistributionChart', () => {
       '#2 beta@example.com',
       'Others',
     ])
-    expect(chartData.datasets[0].data).toEqual([12, 8, 10])
+    expect(chartData.datasets[0].data).toEqual([1000, 600, 400])
     expect(chartData.datasets[0].backgroundColor[0]).toBe('#3b82f6')
     expect(chartData.datasets[0].backgroundColor[2]).toBe('#94a3b8')
     expect(chartData.datasets[0].backgroundColor[2]).not.toBe(chartData.datasets[0].backgroundColor[0])

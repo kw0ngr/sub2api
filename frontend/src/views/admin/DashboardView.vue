@@ -268,110 +268,159 @@
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
-          <!-- Project and Insight Widgets -->
+          <!-- Team Member and Insight Widgets -->
           <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div class="card relative overflow-hidden p-4">
               <div
-                v-if="chartsLoading"
+                v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
               >
                 <LoadingSpinner size="md" />
               </div>
               <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-                {{
-                  onlyUnattributedProject
-                    ? t('admin.dashboard.attributionQuality')
-                    : t('admin.dashboard.projectDistribution')
-                }}
+                {{ t('admin.dashboard.userDistribution') }}
               </h3>
-              <div v-if="onlyUnattributedProject && unattributedProject" class="space-y-4">
-                <div class="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
-                  <div class="flex items-start justify-between gap-4">
-                    <div>
-                      <p class="text-xs font-medium uppercase tracking-wide text-amber-500 dark:text-amber-300">
-                        {{ t('admin.dashboard.unattributedProject') }}
-                      </p>
-                      <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-                        {{ formatTokens(unattributedProject.total_tokens) }}
-                      </p>
-                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {{ formatNumber(unattributedProject.requests) }}
-                        {{ t('admin.dashboard.requests') }}
-                      </p>
-                    </div>
-                    <div class="rounded-full border border-amber-400/30 px-3 py-2 text-right">
-                      <p class="text-lg font-bold text-amber-600 dark:text-amber-300">
-                        {{ formatPercent(attributedProjectShare) }}
-                      </p>
-                      <p class="text-[11px] text-gray-500 dark:text-gray-400">
-                        {{ t('admin.dashboard.attributedShare') }}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div class="rounded-xl border border-dashed border-gray-300 p-3 dark:border-gray-700">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.configureProjectHint') }}
-                  </p>
-                  <code class="mt-2 block rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                    X-Sub2API-Project: internal-tools
-                  </code>
-                </div>
+              <div
+                v-if="rankingError"
+                class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ t('admin.dashboard.failedToLoad') }}
               </div>
-              <div v-else-if="projectStats.length" class="space-y-3">
-                <div class="mb-2 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-800/70">
-                  <span class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.attributedShare') }}
-                  </span>
-                  <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ formatPercent(attributedProjectShare) }}
-                  </span>
-                </div>
-                <div v-for="project in topProjects" :key="project.project_key" class="space-y-1">
-                  <div class="flex items-center justify-between gap-3 text-xs">
-                    <span
-                      class="truncate font-medium text-gray-900 dark:text-white"
-                      :title="projectDisplayName(project)"
-                    >
-                      {{ projectDisplayName(project) }}
-                    </span>
-                    <span class="shrink-0 text-gray-500 dark:text-gray-400">
-                      {{ formatTokens(project.total_tokens) }}
-                    </span>
+              <div v-else-if="userContributionItems.length" class="space-y-4">
+                <button
+                  v-if="topUser"
+                  type="button"
+                  class="w-full rounded-2xl border border-blue-400/30 bg-blue-500/10 p-4 text-left transition-colors hover:border-blue-400/50 hover:bg-blue-500/15"
+                  @click="goToUserUsage(topUser)"
+                >
+                  <div class="flex items-start gap-3">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-500 text-sm font-bold text-white">
+                      {{ userInitials(topUser) }}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-medium uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                            #1 {{ t('admin.dashboard.topMember') }}
+                          </p>
+                          <p class="mt-1 truncate text-lg font-bold text-gray-900 dark:text-white" :title="userDisplayName(topUser)">
+                            {{ userDisplayName(topUser) }}
+                          </p>
+                        </div>
+                        <div class="shrink-0 rounded-full border border-blue-400/30 px-3 py-1.5 text-right">
+                          <p class="text-sm font-bold text-blue-600 dark:text-blue-300">
+                            {{ formatPercent(topUserTokenShare) }}
+                          </p>
+                          <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                            {{ t('admin.dashboard.topMemberShare') }}
+                          </p>
+                        </div>
+                      </div>
+                      <div class="mt-3 grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.tokens') }}</p>
+                          <p class="font-semibold text-gray-900 dark:text-white">{{ formatTokens(topUser.tokens) }}</p>
+                        </div>
+                        <div>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.requests') }}</p>
+                          <p class="font-semibold text-gray-900 dark:text-white">{{ formatNumber(topUser.requests) }}</p>
+                        </div>
+                      </div>
+                      <p class="mt-3 text-xs text-blue-600 dark:text-blue-300">
+                        {{ t('admin.dashboard.viewUserUsage') }}
+                      </p>
+                    </div>
                   </div>
-                  <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                    <div
-                      class="h-full rounded-full"
-                      :class="projectBarClass(project)"
-                      :style="{ width: `${projectShare(project.total_tokens)}%` }"
-                    />
+                </button>
+
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.activeMembers') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatNumber(activeUsageUserCount) }}
+                    </p>
+                  </div>
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.totalTeamTokens') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatTokens(rankingTotalTokens) }}
+                    </p>
+                  </div>
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.requests') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatNumber(rankingTotalRequests) }}
+                    </p>
                   </div>
                 </div>
-                <table class="mt-4 w-full text-xs">
+
+                <div class="space-y-2">
+                  <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.memberContribution') }}
+                  </p>
+                  <div
+                    v-for="(item, index) in userContributionItems"
+                    :key="item.isOther ? 'other-members' : `user-${item.user_id}`"
+                    class="space-y-1 rounded-lg px-2 py-1.5 transition-colors"
+                    :class="item.isOther ? 'bg-gray-50 dark:bg-gray-800/40' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50'"
+                    @click="item.isOther ? undefined : goToUserUsage(item)"
+                  >
+                    <div class="flex items-center justify-between gap-3 text-xs">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span class="w-6 shrink-0 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                          {{ item.isOther ? 'Σ' : `#${index + 1}` }}
+                        </span>
+                        <span class="truncate font-medium text-gray-900 dark:text-white" :title="contributionDisplayName(item)">
+                          {{ contributionDisplayName(item) }}
+                        </span>
+                      </div>
+                      <span class="shrink-0 text-gray-500 dark:text-gray-400">
+                        {{ formatPercent(userTokenShare(item.tokens)) }} / {{ formatTokens(item.tokens) }}
+                      </span>
+                    </div>
+                    <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                      <div
+                        class="h-full rounded-full"
+                        :class="userBarClass(index, item.isOther)"
+                        :style="{ width: `${userBarWidth(item.tokens)}%` }"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <table class="mt-2 w-full text-xs">
                   <thead>
                     <tr class="text-gray-500 dark:text-gray-400">
-                      <th class="pb-2 text-left">{{ t('admin.dashboard.project') }}</th>
+                      <th class="pb-2 text-left">{{ t('admin.dashboard.member') }}</th>
                       <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
                       <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr
-                      v-for="project in topProjects"
-                      :key="`row-${project.project_key}`"
-                      class="border-t border-gray-100 dark:border-gray-700"
+                      v-for="item in userContributionItems"
+                      :key="`row-${item.isOther ? 'other-members' : item.user_id}`"
+                      class="border-t border-gray-100 transition-colors dark:border-gray-700"
+                      :class="item.isOther ? '' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50'"
+                      @click="item.isOther ? undefined : goToUserUsage(item)"
                     >
                       <td
-                        class="max-w-[160px] truncate py-1.5 font-medium text-gray-900 dark:text-white"
-                        :title="projectDisplayName(project)"
+                        class="max-w-[180px] truncate py-1.5 font-medium text-gray-900 dark:text-white"
+                        :title="contributionDisplayName(item)"
                       >
-                        {{ projectDisplayName(project) }}
+                        {{ contributionDisplayName(item) }}
                       </td>
                       <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-                        {{ formatNumber(project.requests) }}
+                        {{ formatNumber(item.requests) }}
                       </td>
                       <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-                        {{ formatTokens(project.total_tokens) }}
+                        {{ formatTokens(item.tokens) }}
                       </td>
                     </tr>
                   </tbody>
@@ -458,17 +507,17 @@
                   </div>
                   <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.topProject') }}
+                      {{ t('admin.dashboard.topMember') }}
                     </p>
                     <p
                       class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                      :title="topProjectDisplayName"
+                      :title="topUserDisplayName"
                     >
-                      {{ topProjectDisplayName }}
+                      {{ topUserDisplayName }}
                     </p>
                     <p class="text-xs text-cyan-600 dark:text-cyan-400">
-                      {{ formatPercent(usageInsights.top_project_share) }} /
-                      {{ formatTokens(usageInsights.top_project_tokens) }}
+                      {{ formatPercent(topUserTokenShare) }} /
+                      {{ formatTokens(topUser?.tokens || 0) }}
                     </p>
                   </div>
                   <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
@@ -477,7 +526,7 @@
                     </p>
                     <p class="text-sm font-semibold text-gray-900 dark:text-white">
                       {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
-                      {{ usageInsights.project_count }} {{ t('admin.dashboard.project') }}
+                      {{ activeUsageUserCount }} {{ t('admin.dashboard.member') }}
                     </p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                       {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
@@ -597,7 +646,6 @@ import type {
   DashboardStats,
   TrendDataPoint,
   ModelStat,
-  ProjectStat,
   UsageInsightSummary,
   HourlyActivityHeatmapCell,
   UserUsageTrendPoint,
@@ -646,7 +694,6 @@ const rankingError = ref(false)
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
-const projectStats = ref<ProjectStat[]>([])
 const usageInsights = ref<UsageInsightSummary | null>(null)
 const hourlyActivity = ref<HourlyActivityHeatmapCell[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
@@ -654,6 +701,7 @@ const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
 const rankingTotalTokens = ref(0)
+const rankingTotalUsers = ref(0)
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let rankingLoadSeq = 0
@@ -870,48 +918,93 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
   })
 }
 
-const unattributedProjectKey = '__unattributed__'
-const projectDisplayName = (project: ProjectStat): string => {
-  if (project.project_key === unattributedProjectKey) {
-    return t('admin.dashboard.unattributedProject')
-  }
-  return project.project_label || project.project_key
+const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+type UserContributionItem = UserSpendingRankingItem & { isOther?: boolean }
+
+const userDisplayName = (item: Pick<UserSpendingRankingItem, 'user_id' | 'email'>): string => {
+  const email = item.email?.trim()
+  if (email) return email
+  return t('admin.redeem.userPrefix', { id: item.user_id })
 }
-const projectBarClass = (project: ProjectStat): string => {
-  return project.project_key === unattributedProjectKey
-    ? 'bg-amber-400 dark:bg-amber-500'
-    : 'bg-cyan-500'
+
+const userInitials = (item: Pick<UserSpendingRankingItem, 'user_id' | 'email'>): string => {
+  const name = userDisplayName(item)
+  const first = name.trim().charAt(0)
+  return first ? first.toUpperCase() : '#'
 }
-const topProjectDisplayName = computed(() => {
-  if (!usageInsights.value?.top_project_key) return '-'
-  if (usageInsights.value.top_project_key === unattributedProjectKey) {
-    return t('admin.dashboard.unattributedProject')
-  }
-  return usageInsights.value.top_project_label || usageInsights.value.top_project_key
+
+const rankedUserTokens = computed(() => {
+  return rankingItems.value.reduce((sum, item) => sum + item.tokens, 0)
 })
 
-const topProjects = computed(() => projectStats.value.slice(0, 8))
-const totalProjectTokens = computed(() => projectStats.value.reduce((sum, project) => sum + project.total_tokens, 0))
-const attributedProjectTokens = computed(() => {
-  return projectStats.value
-    .filter((project) => project.project_key !== unattributedProjectKey)
-    .reduce((sum, project) => sum + project.total_tokens, 0)
+const activeUsageUserCount = computed(() => {
+  return rankingTotalUsers.value || rankingItems.value.length
 })
-const attributedProjectShare = computed(() => {
-  if (totalProjectTokens.value <= 0) return 0
-  return attributedProjectTokens.value / totalProjectTokens.value
+
+const topUser = computed<UserSpendingRankingItem | null>(() => rankingItems.value[0] || null)
+
+const topUserDisplayName = computed(() => {
+  return topUser.value ? userDisplayName(topUser.value) : '-'
 })
-const unattributedProject = computed(() => {
-  return projectStats.value.find((project) => project.project_key === unattributedProjectKey) || null
-})
-const onlyUnattributedProject = computed(() => {
-  return projectStats.value.length === 1 && projectStats.value[0]?.project_key === unattributedProjectKey
-})
-const projectShare = (tokens: number): number => {
-  if (totalProjectTokens.value <= 0) return 0
-  return Math.max(4, Math.round((tokens / totalProjectTokens.value) * 100))
+
+const userTokenShare = (tokens: number): number => {
+  if (rankingTotalTokens.value <= 0) return 0
+  return tokens / rankingTotalTokens.value
 }
-const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+const userBarWidth = (tokens: number): number => {
+  if (rankingTotalTokens.value <= 0) return 0
+  return Math.max(4, Math.round(userTokenShare(tokens) * 100))
+}
+
+const topUserTokenShare = computed(() => {
+  return topUser.value ? userTokenShare(topUser.value.tokens) : 0
+})
+
+const otherUserContribution = computed<UserContributionItem | null>(() => {
+  const otherTokens = Math.max(rankingTotalTokens.value - rankedUserTokens.value, 0)
+  const otherRequests = Math.max(
+    rankingTotalRequests.value - rankingItems.value.reduce((sum, item) => sum + item.requests, 0),
+    0
+  )
+  const otherActualCost = Math.max(
+    rankingTotalActualCost.value - rankingItems.value.reduce((sum, item) => sum + item.actual_cost, 0),
+    0
+  )
+  if (otherTokens <= 0 && otherRequests <= 0 && otherActualCost <= 0.000001) return null
+  return {
+    user_id: 0,
+    email: '',
+    actual_cost: otherActualCost,
+    requests: otherRequests,
+    tokens: otherTokens,
+    isOther: true
+  }
+})
+
+const userContributionItems = computed<UserContributionItem[]>(() => {
+  const items: UserContributionItem[] = rankingItems.value.slice(0, rankingLimit)
+  return otherUserContribution.value ? [...items, otherUserContribution.value] : items
+})
+
+const contributionDisplayName = (item: UserContributionItem): string => {
+  if (item.isOther) return t('admin.dashboard.otherMembers')
+  return userDisplayName(item)
+}
+
+const userBarClass = (index: number, isOther?: boolean): string => {
+  if (isOther) return 'bg-slate-400 dark:bg-slate-500'
+  const colors = [
+    'bg-blue-500',
+    'bg-emerald-500',
+    'bg-amber-500',
+    'bg-violet-500',
+    'bg-pink-500',
+    'bg-cyan-500'
+  ]
+  return colors[index % colors.length]
+}
 
 const tokenCompositionSegments = computed(() => {
   const insight = usageInsights.value
@@ -1031,7 +1124,7 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
       start_date: startDate.value,
       end_date: endDate.value
     }
-    const [snapshotResult, projectsResult, insightsResult, activityResult] = await Promise.allSettled([
+    const [snapshotResult, insightsResult, activityResult] = await Promise.allSettled([
       adminAPI.dashboard.getSnapshotV2({
         ...params,
         granularity: granularity.value,
@@ -1041,7 +1134,6 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
         include_group_stats: false,
         include_users_trend: false
       }),
-      adminAPI.dashboard.getProjectStats(params),
       adminAPI.dashboard.getUsageInsights(params),
       adminAPI.dashboard.getHourlyActivity({
         ...params,
@@ -1055,12 +1147,6 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
     }
 
     const response = snapshotResult.value
-    if (projectsResult.status === 'fulfilled') {
-      projectStats.value = projectsResult.value.projects || []
-    } else {
-      projectStats.value = []
-      console.error('Error loading admin project stats:', projectsResult.reason)
-    }
     if (insightsResult.status === 'fulfilled') {
       usageInsights.value = insightsResult.value.insights || null
     } else {
@@ -1129,6 +1215,7 @@ const loadUserSpendingRanking = async () => {
     rankingTotalActualCost.value = response.total_actual_cost || 0
     rankingTotalRequests.value = response.total_requests || 0
     rankingTotalTokens.value = response.total_tokens || 0
+    rankingTotalUsers.value = response.total_users || rankingItems.value.length
   } catch (error) {
     if (currentSeq !== rankingLoadSeq) return
     console.error('Error loading user spending ranking:', error)
@@ -1136,6 +1223,7 @@ const loadUserSpendingRanking = async () => {
     rankingTotalActualCost.value = 0
     rankingTotalRequests.value = 0
     rankingTotalTokens.value = 0
+    rankingTotalUsers.value = 0
     rankingError.value = true
   } finally {
     if (currentSeq === rankingLoadSeq) {
