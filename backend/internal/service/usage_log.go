@@ -122,6 +122,10 @@ type UsageLog struct {
 	InboundEndpoint *string
 	// UpstreamEndpoint is the normalized upstream endpoint path, e.g. /v1/responses.
 	UpstreamEndpoint *string
+	// ProjectKey is a compact stable key for caller-provided project attribution.
+	ProjectKey *string
+	// ProjectLabel is the trimmed caller-provided project label.
+	ProjectLabel *string
 
 	GroupID        *int64
 	SubscriptionID *int64

@@ -60,6 +60,10 @@ type UsageService struct {
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 }
 
+type projectStatsReader interface {
+	GetProjectStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ProjectStat, error)
+}
+
 // NewUsageService 创建使用统计服务实例
 func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator) *UsageService {
 	return &UsageService{
@@ -311,6 +315,19 @@ func (s *UsageService) GetUserModelStats(ctx context.Context, userID int64, star
 	stats, err := s.usageRepo.GetUserModelStats(ctx, userID, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("get user model stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetUserProjectStats returns per-user project attribution stats.
+func (s *UsageService) GetUserProjectStats(ctx context.Context, userID int64, startTime, endTime time.Time) ([]usagestats.ProjectStat, error) {
+	repo, ok := s.usageRepo.(projectStatsReader)
+	if !ok {
+		return []usagestats.ProjectStat{}, nil
+	}
+	stats, err := repo.GetProjectStatsWithFilters(ctx, startTime, endTime, userID, 0, 0, 0, "", nil, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get user project stats: %w", err)
 	}
 	return stats, nil
 }

@@ -264,6 +264,34 @@ func TestOpenAIGatewayServiceRecordUsage_IncludesEndpointMetadata(t *testing.T) 
 	require.Equal(t, "/v1/responses", *usageRepo.lastLog.UpstreamEndpoint)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_IncludesProjectIdentity(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	svc.cfg.JWT.Secret = "deployment-secret-for-project-hashing-123"
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_project_identity",
+			Model:     "gpt-5.1",
+			Usage:     OpenAIUsage{InputTokens: 8, OutputTokens: 3},
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 1001},
+		User:    &User{ID: 2001},
+		Account: &Account{ID: 3001},
+		Project: "acme-internal",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog.ProjectKey)
+	require.Len(t, *usageRepo.lastLog.ProjectKey, 16)
+	require.NotContains(t, *usageRepo.lastLog.ProjectKey, "acme")
+	require.NotNil(t, usageRepo.lastLog.ProjectLabel)
+	require.Equal(t, "acme-internal", *usageRepo.lastLog.ProjectLabel)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_FallsBackToGroupDefaultRateOnResolverError(t *testing.T) {
 	groupID := int64(12)
 	groupRate := 1.6

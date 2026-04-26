@@ -1059,6 +1059,8 @@ export interface UsageLog {
   reasoning_effort?: string | null
   inbound_endpoint?: string | null
   upstream_endpoint?: string | null
+  project_key?: string | null
+  project_label?: string | null
 
   group_id: number | null
   subscription_id: number | null
@@ -1286,6 +1288,20 @@ export interface EndpointStat {
   total_tokens: number
   cost: number
   actual_cost: number
+}
+
+export interface ProjectStat {
+  project_key: string
+  project_label: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+  account_cost: number
 }
 
 export interface GroupStat {

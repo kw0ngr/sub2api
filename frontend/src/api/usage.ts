@@ -10,7 +10,8 @@ import type {
   UsageStatsResponse,
   PaginatedResponse,
   TrendDataPoint,
-  ModelStat
+  ModelStat,
+  ProjectStat
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -54,6 +55,12 @@ export interface TrendResponse {
 
 export interface ModelStatsResponse {
   models: ModelStat[]
+  start_date: string
+  end_date: string
+}
+
+export interface ProjectStatsResponse {
+  projects: ProjectStat[]
   start_date: string
   end_date: string
 }
@@ -223,6 +230,14 @@ export async function getDashboardModels(params?: {
   return data
 }
 
+export async function getDashboardProjects(params?: {
+  start_date?: string
+  end_date?: string
+}): Promise<ProjectStatsResponse> {
+  const { data } = await apiClient.get<ProjectStatsResponse>('/usage/dashboard/projects', { params })
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -268,6 +283,7 @@ export const usageAPI = {
   getDashboardStats,
   getDashboardTrend,
   getDashboardModels,
+  getDashboardProjects,
   getDashboardApiKeysUsage
 }
 

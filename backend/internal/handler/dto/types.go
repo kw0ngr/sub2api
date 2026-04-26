@@ -361,6 +361,9 @@ type UsageLog struct {
 	InboundEndpoint *string `json:"inbound_endpoint,omitempty"`
 	// UpstreamEndpoint is the normalized upstream endpoint path, e.g. /v1/responses.
 	UpstreamEndpoint *string `json:"upstream_endpoint,omitempty"`
+	// ProjectKey/ProjectLabel are caller-provided project attribution for internal usage analytics.
+	ProjectKey   *string `json:"project_key,omitempty"`
+	ProjectLabel *string `json:"project_label,omitempty"`
 
 	GroupID        *int64 `json:"group_id"`
 	SubscriptionID *int64 `json:"subscription_id"`

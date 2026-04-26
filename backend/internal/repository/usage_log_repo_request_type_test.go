@@ -86,6 +86,8 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // project_key
+			sqlmock.AnyArg(), // project_label
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -165,6 +167,8 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // project_key
+			sqlmock.AnyArg(), // project_label
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
@@ -409,6 +413,36 @@ func TestUsageLogRepositoryGetGroupStatsAccountCostColumn(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUsageLogRepositoryGetProjectStatsWithFilters(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	mock.ExpectQuery("SELECT\\s+project_key,").
+		WithArgs(start, end, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"project_key", "project_label", "requests", "input_tokens", "output_tokens",
+			"cache_creation_tokens", "cache_read_tokens", "total_tokens",
+			"cost", "actual_cost", "account_cost",
+		}).AddRow(
+			"abc123def4567890", "internal-tools", int64(3), int64(10), int64(20),
+			int64(1), int64(2), int64(33), 0.50, 0.25, 0.40,
+		))
+
+	results, err := repo.GetProjectStatsWithFilters(context.Background(), start, end, 42, 0, 0, 0, "", nil, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "abc123def4567890", results[0].ProjectKey)
+	require.Equal(t, "internal-tools", results[0].ProjectLabel)
+	require.Equal(t, int64(3), results[0].Requests)
+	require.Equal(t, int64(33), results[0].TotalTokens)
+	require.Equal(t, 0.25, results[0].ActualCost)
+	require.Equal(t, 0.40, results[0].AccountCost)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUsageLogRepositoryGetStatsWithFiltersAlwaysReturnsAccountCost(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
@@ -577,6 +611,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{},  // project_key
+			sql.NullString{},  // project_label
 			now,
 		}})
 		require.NoError(t, err)
@@ -625,6 +661,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{},  // project_key
+			sql.NullString{},  // project_label
 			now,
 		}})
 		require.NoError(t, err)
@@ -673,11 +711,15 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{Valid: true, String: "abc123def4567890"}, // project_key
+			sql.NullString{Valid: true, String: "internal-tools"},   // project_label
 			now,
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
 		require.Equal(t, "priority", *log.ServiceTier)
+		require.Equal(t, "abc123def4567890", *log.ProjectKey)
+		require.Equal(t, "internal-tools", *log.ProjectLabel)
 	})
 
 }

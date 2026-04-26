@@ -19,6 +19,7 @@ type dashboardUsageRepoCapture struct {
 	trendStream      *bool
 	modelRequestType *int16
 	modelStream      *bool
+	projectUserID    int64
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
@@ -52,6 +53,24 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 	return []usagestats.ModelStat{}, nil
 }
 
+func (s *dashboardUsageRepoCapture) GetProjectStatsWithFilters(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	userID, apiKeyID, accountID, groupID int64,
+	model string,
+	requestType *int16,
+	stream *bool,
+	billingType *int8,
+) ([]usagestats.ProjectStat, error) {
+	s.projectUserID = userID
+	return []usagestats.ProjectStat{{
+		ProjectKey:   "abc123def4567890",
+		ProjectLabel: "internal-tools",
+		Requests:     2,
+		TotalTokens:  30,
+	}}, nil
+}
+
 func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 	ctx context.Context,
 	startTime, endTime time.Time,
@@ -73,6 +92,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
+	router.GET("/admin/dashboard/projects", handler.GetProjectStats)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }
@@ -125,6 +145,20 @@ func TestDashboardModelStatsRequestTypePriority(t *testing.T) {
 	require.NotNil(t, repo.modelRequestType)
 	require.Equal(t, int16(service.RequestTypeSync), *repo.modelRequestType)
 	require.Nil(t, repo.modelStream)
+}
+
+func TestDashboardProjectStats(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/projects?user_id=42", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.projectUserID)
+	require.Contains(t, rec.Body.String(), `"projects"`)
+	require.Contains(t, rec.Body.String(), `"project_label":"internal-tools"`)
 }
 
 func TestDashboardModelStatsInvalidRequestType(t *testing.T) {

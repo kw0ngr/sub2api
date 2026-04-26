@@ -570,6 +570,8 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ReasoningEffort:       l.ReasoningEffort,
 		InboundEndpoint:       l.InboundEndpoint,
 		UpstreamEndpoint:      l.UpstreamEndpoint,
+		ProjectKey:            l.ProjectKey,
+		ProjectLabel:          l.ProjectLabel,
 		GroupID:               l.GroupID,
 		SubscriptionID:        l.SubscriptionID,
 		InputTokens:           l.InputTokens,

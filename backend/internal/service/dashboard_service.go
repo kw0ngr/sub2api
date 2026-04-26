@@ -169,6 +169,18 @@ func (s *DashboardService) GetGroupStatsWithFilters(ctx context.Context, startTi
 	return stats, nil
 }
 
+func (s *DashboardService) GetProjectStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ProjectStat, error) {
+	repo, ok := s.usageRepo.(projectStatsReader)
+	if !ok {
+		return []usagestats.ProjectStat{}, nil
+	}
+	stats, err := repo.GetProjectStatsWithFilters(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
+	if err != nil {
+		return nil, fmt.Errorf("get project stats with filters: %w", err)
+	}
+	return stats, nil
+}
+
 // GetGroupUsageSummary returns today's and cumulative cost for all groups.
 func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
 	results, err := s.usageRepo.GetAllGroupUsageSummary(ctx, todayStart)

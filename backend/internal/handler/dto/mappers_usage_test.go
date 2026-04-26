@@ -148,6 +148,27 @@ func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *
 	require.Equal(t, "claude-3", adminDTO.Model)
 }
 
+func TestUsageLogFromService_IncludesProjectIdentity(t *testing.T) {
+	t.Parallel()
+
+	projectKey := "6c7f6a9b8c2d1e0f"
+	projectLabel := "internal-tools"
+	log := &service.UsageLog{
+		RequestID:    "req_project",
+		Model:        "gpt-5.4",
+		ProjectKey:   &projectKey,
+		ProjectLabel: &projectLabel,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.Equal(t, &projectKey, userDTO.ProjectKey)
+	require.Equal(t, &projectLabel, userDTO.ProjectLabel)
+	require.Equal(t, &projectKey, adminDTO.ProjectKey)
+	require.Equal(t, &projectLabel, adminDTO.ProjectLabel)
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }

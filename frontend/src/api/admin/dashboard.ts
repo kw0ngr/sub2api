@@ -8,6 +8,7 @@ import type {
   DashboardStats,
   TrendDataPoint,
   ModelStat,
+  ProjectStat,
   GroupStat,
   ApiKeyUsageTrendPoint,
   UserUsageTrendPoint,
@@ -123,6 +124,25 @@ export interface GroupStatsResponse {
   end_date: string
 }
 
+export interface ProjectStatsParams {
+  start_date?: string
+  end_date?: string
+  user_id?: number
+  api_key_id?: number
+  model?: string
+  account_id?: number
+  group_id?: number
+  request_type?: UsageRequestType
+  stream?: boolean
+  billing_type?: number | null
+}
+
+export interface ProjectStatsResponse {
+  projects: ProjectStat[]
+  start_date: string
+  end_date: string
+}
+
 export interface DashboardSnapshotV2Params extends TrendParams {
   include_stats?: boolean
   include_trend?: boolean
@@ -155,6 +175,11 @@ export interface DashboardSnapshotV2Response {
  */
 export async function getGroupStats(params?: GroupStatsParams): Promise<GroupStatsResponse> {
   const { data } = await apiClient.get<GroupStatsResponse>('/admin/dashboard/groups', { params })
+  return data
+}
+
+export async function getProjectStats(params?: ProjectStatsParams): Promise<ProjectStatsResponse> {
+  const { data } = await apiClient.get<ProjectStatsResponse>('/admin/dashboard/projects', { params })
   return data
 }
 
@@ -321,6 +346,7 @@ export const dashboardAPI = {
   getUsageTrend,
   getModelStats,
   getGroupStats,
+  getProjectStats,
   getSnapshotV2,
   getApiKeyUsageTrend,
   getUserUsageTrend,
