@@ -97,6 +97,7 @@ const createDashboardStats = (): DashboardStats => ({
 
 describe('admin DashboardView', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
     getUserSpendingRanking.mockReset()
@@ -619,5 +620,33 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).not.toContain('成员 × 模型矩阵')
     expect(wrapper.text()).not.toContain('admin.dashboard.hourlyActivity')
     expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
+  })
+
+  it('toggles and persists anti-design mode', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const dashboardRoot = () => wrapper.find('.admin-dashboard-polish')
+    expect(dashboardRoot().classes()).not.toContain('admin-dashboard-anti')
+
+    await wrapper.find('button[title="一键切换反设计风格"]').trigger('click')
+
+    expect(dashboardRoot().classes()).toContain('admin-dashboard-anti')
+    expect(window.localStorage.getItem('sub2api.admin.dashboard.antiDesign')).toBe('1')
+    expect(wrapper.text()).toContain('反设计 ON')
   })
 })

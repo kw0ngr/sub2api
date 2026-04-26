@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="admin-dashboard-polish space-y-6">
+    <div class="admin-dashboard-polish space-y-6" :class="{ 'admin-dashboard-anti': antiDesignMode }">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <LoadingSpinner />
@@ -233,6 +233,19 @@
               </div>
               <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
+              </button>
+              <button
+                type="button"
+                class="dashboard-style-toggle"
+                :class="{ 'dashboard-style-toggle-active': antiDesignMode }"
+                :aria-pressed="antiDesignMode"
+                title="一键切换反设计风格"
+                @click="toggleAntiDesignMode"
+              >
+                <span class="dashboard-style-toggle-mark">ANTI</span>
+                <span class="dashboard-style-toggle-text">
+                  {{ antiDesignMode ? '反设计 ON' : '反设计 OFF' }}
+                </span>
               </button>
               <div class="ml-auto flex items-center gap-2">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -1087,6 +1100,17 @@ let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let rankingLoadSeq = 0
 const rankingLimit = 12
+const antiDesignStorageKey = 'sub2api.admin.dashboard.antiDesign'
+const antiDesignMode = ref(
+  typeof window !== 'undefined' && window.localStorage.getItem(antiDesignStorageKey) === '1'
+)
+
+const toggleAntiDesignMode = () => {
+  antiDesignMode.value = !antiDesignMode.value
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(antiDesignStorageKey, antiDesignMode.value ? '1' : '0')
+  }
+}
 
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
@@ -2175,6 +2199,73 @@ onMounted(() => {
   transform: translateY(1px);
 }
 
+.dashboard-style-toggle {
+  position: relative;
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(var(--dashboard-border) / 0.86);
+  background: rgb(var(--dashboard-surface) / 0.82);
+  padding: 0 0.85rem;
+  color: rgb(71 85 105);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+}
+
+.dark .dashboard-style-toggle {
+  color: rgb(203 213 225);
+}
+
+.dashboard-style-toggle:hover {
+  border-color: rgb(var(--dashboard-border-strong) / 0.95);
+  background: rgb(var(--dashboard-surface-soft) / 0.74);
+}
+
+.dashboard-style-toggle:active {
+  transform: translateY(1px);
+}
+
+.dashboard-style-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--dashboard-ring) / 0.14);
+}
+
+.dashboard-style-toggle-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.45rem;
+  background: rgb(var(--dashboard-surface-muted) / 0.74);
+  padding: 0.2rem 0.35rem;
+  color: rgb(var(--dashboard-accent));
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.dashboard-style-toggle-active {
+  border-color: rgb(15 23 42);
+  background: #ffeb3b;
+  color: #050505;
+  box-shadow: 5px 5px 0 #050505;
+}
+
+.dashboard-style-toggle-active .dashboard-style-toggle-mark {
+  border: 2px solid #050505;
+  border-radius: 0;
+  background: #ff0000;
+  color: #fff;
+  transform: rotate(-7deg);
+}
+
 .dashboard-analytics-card {
   border-radius: 1.25rem;
   border-color: rgb(var(--dashboard-border) / 0.76);
@@ -2342,6 +2433,278 @@ onMounted(() => {
   break-inside: avoid;
   page-break-inside: avoid;
   -webkit-column-break-inside: avoid;
+}
+
+.admin-dashboard-anti {
+  --dashboard-accent: 255 0 0;
+  --dashboard-accent-soft: 0 0 255;
+  --dashboard-surface: 255 235 59;
+  --dashboard-surface-soft: 255 255 255;
+  --dashboard-surface-muted: 0 255 0;
+  --dashboard-border: 0 0 0;
+  --dashboard-border-strong: 0 0 0;
+  --dashboard-ink-shadow: 0 0 0;
+  --dashboard-ring: 255 0 0;
+  padding: 1rem;
+  color: #050505;
+  font-family: Impact, "Arial Black", "Comic Sans MS", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.015em;
+  background:
+    repeating-linear-gradient(135deg, rgb(0 0 0 / 0.09) 0 10px, transparent 10px 22px),
+    radial-gradient(circle at 82% 4%, #00ff00 0 9rem, transparent 9.2rem),
+    linear-gradient(135deg, #ffeb3b 0%, #ffffff 48%, #00ffff 100%);
+}
+
+.dark .admin-dashboard-anti {
+  --dashboard-surface: 255 235 59;
+  --dashboard-surface-soft: 255 255 255;
+  --dashboard-surface-muted: 0 255 0;
+  --dashboard-border: 0 0 0;
+  --dashboard-border-strong: 0 0 0;
+  color: #050505;
+  background:
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.10) 0 10px, transparent 10px 22px),
+    radial-gradient(circle at 82% 4%, #00ff00 0 9rem, transparent 9.2rem),
+    linear-gradient(135deg, #120012 0%, #ff00ff 46%, #ffeb3b 100%);
+}
+
+.admin-dashboard-anti::before {
+  inset: -1rem;
+  height: 18rem;
+  background:
+    repeating-linear-gradient(90deg, #000 0 12px, transparent 12px 24px),
+    radial-gradient(circle at 12% 30%, #ff0000 0 5.5rem, transparent 5.7rem);
+  opacity: 0.18;
+  transform: rotate(-2deg);
+}
+
+.admin-dashboard-anti::after {
+  content: "NO RULES / LIVE DATA / DON'T PANIC";
+  position: absolute;
+  top: 0.25rem;
+  right: 1.25rem;
+  z-index: 0;
+  border: 6px solid #000;
+  background: #00ff00;
+  box-shadow: 9px 9px 0 #0000ff;
+  color: #000;
+  font-size: clamp(1.1rem, 2.4vw, 2.25rem);
+  font-weight: 950;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  padding: 0.35rem 0.6rem;
+  pointer-events: none;
+  transform: rotate(4deg);
+}
+
+.admin-dashboard-anti .dashboard-stat-grid {
+  gap: 1.1rem;
+}
+
+.admin-dashboard-anti .dashboard-stat-grid:nth-of-type(1) {
+  transform: rotate(-0.7deg);
+}
+
+.admin-dashboard-anti .dashboard-stat-grid:nth-of-type(2) {
+  transform: rotate(0.55deg);
+}
+
+.admin-dashboard-anti :deep(.card),
+.admin-dashboard-anti .dashboard-stat-card,
+.admin-dashboard-anti .dashboard-filter-panel,
+.admin-dashboard-anti .dashboard-analytics-card {
+  border: 6px solid #050505;
+  border-radius: 0.45rem;
+  background: #fff;
+  box-shadow: 10px 10px 0 #050505;
+  color: #050505;
+}
+
+.admin-dashboard-anti .dashboard-stat-card {
+  min-height: 7.15rem;
+  background:
+    linear-gradient(90deg, rgb(var(--metric-accent) / 0.20), transparent 62%),
+    #fff;
+}
+
+.admin-dashboard-anti .dashboard-stat-grid .dashboard-stat-card:nth-child(odd) {
+  transform: rotate(-1.4deg);
+}
+
+.admin-dashboard-anti .dashboard-stat-grid .dashboard-stat-card:nth-child(even) {
+  transform: rotate(1.1deg) translateY(0.15rem);
+}
+
+.admin-dashboard-anti .dashboard-stat-card:hover,
+.admin-dashboard-anti .dashboard-analytics-card:hover {
+  border-color: #050505;
+  box-shadow: 14px 14px 0 #ff0000;
+  transform: rotate(-0.7deg) translate(-2px, -2px);
+}
+
+.admin-dashboard-anti .dashboard-stat-card::before {
+  height: 8px;
+  background: repeating-linear-gradient(90deg, #050505 0 14px, #ffeb3b 14px 26px, #ff0000 26px 38px);
+  opacity: 1;
+}
+
+.admin-dashboard-anti .dashboard-stat-card::after {
+  background: radial-gradient(circle at 100% 10%, rgb(var(--metric-accent) / 0.25), transparent 44%);
+  opacity: 1;
+}
+
+.admin-dashboard-anti .dashboard-stat-card > .flex > div:first-child {
+  border: 4px solid #050505;
+  border-radius: 0;
+  background: #ffeb3b !important;
+  box-shadow: 5px 5px 0 #050505;
+  transform: rotate(-5deg);
+}
+
+.admin-dashboard-anti .dashboard-stat-card :is(.text-xl, .text-lg, .text-sm.font-semibold) {
+  color: #050505 !important;
+  font-size: 1.55rem;
+  letter-spacing: -0.08em;
+  text-transform: uppercase;
+}
+
+.admin-dashboard-anti .dashboard-stat-card p:first-child,
+.admin-dashboard-anti h3,
+.admin-dashboard-anti .text-xs.font-medium.uppercase {
+  color: #050505 !important;
+  font-family: Impact, "Arial Black", ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase;
+}
+
+.admin-dashboard-anti .dashboard-filter-panel {
+  background: #fff;
+  transform: rotate(-0.55deg);
+}
+
+.admin-dashboard-anti .dashboard-filter-panel::before {
+  width: 14px;
+  border-radius: 0;
+  background: repeating-linear-gradient(180deg, #ff0000 0 16px, #0000ff 16px 32px, #00ff00 32px 48px);
+  opacity: 1;
+}
+
+.admin-dashboard-anti .dashboard-filter-panel :deep(.date-picker-trigger),
+.admin-dashboard-anti .dashboard-filter-panel :deep(.select-trigger),
+.admin-dashboard-anti .dashboard-filter-panel .btn-secondary,
+.admin-dashboard-anti .dashboard-style-toggle {
+  border: 4px solid #050505;
+  border-radius: 0;
+  background: #ffeb3b;
+  box-shadow: 5px 5px 0 #050505;
+  color: #050505;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.admin-dashboard-anti .dashboard-filter-panel .btn-secondary:hover,
+.admin-dashboard-anti .dashboard-style-toggle:hover {
+  background: #00ff00;
+  transform: rotate(-2deg) translate(-1px, -1px);
+}
+
+.admin-dashboard-anti .dashboard-filter-panel :deep(.date-picker-dropdown) {
+  border: 6px solid #050505;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: 14px 14px 0 #0000ff;
+  color: #050505;
+}
+
+.admin-dashboard-anti .dashboard-style-toggle-active {
+  background: #ff0000;
+  color: #fff;
+  box-shadow: 7px 7px 0 #0000ff;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card {
+  background:
+    linear-gradient(180deg, #fff, #fff 64%, #ffeb3b 64%, #ffeb3b 100%);
+}
+
+.admin-dashboard-anti .dashboard-masonry {
+  column-gap: 2rem;
+}
+
+.admin-dashboard-anti .dashboard-masonry-item:nth-child(odd) {
+  transform: rotate(-0.75deg);
+}
+
+.admin-dashboard-anti .dashboard-masonry-item:nth-child(even) {
+  transform: rotate(0.85deg);
+}
+
+.admin-dashboard-anti .dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border):not([class*="bg-"]) {
+  border: 4px solid #050505;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: 6px 6px 0 #00ff00;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card button {
+  border-width: 4px;
+  border-radius: 0.15rem;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card button:hover {
+  background: #ffeb3b !important;
+  color: #050505;
+  transform: rotate(-1.5deg) translate(-1px, -1px);
+}
+
+.admin-dashboard-anti .dashboard-analytics-card button:active {
+  transform: rotate(1deg) translate(2px, 2px);
+}
+
+.admin-dashboard-anti .dashboard-analytics-card table {
+  border: 4px solid #050505;
+  background: #fff;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card table th {
+  background: #050505;
+  color: #ffeb3b !important;
+  text-transform: uppercase;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card table td {
+  border-top: 3px solid #050505;
+  color: #050505 !important;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card tbody tr:hover {
+  background: #00ff00;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card :is(.h-2, .h-1\.5).overflow-hidden.rounded-full,
+.admin-dashboard-anti .dashboard-analytics-card .flex.h-3.overflow-hidden.rounded-full {
+  border: 3px solid #050505;
+  border-radius: 0;
+  background: #fff !important;
+  box-shadow: none;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card td .relative.overflow-hidden.rounded-lg.border {
+  border: 4px solid #050505;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: 5px 5px 0 #ffeb3b;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"] {
+  border-radius: 0;
+  border: 2px solid #050505;
+  box-shadow: none;
+}
+
+.admin-dashboard-anti .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"]:hover {
+  filter: none;
+  transform: rotate(7deg) scale(1.12);
+  box-shadow: 4px 4px 0 #ff0000;
 }
 
 @media (min-width: 1024px) {
