@@ -510,7 +510,7 @@ func TestUsageLogRepositoryGetUserSpendingRanking(t *testing.T) {
 		AddRow(int64(1), "alpha@example.com", 12.5, int64(8), int64(800), 40.0, int64(30), int64(2600), int64(3)).
 		AddRow(int64(3), "gamma@example.com", 4.25, int64(5), int64(300), 40.0, int64(30), int64(2600), int64(3))
 
-	mock.ExpectQuery("WITH user_spend AS \\(").
+	mock.ExpectQuery(`COALESCE\(us\.role, 'user'\) <> 'admin'`).
 		WithArgs(start, end, 12).
 		WillReturnRows(rows)
 
@@ -527,6 +527,35 @@ func TestUsageLogRepositoryGetUserSpendingRanking(t *testing.T) {
 		TotalTokens:     2600,
 		TotalUsers:      3,
 	}, got)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetUserUsageTrendExcludesAdmins(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	rows := sqlmock.NewRows([]string{"date", "user_id", "email", "username", "requests", "tokens", "cost", "actual_cost"}).
+		AddRow("2025-01-01", int64(2), "beta@example.com", "beta", int64(9), int64(900), 15.0, 12.5)
+
+	mock.ExpectQuery(`COALESCE\(us\.role, 'user'\) <> 'admin'`).
+		WithArgs(start, end, 12, start, end).
+		WillReturnRows(rows)
+
+	got, err := repo.GetUserUsageTrend(context.Background(), start, end, "day", 12)
+	require.NoError(t, err)
+	require.Equal(t, []usagestats.UserUsageTrendPoint{{
+		Date:       "2025-01-01",
+		UserID:     2,
+		Email:      "beta@example.com",
+		Username:   "beta",
+		Requests:   9,
+		Tokens:     900,
+		Cost:       15.0,
+		ActualCost: 12.5,
+	}}, got)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

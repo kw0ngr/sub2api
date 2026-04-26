@@ -269,7 +269,7 @@
           </div>
 
           <!-- Team Member and Insight Widgets -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
             <div class="card relative overflow-hidden p-4">
               <div
                 v-if="rankingLoading"
@@ -434,7 +434,8 @@
               </div>
             </div>
 
-            <div class="card relative overflow-hidden p-4">
+            <div class="space-y-6">
+              <div class="card relative overflow-hidden p-4">
               <div
                 v-if="chartsLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -539,6 +540,128 @@
                 class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
+              </div>
+            </div>
+
+            <div class="card relative overflow-hidden p-4">
+              <div
+                v-if="rankingLoading"
+                class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+              >
+                <LoadingSpinner size="md" />
+              </div>
+              <div class="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t('admin.dashboard.memberPulse') }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.memberPulseHint') }}
+                  </p>
+                </div>
+                <span class="shrink-0 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
+                  {{ t('admin.dashboard.nonAdminOnly') }}
+                </span>
+              </div>
+
+              <div v-if="memberPulseItems.length" class="space-y-4">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.topThreeShare') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatPercent(topThreeTokenShare) }}
+                    </p>
+                  </div>
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.avgTokensPerRequest') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatTokens(avgTokensPerRequest) }}
+                    </p>
+                  </div>
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.avgTokensPerMember') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatTokens(avgTokensPerMember) }}
+                    </p>
+                  </div>
+                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.longTailMembers') }}
+                    </p>
+                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                      {{ formatNumber(longTailMemberCount) }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-gray-100 p-3 dark:border-gray-700">
+                  <div class="mb-3 flex items-center justify-between">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.nonAdminLeaderboard') }}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      Top {{ memberPulseItems.length }}
+                    </p>
+                  </div>
+                  <button
+                    v-for="(item, index) in memberPulseItems"
+                    :key="`pulse-${item.user_id}`"
+                    type="button"
+                    class="w-full rounded-xl px-2 py-2 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    @click="goToUserUsage(item)"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span
+                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                        :class="memberPulseAvatarClass(index)"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-2">
+                          <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="userDisplayName(item)">
+                            {{ userDisplayName(item) }}
+                          </p>
+                          <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                            {{ formatPercent(userTokenShare(item.tokens)) }}
+                          </p>
+                        </div>
+                        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                          <div
+                            class="h-full rounded-full"
+                            :class="userBarClass(index)"
+                            :style="{ width: `${userBarWidth(item.tokens)}%` }"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <div
+                  class="rounded-2xl border px-4 py-3 text-xs"
+                  :class="memberPulseAdviceClass"
+                >
+                  <p class="font-semibold">
+                    {{ memberPulseAdviceTitle }}
+                  </p>
+                  <p class="mt-1 opacity-80">
+                    {{ memberPulseAdviceBody }}
+                  </p>
+                </div>
+              </div>
+              <div
+                v-else
+                class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ t('admin.dashboard.noDataAvailable') }}
+              </div>
               </div>
             </div>
           </div>
@@ -960,6 +1083,85 @@ const userBarWidth = (tokens: number): number => {
 
 const topUserTokenShare = computed(() => {
   return topUser.value ? userTokenShare(topUser.value.tokens) : 0
+})
+
+const memberPulseItems = computed(() => rankingItems.value.slice(0, 5))
+
+const topThreeTokenShare = computed(() => {
+  if (rankingTotalTokens.value <= 0) return 0
+  const topThreeTokens = rankingItems.value.slice(0, 3).reduce((sum, item) => sum + item.tokens, 0)
+  return topThreeTokens / rankingTotalTokens.value
+})
+
+const avgTokensPerRequest = computed(() => {
+  if (rankingTotalRequests.value <= 0) return 0
+  return Math.round(rankingTotalTokens.value / rankingTotalRequests.value)
+})
+
+const avgTokensPerMember = computed(() => {
+  if (activeUsageUserCount.value <= 0) return 0
+  return Math.round(rankingTotalTokens.value / activeUsageUserCount.value)
+})
+
+const longTailMemberCount = computed(() => {
+  return Math.max(activeUsageUserCount.value - Math.min(activeUsageUserCount.value, 3), 0)
+})
+
+const memberPulseAvatarClass = (index: number): string => {
+  const colors = [
+    'bg-blue-500',
+    'bg-emerald-500',
+    'bg-amber-500',
+    'bg-violet-500',
+    'bg-pink-500'
+  ]
+  return colors[index % colors.length]
+}
+
+const memberPulseAdviceTone = computed<'amber' | 'emerald' | 'cyan' | 'blue'>(() => {
+  if (activeUsageUserCount.value <= 1) return 'blue'
+  if (topUserTokenShare.value >= 0.6) return 'amber'
+  if ((usageInsights.value?.cache_share || 0) >= 0.7) return 'emerald'
+  return 'cyan'
+})
+
+const memberPulseAdviceClass = computed(() => {
+  switch (memberPulseAdviceTone.value) {
+    case 'amber':
+      return 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    case 'emerald':
+      return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+    case 'blue':
+      return 'border-blue-400/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+    default:
+      return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+  }
+})
+
+const memberPulseAdviceTitle = computed(() => {
+  switch (memberPulseAdviceTone.value) {
+    case 'amber':
+      return t('admin.dashboard.memberPulseConcentratedTitle')
+    case 'emerald':
+      return t('admin.dashboard.memberPulseCacheTitle')
+    case 'blue':
+      return t('admin.dashboard.memberPulseSparseTitle')
+    default:
+      return t('admin.dashboard.memberPulseBalancedTitle')
+  }
+})
+
+const memberPulseAdviceBody = computed(() => {
+  switch (memberPulseAdviceTone.value) {
+    case 'amber':
+      return t('admin.dashboard.memberPulseConcentratedBody')
+    case 'emerald':
+      return t('admin.dashboard.memberPulseCacheBody')
+    case 'blue':
+      return t('admin.dashboard.memberPulseSparseBody')
+    default:
+      return t('admin.dashboard.memberPulseBalancedBody')
+  }
 })
 
 const otherUserContribution = computed<UserContributionItem | null>(() => {

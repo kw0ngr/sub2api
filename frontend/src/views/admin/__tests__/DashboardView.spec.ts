@@ -249,6 +249,8 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('admin.dashboard.userDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.memberContribution')
     expect(wrapper.text()).toContain('admin.dashboard.topMember')
+    expect(wrapper.text()).toContain('admin.dashboard.memberPulse')
+    expect(wrapper.text()).toContain('admin.dashboard.nonAdminOnly')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).not.toContain('admin.dashboard.projectDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')

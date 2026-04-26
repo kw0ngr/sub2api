@@ -2239,11 +2239,13 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 
 	query := fmt.Sprintf(`
 		WITH top_users AS (
-			SELECT user_id
-			FROM usage_logs
-			WHERE created_at >= $1 AND created_at < $2
-			GROUP BY user_id
-			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
+			SELECT u.user_id
+			FROM usage_logs u
+			LEFT JOIN users us ON u.user_id = us.id
+			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND COALESCE(us.role, 'user') <> 'admin'
+			GROUP BY u.user_id
+			ORDER BY SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens) DESC
 			LIMIT $3
 		)
 		SELECT
@@ -2308,6 +2310,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			FROM usage_logs u
 			LEFT JOIN users us ON u.user_id = us.id
 			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND COALESCE(us.role, 'user') <> 'admin'
 			GROUP BY u.user_id, us.email
 		),
 		ranked AS (
