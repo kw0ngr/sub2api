@@ -12,393 +12,221 @@
     <div v-else v-html="homeContent"></div>
   </div>
 
-  <!-- Default Home Page -->
-  <div
-    v-else
-    class="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
-  >
-    <!-- Background Decorations -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        class="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
-      <div
-        class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
+  <!-- Default Home Page: Anti-design mode is the default public personality. -->
+  <div v-else class="anti-home">
+    <div class="anti-home-bg" aria-hidden="true">
+      <span class="anti-home-orb anti-home-orb-red"></span>
+      <span class="anti-home-orb anti-home-orb-green"></span>
+      <span class="anti-home-sticker anti-home-sticker-top">NO RULES / JUST ROUTES</span>
+      <span class="anti-home-sticker anti-home-sticker-bottom">CACHE IS A WEAPON</span>
     </div>
 
-    <!-- Header -->
-    <header class="relative z-20 px-6 py-4">
-      <nav class="mx-auto flex max-w-6xl items-center justify-between">
-        <!-- Logo -->
-        <div class="flex items-center">
-          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
-            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
+    <header class="anti-home-header">
+      <nav class="anti-home-nav">
+        <div class="anti-home-brand">
+          <div class="anti-home-logo">
+            <img :src="siteLogo || '/logo.png'" alt="Logo" />
+          </div>
+          <div class="anti-home-brand-text">
+            <span>{{ siteName }}</span>
+            <small>API GATEWAY / UNSAFE LOOK, SAFE ROUTES</small>
           </div>
         </div>
 
-        <!-- Nav Actions -->
-        <div class="flex items-center gap-3">
-          <!-- Language Switcher -->
+        <div class="anti-home-actions">
           <LocaleSwitcher />
 
-          <!-- Doc Link -->
           <a
             v-if="docUrl"
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="anti-nav-button"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
+            <span>{{ t('home.docs') }}</span>
           </a>
 
-          <!-- Theme Toggle -->
           <button
-            @click="toggleTheme"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="anti-nav-button"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+            @click="toggleTheme"
           >
             <Icon v-if="isDark" name="sun" size="md" />
             <Icon v-else name="moon" size="md" />
+            <span>{{ isDark ? 'LIGHT' : 'DARK' }}</span>
           </button>
 
-          <!-- Login / Dashboard Button -->
           <router-link
             v-if="isAuthenticated"
             :to="dashboardPath"
-            class="inline-flex items-center gap-1.5 rounded-full bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+            class="anti-nav-button anti-nav-button-primary"
           >
-            <span
-              class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-[10px] font-semibold text-white"
-            >
-              {{ userInitial }}
-            </span>
-            <span class="text-xs font-medium text-white">{{ t('home.dashboard') }}</span>
-            <svg
-              class="h-3 w-3 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25"
-              />
-            </svg>
+            <span class="anti-user-dot">{{ userInitial }}</span>
+            <span>{{ t('home.dashboard') }}</span>
           </router-link>
-          <router-link
-            v-else
-            to="/login"
-            class="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
-          >
+          <router-link v-else to="/login" class="anti-nav-button anti-nav-button-primary">
             {{ t('home.login') }}
           </router-link>
         </div>
       </nav>
     </header>
 
-    <!-- Main Content -->
-    <main class="relative z-10 flex-1 px-6 py-16">
-      <div class="mx-auto max-w-6xl">
-        <!-- Hero Section - Left/Right Layout -->
-        <div class="mb-12 flex flex-col items-center justify-between gap-12 lg:flex-row lg:gap-16">
-          <!-- Left: Text Content -->
-          <div class="flex-1 text-center lg:text-left">
-            <h1
-              class="mb-4 text-4xl font-bold text-gray-900 dark:text-white md:text-5xl lg:text-6xl"
-            >
-              {{ siteName }}
-            </h1>
-            <p class="mb-8 text-lg text-gray-600 dark:text-dark-300 md:text-xl">
-              {{ siteSubtitle }}
-            </p>
-
-            <!-- CTA Button -->
-            <div>
-              <router-link
-                :to="isAuthenticated ? dashboardPath : '/login'"
-                class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
-              >
-                {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
-                <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
-              </router-link>
-            </div>
+    <main class="anti-home-main">
+      <section class="anti-hero">
+        <div class="anti-hero-copy">
+          <div class="anti-kicker">
+            <span>MODEL CHAOS</span>
+            <span>TEAM CONTROL</span>
+            <span>KEYS ON LEASH</span>
           </div>
 
-          <!-- Right: Terminal Animation -->
-          <div class="flex flex-1 justify-center lg:justify-end">
-            <div class="terminal-container">
-              <div class="terminal-window">
-                <!-- Window header -->
-                <div class="terminal-header">
-                  <div class="terminal-buttons">
-                    <span class="btn-close"></span>
-                    <span class="btn-minimize"></span>
-                    <span class="btn-maximize"></span>
-                  </div>
-                  <span class="terminal-title">terminal</span>
+          <h1 class="anti-title">
+            <span>{{ siteName }}</span>
+            <strong>BREAK THE API WALL</strong>
+          </h1>
+
+          <p class="anti-subtitle">
+            {{ siteSubtitle }}
+          </p>
+          <p class="anti-manifesto">
+            把 Claude、OpenAI、Gemini、内部 key 池、缓存账本和团队用量揉成一个入口。
+            外表反叛一点，路由、审计和限额要稳得像铁皮柜。
+          </p>
+
+          <div class="anti-cta-row">
+            <router-link
+              :to="isAuthenticated ? dashboardPath : '/login'"
+              class="anti-cta anti-cta-primary"
+            >
+              {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
+              <Icon name="arrowRight" size="md" :stroke-width="2" />
+            </router-link>
+            <a
+              v-if="docUrl"
+              :href="docUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="anti-cta anti-cta-secondary"
+            >
+              READ THE WIRES
+            </a>
+          </div>
+        </div>
+
+        <div class="anti-hero-console" aria-label="Gateway routing preview">
+          <div class="anti-console-label">LIVE GATEWAY NOISE</div>
+          <div class="terminal-container">
+            <div class="terminal-window">
+              <div class="terminal-header">
+                <div class="terminal-buttons">
+                  <span class="btn-close"></span>
+                  <span class="btn-minimize"></span>
+                  <span class="btn-maximize"></span>
                 </div>
-                <!-- Terminal content -->
-                <div class="terminal-body">
-                  <div class="code-line line-1">
-                    <span class="code-prompt">$</span>
-                    <span class="code-cmd">curl</span>
-                    <span class="code-flag">-X POST</span>
-                    <span class="code-url">/v1/messages</span>
-                  </div>
-                  <div class="code-line line-2">
-                    <span class="code-comment"># Routing to upstream...</span>
-                  </div>
-                  <div class="code-line line-3">
-                    <span class="code-success">200 OK</span>
-                    <span class="code-response">{ "content": "Hello!" }</span>
-                  </div>
-                  <div class="code-line line-4">
-                    <span class="code-prompt">$</span>
-                    <span class="cursor"></span>
-                  </div>
+                <span class="terminal-title">gateway://route-board</span>
+              </div>
+              <div class="terminal-body">
+                <div class="code-line line-1">
+                  <span class="code-prompt">$</span>
+                  <span class="code-cmd">POST</span>
+                  <span class="code-url">/v1/messages</span>
+                  <span class="code-flag">model=claude-code</span>
+                </div>
+                <div class="code-line line-2">
+                  <span class="code-comment">fingerprint=claude-code · key=healthy · cache=hot</span>
+                </div>
+                <div class="code-line line-3">
+                  <span class="code-success">200 OK</span>
+                  <span class="code-response">route: openai-compatible -> upstream pool #3</span>
+                </div>
+                <div class="code-line line-4">
+                  <span class="code-prompt">$</span>
+                  <span class="cursor"></span>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Feature Tags - Centered -->
-        <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
-          >
-            <Icon name="swap" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
-              t('home.tags.subscriptionToApi')
-            }}</span>
-          </div>
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
-          >
-            <Icon name="shield" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
-              t('home.tags.stickySession')
-            }}</span>
-          </div>
-          <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
-          >
-            <Icon name="chart" size="sm" class="text-primary-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
-              t('home.tags.realtimeBilling')
-            }}</span>
+          <div class="anti-console-metrics">
+            <div v-for="metric in gatewayMetrics" :key="metric.label">
+              <span>{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+            </div>
           </div>
         </div>
+      </section>
 
-        <!-- Features Grid -->
-        <div class="mb-12 grid gap-6 md:grid-cols-3">
-          <!-- Feature 1: Unified Gateway -->
-          <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
-          >
-            <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 transition-transform group-hover:scale-110"
-            >
-              <Icon name="server" size="lg" class="text-white" />
-            </div>
-            <h3 class="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('home.features.unifiedGateway') }}
-            </h3>
-            <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
-              {{ t('home.features.unifiedGatewayDesc') }}
-            </p>
-          </div>
+      <section class="anti-tag-wall" aria-label="Gateway capabilities">
+        <div
+          v-for="tag in gatewayTags"
+          :key="tag"
+          class="anti-tag"
+        >
+          {{ tag }}
+        </div>
+      </section>
 
-          <!-- Feature 2: Account Pool -->
-          <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
-          >
-            <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30 transition-transform group-hover:scale-110"
-            >
-              <svg
-                class="h-6 w-6 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
-                />
-              </svg>
-            </div>
-            <h3 class="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('home.features.multiAccount') }}
-            </h3>
-            <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
-              {{ t('home.features.multiAccountDesc') }}
-            </p>
-          </div>
+      <section class="anti-feature-grid" aria-label="API gateway modules">
+        <article
+          v-for="(item, index) in gatewayHighlights"
+          :key="item.title"
+          class="anti-feature-card"
+          :class="`anti-feature-card-${index + 1}`"
+        >
+          <div class="anti-feature-index">{{ item.code }}</div>
+          <h2>{{ item.title }}</h2>
+          <p>{{ item.body }}</p>
+          <span>{{ item.signal }}</span>
+        </article>
+      </section>
 
-          <!-- Feature 3: Billing & Quota -->
+      <section class="anti-flow-board">
+        <div class="anti-flow-title">
+          <span>REQUEST PATH / 可控混乱</span>
+          <strong>1 个入口，N 个上游，所有痕迹都要留下。</strong>
+        </div>
+        <div class="anti-flow-steps">
           <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
+            v-for="(step, index) in gatewayFlow"
+            :key="step.title"
+            class="anti-flow-step"
           >
-            <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30 transition-transform group-hover:scale-110"
-            >
-              <svg
-                class="h-6 w-6 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
-                />
-              </svg>
-            </div>
-            <h3 class="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('home.features.balanceQuota') }}
-            </h3>
-            <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
-              {{ t('home.features.balanceQuotaDesc') }}
-            </p>
+            <span>{{ String(index + 1).padStart(2, '0') }}</span>
+            <h3>{{ step.title }}</h3>
+            <p>{{ step.body }}</p>
           </div>
         </div>
+      </section>
 
-        <!-- Supported Providers -->
-        <div class="mb-8 text-center">
-          <h2 class="mb-3 text-2xl font-bold text-gray-900 dark:text-white">
-            {{ t('home.providers.title') }}
-          </h2>
-          <p class="text-sm text-gray-600 dark:text-dark-400">
-            {{ t('home.providers.description') }}
-          </p>
+      <section class="anti-provider-zone" aria-label="Supported providers">
+        <div class="anti-section-heading">
+          <h2>{{ t('home.providers.title') }}</h2>
+          <p>{{ t('home.providers.description') }}</p>
         </div>
-
-        <div class="mb-16 flex flex-wrap items-center justify-center gap-4">
-          <!-- Claude - Supported -->
+        <div class="anti-provider-grid">
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            v-for="provider in providerCards"
+            :key="provider.name"
+            class="anti-provider-card"
+            :class="provider.tone"
           >
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-500"
-            >
-              <span class="text-xs font-bold text-white">C</span>
-            </div>
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.claude') }}</span>
-            <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
-              >{{ t('home.providers.supported') }}</span
-            >
-          </div>
-          <!-- GPT - Supported -->
-          <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
-          >
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600"
-            >
-              <span class="text-xs font-bold text-white">G</span>
-            </div>
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">GPT</span>
-            <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
-              >{{ t('home.providers.supported') }}</span
-            >
-          </div>
-          <!-- Gemini - Supported -->
-          <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
-          >
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600"
-            >
-              <span class="text-xs font-bold text-white">G</span>
-            </div>
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.gemini') }}</span>
-            <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
-              >{{ t('home.providers.supported') }}</span
-            >
-          </div>
-          <!-- Antigravity - Supported -->
-          <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
-          >
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-600"
-            >
-              <span class="text-xs font-bold text-white">A</span>
-            </div>
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.antigravity') }}</span>
-            <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
-              >{{ t('home.providers.supported') }}</span
-            >
-          </div>
-          <!-- More - Coming Soon -->
-          <div
-            class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
-          >
-            <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-gray-500 to-gray-600"
-            >
-              <span class="text-xs font-bold text-white">+</span>
-            </div>
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.more') }}</span>
-            <span
-              class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-400"
-              >{{ t('home.providers.soon') }}</span
-            >
+            <strong>{{ provider.mark }}</strong>
+            <span>{{ provider.name }}</span>
+            <em>{{ provider.status }}</em>
           </div>
         </div>
-      </div>
+      </section>
     </main>
 
-    <!-- Footer -->
-    <footer class="relative z-10 border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50">
-      <div
-        class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
-      >
-        <p class="text-sm text-gray-500 dark:text-dark-400">
-          &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
-        </p>
-        <div class="flex items-center gap-4">
-          <a
-            v-if="docUrl"
-            :href="docUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-white"
-          >
-            {{ t('home.docs') }}
-          </a>
-          <a
-            :href="githubUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-white"
-          >
-            GitHub
-          </a>
-        </div>
+    <footer class="anti-home-footer">
+      <p>&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}</p>
+      <div>
+        <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">
+          {{ t('home.docs') }}
+        </a>
+        <a :href="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
     </footer>
   </div>
@@ -445,6 +273,114 @@ const userInitial = computed(() => {
   return user.email.charAt(0).toUpperCase()
 })
 
+const gatewayMetrics = [
+  { label: 'MODEL MAP', value: 'OpenAI / Claude / Gemini' },
+  { label: 'CACHE READ', value: 'VISIBLE' },
+  { label: 'KEY HEALTH', value: 'AUTO POLL' }
+]
+
+const gatewayTags = [
+  'OPENAI-COMPATIBLE',
+  'CLAUDE CODE FINGERPRINT',
+  'RAW KEY POOL',
+  'HEALTH CHECK',
+  'TEAM USAGE MATRIX',
+  'CACHE LEDGER',
+  'MODEL ALIAS ROUTING',
+  'FAILOVER TRACE'
+]
+
+const gatewayHighlights = [
+  {
+    code: '01',
+    title: '模型别名与协议翻译',
+    body: '把不同供应商、客户端和模型命名压到一个兼容入口，减少团队脚本到处改参数。',
+    signal: 'OpenAI-style in / mixed upstream out'
+  },
+  {
+    code: '02',
+    title: 'Key 池健康与轮询',
+    body: '原始 key、OAuth 账号、代理通道都应该能被检测、打分、降级和自动避让。',
+    signal: 'bad key should not poison the queue'
+  },
+  {
+    code: '03',
+    title: '团队用量画像',
+    body: '成员、工具、模型、缓存和会话聚合不是报表装饰，是内部排障和额度分配的现场地图。',
+    signal: 'who used what, from where, and why'
+  },
+  {
+    code: '04',
+    title: '缓存效率看板',
+    body: '缓存读写、TTL、命中率和模型矩阵放在一起，才能看出哪里在烧 token，哪里在省钱。',
+    signal: 'cache hit rate is a product signal'
+  },
+  {
+    code: '05',
+    title: '客户端指纹与兼容层',
+    body: 'Claude Code、Codex CLI、Cherry Studio 等工具应有明确识别和可控伪装策略。',
+    signal: 'client identity is routing metadata'
+  },
+  {
+    code: '06',
+    title: '审计与回放',
+    body: '每次失败都要能看到请求路径、上游、key、模型映射和错误透传，方便复现而不是猜。',
+    signal: 'no black-box failures'
+  }
+]
+
+const gatewayFlow = [
+  {
+    title: '识别客户端',
+    body: '抓住工具指纹、用户、key、模型和会话，先给请求贴标签。'
+  },
+  {
+    title: '选择路径',
+    body: '按模型映射、健康分、限额、缓存策略和组策略选择上游。'
+  },
+  {
+    title: '失败避让',
+    body: '错误分类、降级、重试和熔断分开处理，避免一个坏 key 拖垮队列。'
+  },
+  {
+    title: '写入画像',
+    body: '把 token、缓存、耗时、会话和工具分布写回看板，下一次调度更聪明。'
+  }
+]
+
+const providerCards = computed(() => [
+  {
+    mark: 'C',
+    name: t('home.providers.claude'),
+    status: t('home.providers.supported'),
+    tone: 'anti-provider-orange'
+  },
+  {
+    mark: 'O',
+    name: 'OpenAI',
+    status: t('home.providers.supported'),
+    tone: 'anti-provider-green'
+  },
+  {
+    mark: 'G',
+    name: t('home.providers.gemini'),
+    status: t('home.providers.supported'),
+    tone: 'anti-provider-blue'
+  },
+  {
+    mark: 'A',
+    name: t('home.providers.antigravity'),
+    status: t('home.providers.supported'),
+    tone: 'anti-provider-red'
+  },
+  {
+    mark: '+',
+    name: t('home.providers.more'),
+    status: t('home.providers.soon'),
+    tone: 'anti-provider-muted'
+  }
+])
+
 // Current year for footer
 const currentYear = computed(() => new Date().getFullYear())
 
@@ -481,145 +417,851 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* Terminal Container */
+.anti-home {
+  --anti-ink: #050505;
+  --anti-paper: #ffffff;
+  --anti-yellow: #ffeb3b;
+  --anti-red: #ff0000;
+  --anti-blue: #0000ff;
+  --anti-green: #00ff00;
+  --anti-cyan: #00e5ff;
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--anti-ink);
+  background:
+    radial-gradient(circle at 14% 12%, rgb(255 0 0 / 0.28) 0 8rem, transparent 8.2rem),
+    radial-gradient(circle at 88% 18%, rgb(0 255 0 / 0.30) 0 9rem, transparent 9.2rem),
+    repeating-linear-gradient(135deg, rgb(5 5 5 / 0.12) 0 10px, transparent 10px 22px),
+    linear-gradient(135deg, #ffeb3b 0%, #fff 44%, #00e5ff 100%);
+  font-family: Impact, "Arial Black", "Comic Sans MS", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+:global(.dark) .anti-home {
+  background:
+    radial-gradient(circle at 12% 14%, rgb(255 0 0 / 0.38) 0 8rem, transparent 8.2rem),
+    radial-gradient(circle at 84% 16%, rgb(0 255 0 / 0.32) 0 9rem, transparent 9.2rem),
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.10) 0 10px, transparent 10px 22px),
+    linear-gradient(135deg, #080008 0%, #ff00ff 42%, #ffeb3b 100%);
+}
+
+.anti-home-bg {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.anti-home-bg::before {
+  content: "";
+  position: absolute;
+  inset: 2rem;
+  border: 7px solid var(--anti-ink);
+  box-shadow: 14px 14px 0 var(--anti-blue);
+  opacity: 0.14;
+  transform: rotate(-1.6deg);
+}
+
+.anti-home-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgb(5 5 5 / 0.13) 0 12px, transparent 12px 28px),
+    repeating-linear-gradient(0deg, rgb(0 0 255 / 0.11) 0 2px, transparent 2px 52px);
+  mix-blend-mode: multiply;
+}
+
+.anti-home-orb,
+.anti-home-sticker {
+  position: absolute;
+  z-index: 1;
+}
+
+.anti-home-orb {
+  border: 8px solid var(--anti-ink);
+  box-shadow: 13px 13px 0 var(--anti-ink);
+}
+
+.anti-home-orb-red {
+  right: -4rem;
+  top: 14rem;
+  height: 12rem;
+  width: 12rem;
+  background: var(--anti-red);
+  transform: rotate(18deg);
+}
+
+.anti-home-orb-green {
+  bottom: 10rem;
+  left: -3rem;
+  height: 9rem;
+  width: 18rem;
+  background: var(--anti-green);
+  transform: rotate(-12deg);
+}
+
+.anti-home-sticker {
+  border: 6px solid var(--anti-ink);
+  background: var(--anti-green);
+  box-shadow: 9px 9px 0 var(--anti-blue);
+  padding: 0.4rem 0.7rem;
+  color: var(--anti-ink);
+  font-size: clamp(1rem, 2vw, 1.8rem);
+  line-height: 0.92;
+  transform: rotate(5deg);
+}
+
+.anti-home-sticker-top {
+  right: 7vw;
+  top: 6.2rem;
+}
+
+.anti-home-sticker-bottom {
+  bottom: 5rem;
+  left: 10vw;
+  background: var(--anti-red);
+  color: var(--anti-paper);
+  transform: rotate(-4deg);
+}
+
+.anti-home-header,
+.anti-home-main,
+.anti-home-footer {
+  position: relative;
+  z-index: 2;
+}
+
+.anti-home-header {
+  padding: 1.4rem clamp(1rem, 3vw, 2rem);
+}
+
+.anti-home-nav {
+  display: flex;
+  max-width: 82rem;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 6px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 10px 10px 0 var(--anti-ink);
+  padding: 0.75rem;
+  transform: rotate(-0.7deg);
+}
+
+.anti-home-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.anti-home-logo {
+  display: grid;
+  height: 3.25rem;
+  width: 3.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 5px solid var(--anti-ink);
+  background: var(--anti-yellow);
+  box-shadow: 5px 5px 0 var(--anti-blue);
+  transform: rotate(-8deg);
+}
+
+.anti-home-logo img {
+  height: 2.4rem;
+  width: 2.4rem;
+  object-fit: contain;
+  filter: contrast(1.15) saturate(1.25);
+}
+
+.anti-home-brand-text {
+  display: grid;
+  min-width: 0;
+}
+
+.anti-home-brand-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.anti-home-brand-text small {
+  margin-top: 0.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: -0.04em;
+}
+
+.anti-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.anti-home-actions :deep(button),
+.anti-home-actions :deep(.locale-switcher),
+.anti-nav-button,
+.anti-cta {
+  border: 4px solid var(--anti-ink) !important;
+  border-radius: 0 !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 5px 5px 0 var(--anti-ink);
+  color: var(--anti-ink) !important;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.anti-nav-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.anti-nav-button-primary {
+  background: var(--anti-red) !important;
+  color: var(--anti-paper) !important;
+  transform: rotate(2deg);
+}
+
+.anti-user-dot {
+  display: inline-grid;
+  height: 1.35rem;
+  width: 1.35rem;
+  place-items: center;
+  border: 2px solid var(--anti-paper);
+  background: var(--anti-blue);
+  color: var(--anti-paper);
+  font-size: 0.7rem;
+}
+
+.anti-home-main {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 5vw, 4.8rem) clamp(1rem, 3vw, 2rem) 4rem;
+}
+
+.anti-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: center;
+}
+
+.anti-hero-copy {
+  position: relative;
+  border: 7px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 13px 13px 0 var(--anti-red);
+  padding: clamp(1.2rem, 3vw, 2.2rem);
+  transform: rotate(-1deg);
+}
+
+.anti-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1.1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.anti-kicker span,
+.anti-tag,
+.anti-flow-title span {
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-green);
+  box-shadow: 4px 4px 0 var(--anti-ink);
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.anti-kicker span:nth-child(2) {
+  background: var(--anti-cyan);
+  transform: rotate(2deg);
+}
+
+.anti-kicker span:nth-child(3) {
+  background: var(--anti-yellow);
+  transform: rotate(-2deg);
+}
+
+.anti-title {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  color: var(--anti-ink);
+  font-size: clamp(3.4rem, 9vw, 8.3rem);
+  letter-spacing: -0.085em;
+  line-height: 0.78;
+  text-transform: uppercase;
+}
+
+.anti-title span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.anti-title strong {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  border: 6px solid var(--anti-ink);
+  background: var(--anti-blue);
+  box-shadow: 9px 9px 0 var(--anti-ink);
+  color: var(--anti-paper);
+  padding: 0.2rem 0.45rem 0.28rem;
+  transform: rotate(1.5deg);
+}
+
+.anti-subtitle {
+  margin: 1.6rem 0 0;
+  max-width: 46rem;
+  font-size: clamp(1.25rem, 2.5vw, 2.1rem);
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.anti-manifesto {
+  max-width: 44rem;
+  margin: 1rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1.55;
+}
+
+.anti-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 1.6rem;
+}
+
+.anti-cta {
+  display: inline-flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  color: var(--anti-ink);
+  text-decoration: none;
+}
+
+.anti-cta-primary {
+  background: var(--anti-red) !important;
+  color: var(--anti-paper) !important;
+  box-shadow: 7px 7px 0 var(--anti-blue);
+  transform: rotate(-2deg);
+}
+
+.anti-cta-secondary {
+  background: var(--anti-green) !important;
+  transform: rotate(2deg);
+}
+
+.anti-hero-console {
+  position: relative;
+  border: 7px solid var(--anti-ink);
+  background: var(--anti-yellow);
+  box-shadow: 13px 13px 0 var(--anti-blue);
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  transform: rotate(1.4deg);
+}
+
+.anti-console-label {
+  position: absolute;
+  right: 1rem;
+  top: -1.1rem;
+  border: 5px solid var(--anti-ink);
+  background: var(--anti-red);
+  box-shadow: 6px 6px 0 var(--anti-ink);
+  color: var(--anti-paper);
+  padding: 0.18rem 0.5rem;
+  font-size: 1.1rem;
+  transform: rotate(5deg);
+}
+
 .terminal-container {
   position: relative;
-  display: inline-block;
 }
 
-/* Terminal Window */
 .terminal-window {
-  width: 420px;
-  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-  border-radius: 14px;
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   overflow: hidden;
-  transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
-  transition: transform 0.3s ease;
+  width: min(100%, 35rem);
+  border: 6px solid var(--anti-ink);
+  background: #050505;
+  box-shadow: 9px 9px 0 var(--anti-ink);
+  color: var(--anti-paper);
 }
 
-.terminal-window:hover {
-  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(-4px);
-}
-
-/* Terminal Header */
 .terminal-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  background: rgba(30, 41, 59, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 5px solid var(--anti-ink);
+  background: var(--anti-paper);
+  padding: 0.7rem 0.85rem;
 }
 
 .terminal-buttons {
   display: flex;
-  gap: 8px;
+  gap: 0.45rem;
 }
 
 .terminal-buttons span {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 3px solid var(--anti-ink);
 }
 
 .btn-close {
-  background: #ef4444;
+  background: var(--anti-red);
 }
+
 .btn-minimize {
-  background: #eab308;
+  background: var(--anti-yellow);
 }
+
 .btn-maximize {
-  background: #22c55e;
+  background: var(--anti-green);
 }
 
 .terminal-title {
   flex: 1;
+  margin-right: 3rem;
+  color: var(--anti-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  font-weight: 900;
   text-align: center;
-  font-size: 12px;
-  font-family: ui-monospace, monospace;
-  color: #64748b;
-  margin-right: 52px;
 }
 
-/* Terminal Body */
 .terminal-body {
-  padding: 20px 24px;
-  font-family: ui-monospace, 'Fira Code', monospace;
-  font-size: 14px;
-  line-height: 2;
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  font-family: ui-monospace, "Fira Code", monospace;
+  font-size: clamp(0.78rem, 1.8vw, 0.92rem);
+  line-height: 1.5;
 }
 
 .code-line {
   display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 0.45rem;
   opacity: 0;
-  animation: line-appear 0.5s ease forwards;
+  animation: line-appear 0.45s steps(2, end) forwards;
 }
 
 .line-1 {
-  animation-delay: 0.3s;
+  animation-delay: 0.25s;
 }
+
 .line-2 {
-  animation-delay: 1s;
+  animation-delay: 0.8s;
 }
+
 .line-3 {
-  animation-delay: 1.8s;
+  animation-delay: 1.35s;
 }
+
 .line-4 {
-  animation-delay: 2.5s;
+  animation-delay: 1.9s;
+}
+
+.code-prompt,
+.code-success {
+  color: var(--anti-green);
+}
+
+.code-cmd {
+  color: var(--anti-cyan);
+}
+
+.code-flag {
+  color: #ff7aff;
+}
+
+.code-url,
+.code-response {
+  color: var(--anti-yellow);
+}
+
+.code-comment {
+  color: #cbd5e1;
+}
+
+.code-success {
+  border: 2px solid var(--anti-green);
+  padding: 0 0.3rem;
+  font-weight: 900;
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.65rem;
+  height: 1rem;
+  background: var(--anti-green);
+  animation: blink 0.8s step-end infinite;
+}
+
+.anti-console-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.anti-console-metrics div {
+  border: 4px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 5px 5px 0 var(--anti-ink);
+  padding: 0.6rem;
+}
+
+.anti-console-metrics span {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.anti-console-metrics strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.anti-tag-wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 2rem 0;
+  transform: rotate(-0.6deg);
+}
+
+.anti-tag:nth-child(2n) {
+  background: var(--anti-red);
+  color: var(--anti-paper);
+  transform: rotate(2deg);
+}
+
+.anti-tag:nth-child(3n) {
+  background: var(--anti-blue);
+  color: var(--anti-paper);
+  transform: rotate(-2deg);
+}
+
+.anti-feature-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+  margin-top: 2rem;
+}
+
+.anti-feature-card,
+.anti-flow-board,
+.anti-provider-zone {
+  border: 6px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 10px 10px 0 var(--anti-ink);
+}
+
+.anti-feature-card {
+  position: relative;
+  min-height: 16rem;
+  padding: 1rem;
+  transition:
+    transform 150ms steps(2, end),
+    box-shadow 150ms steps(2, end),
+    background-color 150ms steps(2, end);
+}
+
+.anti-feature-card-1,
+.anti-feature-card-5 {
+  background: var(--anti-yellow);
+  transform: rotate(-1.2deg);
+}
+
+.anti-feature-card-2,
+.anti-feature-card-6 {
+  background: var(--anti-cyan);
+  transform: rotate(1.1deg) translateY(0.35rem);
+}
+
+.anti-feature-card-3 {
+  background: var(--anti-green);
+  transform: rotate(-0.6deg);
+}
+
+.anti-feature-card-4 {
+  background: var(--anti-red);
+  color: var(--anti-paper);
+  transform: rotate(1.6deg);
+}
+
+.anti-feature-index {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.65rem;
+  border: 4px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 5px 5px 0 var(--anti-ink);
+  color: var(--anti-ink);
+  padding: 0.15rem 0.45rem;
+  font-size: 1.6rem;
+  line-height: 0.9;
+  transform: rotate(6deg);
+}
+
+.anti-feature-card h2 {
+  max-width: 76%;
+  margin: 0 0 1rem;
+  font-size: clamp(1.6rem, 4vw, 2.65rem);
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.anti-feature-card p {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 1.55;
+}
+
+.anti-feature-card span {
+  display: inline-block;
+  margin-top: 1rem;
+  border: 3px solid currentColor;
+  background: rgb(255 255 255 / 0.7);
+  padding: 0.24rem 0.42rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.anti-flow-board {
+  margin-top: 2.4rem;
+  padding: clamp(1rem, 3vw, 1.6rem);
+  transform: rotate(0.4deg);
+}
+
+.anti-flow-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.anti-flow-title strong {
+  max-width: 34rem;
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  line-height: 0.95;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.anti-flow-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.anti-flow-step {
+  border: 5px solid var(--anti-ink);
+  background: var(--anti-yellow);
+  box-shadow: 6px 6px 0 var(--anti-ink);
+  padding: 0.85rem;
+}
+
+.anti-flow-step:nth-child(even) {
+  background: var(--anti-green);
+  transform: rotate(1deg);
+}
+
+.anti-flow-step span {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-ink);
+  color: var(--anti-yellow);
+  padding: 0.1rem 0.35rem;
+  line-height: 1;
+}
+
+.anti-flow-step h3 {
+  margin: 0 0 0.45rem;
+  font-size: 1.35rem;
+  line-height: 0.95;
+}
+
+.anti-flow-step p {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  font-weight: 850;
+  letter-spacing: -0.045em;
+  line-height: 1.45;
+}
+
+.anti-provider-zone {
+  margin-top: 2.4rem;
+  padding: clamp(1rem, 3vw, 1.6rem);
+  transform: rotate(-0.45deg);
+}
+
+.anti-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.anti-section-heading h2 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.anti-section-heading p {
+  max-width: 30rem;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 850;
+  letter-spacing: -0.045em;
+}
+
+.anti-provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.anti-provider-card {
+  display: flex;
+  min-height: 4.8rem;
+  min-width: 12rem;
+  align-items: center;
+  gap: 0.6rem;
+  border: 5px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 6px 6px 0 var(--anti-ink);
+  padding: 0.55rem;
+  transform: rotate(-1deg);
+}
+
+.anti-provider-card strong {
+  display: grid;
+  height: 2.9rem;
+  width: 2.9rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 4px solid var(--anti-ink);
+  background: var(--anti-yellow);
+  color: var(--anti-ink);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.anti-provider-card span {
+  font-size: 1.15rem;
+  line-height: 0.9;
+}
+
+.anti-provider-card em {
+  margin-left: auto;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-green);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.7rem;
+  font-style: normal;
+}
+
+.anti-provider-orange strong {
+  background: #ff7a00;
+}
+
+.anti-provider-green strong {
+  background: var(--anti-green);
+}
+
+.anti-provider-blue strong {
+  background: var(--anti-blue);
+  color: var(--anti-paper);
+}
+
+.anti-provider-red strong {
+  background: var(--anti-red);
+  color: var(--anti-paper);
+}
+
+.anti-provider-muted {
+  opacity: 0.72;
+  transform: rotate(2deg);
+}
+
+.anti-home-footer {
+  display: flex;
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 3vw, 2rem) 2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.anti-home-footer p {
+  margin: 0;
+}
+
+.anti-home-footer div {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.anti-home-footer a {
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-paper);
+  box-shadow: 4px 4px 0 var(--anti-ink);
+  color: var(--anti-ink);
+  padding: 0.25rem 0.45rem;
+  text-decoration: none;
+  text-transform: uppercase;
 }
 
 @keyframes line-appear {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translate(-0.35rem, 0.2rem);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(0, 0);
   }
-}
-
-.code-prompt {
-  color: #22c55e;
-  font-weight: bold;
-}
-.code-cmd {
-  color: #38bdf8;
-}
-.code-flag {
-  color: #a78bfa;
-}
-.code-url {
-  color: #14b8a6;
-}
-.code-comment {
-  color: #64748b;
-  font-style: italic;
-}
-.code-success {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.15);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-}
-.code-response {
-  color: #fbbf24;
-}
-
-/* Blinking Cursor */
-.cursor {
-  display: inline-block;
-  width: 8px;
-  height: 16px;
-  background: #22c55e;
-  animation: blink 1s step-end infinite;
 }
 
 @keyframes blink {
@@ -633,12 +1275,87 @@ onMounted(() => {
   }
 }
 
-/* Dark mode adjustments */
-:deep(.dark) .terminal-window {
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(20, 184, 166, 0.2),
-    0 0 40px rgba(20, 184, 166, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+@media (hover: hover) {
+  .anti-nav-button:hover,
+  .anti-cta:hover,
+  .anti-feature-card:hover,
+  .anti-provider-card:hover,
+  .anti-home-footer a:hover {
+    background: var(--anti-green) !important;
+    box-shadow: 12px 12px 0 var(--anti-red);
+    transform: rotate(-2deg) translate(-2px, -2px);
+  }
+
+  .terminal-window:hover {
+    transform: rotate(-1deg) translate(-2px, -2px);
+  }
+}
+
+@media (min-width: 768px) {
+  .anti-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .anti-flow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .anti-hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 0.95fr);
+  }
+
+  .anti-feature-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .anti-home-header {
+    padding: 1rem;
+  }
+
+  .anti-home-nav,
+  .anti-home-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .anti-home-actions {
+    justify-content: flex-start;
+  }
+
+  .anti-title {
+    font-size: clamp(3rem, 18vw, 5.4rem);
+  }
+
+  .anti-console-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .anti-home-sticker {
+    display: none;
+  }
+
+  .anti-flow-title strong {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-line,
+  .cursor {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+
+  .anti-nav-button,
+  .anti-cta,
+  .anti-feature-card,
+  .anti-provider-card,
+  .terminal-window {
+    transition-duration: 1ms;
+  }
 }
 </style>
