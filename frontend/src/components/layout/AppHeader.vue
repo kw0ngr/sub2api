@@ -41,6 +41,20 @@
         <!-- Language Switcher -->
         <LocaleSwitcher />
 
+        <!-- Backend style switch -->
+        <button
+          v-if="user"
+          type="button"
+          class="anti-design-toggle"
+          :class="{ 'anti-design-toggle-active': antiDesignMode }"
+          :aria-pressed="antiDesignMode"
+          title="切换整个后台反设计风格"
+          @click="toggleAntiDesignMode"
+        >
+          <span class="anti-design-toggle-mark">ANTI</span>
+          <span class="hidden lg:inline">{{ antiDesignMode ? 'ON' : 'OFF' }}</span>
+        </button>
+
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
 
@@ -218,6 +232,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { useAntiDesignMode } from '@/composables/useAntiDesignMode'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
@@ -230,6 +245,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const { antiDesignMode, toggleAntiDesignMode } = useAntiDesignMode()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -339,5 +355,89 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+.anti-design-toggle {
+  position: relative;
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(226 232 240 / 0.86);
+  background: rgb(255 255 255 / 0.72);
+  padding: 0 0.65rem;
+  color: rgb(71 85 105);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+}
+
+.dark .anti-design-toggle {
+  border-color: rgb(51 65 85 / 0.78);
+  background: rgb(15 23 42 / 0.56);
+  color: rgb(203 213 225);
+}
+
+.anti-design-toggle:hover {
+  border-color: rgb(59 130 246 / 0.46);
+  background: rgb(239 246 255 / 0.86);
+  color: rgb(30 64 175);
+}
+
+.dark .anti-design-toggle:hover {
+  border-color: rgb(96 165 250 / 0.42);
+  background: rgb(30 41 59 / 0.88);
+  color: rgb(191 219 254);
+}
+
+.anti-design-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 0.18);
+}
+
+.anti-design-toggle:active {
+  transform: translateY(1px);
+}
+
+.anti-design-toggle-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.45rem;
+  background: rgb(241 245 249 / 0.9);
+  padding: 0.25rem 0.34rem;
+  color: rgb(37 99 235);
+  font-size: 0.62rem;
+}
+
+.dark .anti-design-toggle-mark {
+  background: rgb(30 41 59 / 0.92);
+  color: rgb(96 165 250);
+}
+
+.anti-design-toggle-active {
+  border: 3px solid #050505;
+  border-radius: 0.15rem;
+  background: #ffeb3b;
+  box-shadow: 5px 5px 0 #050505;
+  color: #050505;
+  transform: rotate(-2deg);
+}
+
+.anti-design-toggle-active .anti-design-toggle-mark {
+  border: 2px solid #050505;
+  border-radius: 0;
+  background: #ff0000;
+  color: #fff;
+  transform: rotate(6deg);
 }
 </style>

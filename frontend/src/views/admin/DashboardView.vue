@@ -234,19 +234,6 @@
               <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
               </button>
-              <button
-                type="button"
-                class="dashboard-style-toggle"
-                :class="{ 'dashboard-style-toggle-active': antiDesignMode }"
-                :aria-pressed="antiDesignMode"
-                title="一键切换反设计风格"
-                @click="toggleAntiDesignMode"
-              >
-                <span class="dashboard-style-toggle-mark">ANTI</span>
-                <span class="dashboard-style-toggle-text">
-                  {{ antiDesignMode ? '反设计 ON' : '反设计 OFF' }}
-                </span>
-              </button>
               <div class="ml-auto flex items-center gap-2">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t('admin.dashboard.granularity') }}:</span
@@ -294,7 +281,11 @@
             class="dashboard-masonry"
             :class="{ 'dashboard-masonry--single': insightCardCount <= 1 }"
           >
-            <div v-if="showUserContributionCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
+            <div
+              v-if="showUserContributionCard"
+              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
+              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
+            >
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -458,7 +449,11 @@
               </div>
             </div>
 
-            <div v-if="showUsageInsightsCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
+            <div
+              v-if="showUsageInsightsCard"
+              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
+              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
+            >
               <div
                 v-if="chartsLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -563,7 +558,11 @@
               </div>
             </div>
 
-            <div v-if="showMemberPulseCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
+            <div
+              v-if="showMemberPulseCard"
+              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
+              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 || shouldExpandMemberPulseCard }"
+            >
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -684,7 +683,10 @@
               </div>
             </div>
 
-            <div v-if="showTeamUsageProfileCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
+            <div
+              v-if="showTeamUsageProfileCard"
+              class="card dashboard-analytics-card dashboard-masonry-item dashboard-masonry-item-wide dashboard-team-profile-card relative overflow-hidden p-4"
+            >
                 <div
                   v-if="chartsLoading"
                   class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -706,7 +708,7 @@
                 </div>
 
                 <div v-if="teamInsights && hasTeamInsightsData" class="space-y-5">
-                  <div v-if="teamSignalTips.length" class="grid grid-cols-1 gap-2">
+                  <div v-if="teamSignalTips.length" class="dashboard-team-signal-grid">
                     <div
                       v-for="tip in teamSignalTips"
                       :key="tip.title"
@@ -725,7 +727,7 @@
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-2">
+                  <div class="dashboard-team-metrics-grid">
                     <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                       <p class="text-xs text-gray-500 dark:text-gray-400">团队缓存率</p>
                       <p class="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-400">
@@ -746,110 +748,112 @@
                     </div>
                   </div>
 
-                  <div v-if="teamProfileItems.length" class="space-y-2">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      成员画像
-                    </p>
-                    <button
-                      v-for="profile in teamProfileItems"
-                      :key="`profile-${profile.user_id}`"
-                      type="button"
-                      class="w-full rounded-xl border border-gray-100 p-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
-                      @click="goToMemberUsage(profile.user_id)"
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="memberDisplayName(profile)">
-                            {{ memberDisplayName(profile) }}
-                          </p>
-                          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${profile.top_client || '-'} / ${profile.top_model || '-'}`">
-                            {{ profile.top_client || '-' }} / {{ profile.top_model || '-' }}
-                          </p>
-                        </div>
-                        <div class="shrink-0 text-right text-xs">
-                          <p class="font-semibold text-gray-900 dark:text-white">
-                            {{ formatTokens(profile.total_tokens) }}
-                          </p>
-                          <p class="text-emerald-600 dark:text-emerald-400">
-                            缓存 {{ formatPercent(profile.cache_share) }}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div v-if="teamClientItems.length" class="space-y-2">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      客户端 / 工具分布
-                    </p>
-                    <div v-for="client in teamClientItems" :key="client.client" class="space-y-1">
-                      <div class="flex items-center justify-between gap-3 text-xs">
-                        <span class="truncate font-medium text-gray-900 dark:text-white">
-                          {{ client.client || 'Unknown' }}
-                        </span>
-                        <span class="shrink-0 text-gray-500 dark:text-gray-400">
-                          {{ formatPercent(client.token_share) }} / {{ formatTokens(client.total_tokens) }}
-                        </span>
-                      </div>
-                      <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                        <div
-                          class="h-full rounded-full bg-cyan-500"
-                          :style="{ width: `${shareBarWidth(client.token_share)}%` }"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="teamCacheItems.length" class="space-y-2">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      缓存效率看板
-                    </p>
-                    <div
-                      v-for="item in teamCacheItems"
-                      :key="`${item.scope}-${item.user_id || item.model || item.label}`"
-                      class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
-                    >
-                      <div class="flex items-center justify-between gap-3">
-                        <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="item.label">
-                          {{ item.label || item.model || '-' }}
-                        </p>
-                        <p class="shrink-0 text-xs text-emerald-600 dark:text-emerald-400">
-                          {{ formatPercent(item.cache_share) }}
-                        </p>
-                      </div>
-                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        读 {{ formatTokens(item.cache_read_tokens) }} / 写 {{ formatTokens(item.cache_creation_tokens) }}
-                        <span v-if="item.ttl_override_count"> · TTL {{ item.ttl_override_count }}</span>
+                  <div class="dashboard-team-profile-grid">
+                    <div v-if="teamProfileItems.length" class="dashboard-team-profile-section space-y-2">
+                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        成员画像
                       </p>
-                    </div>
-                  </div>
-
-                  <div v-if="teamSessionItems.length" class="space-y-2">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      近期会话聚合
-                    </p>
-                    <button
-                      v-for="session in teamSessionItems"
-                      :key="session.session_id"
-                      type="button"
-                      class="w-full rounded-xl border border-gray-100 px-3 py-2 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
-                      @click="goToMemberUsage(session.user_id)"
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="sessionDisplayName(session)">
-                            {{ sessionDisplayName(session) }}
-                          </p>
-                          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${session.client} / ${session.model}`">
-                            {{ session.client }} / {{ session.model }}
-                          </p>
+                      <button
+                        v-for="profile in teamProfileItems"
+                        :key="`profile-${profile.user_id}`"
+                        type="button"
+                        class="w-full rounded-xl border border-gray-100 p-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
+                        @click="goToMemberUsage(profile.user_id)"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="memberDisplayName(profile)">
+                              {{ memberDisplayName(profile) }}
+                            </p>
+                            <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${profile.top_client || '-'} / ${profile.top_model || '-'}`">
+                              {{ profile.top_client || '-' }} / {{ profile.top_model || '-' }}
+                            </p>
+                          </div>
+                          <div class="shrink-0 text-right text-xs">
+                            <p class="font-semibold text-gray-900 dark:text-white">
+                              {{ formatTokens(profile.total_tokens) }}
+                            </p>
+                            <p class="text-emerald-600 dark:text-emerald-400">
+                              缓存 {{ formatPercent(profile.cache_share) }}
+                            </p>
+                          </div>
                         </div>
-                        <div class="shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
-                          <p>{{ formatTokens(session.total_tokens) }}</p>
-                          <p>{{ formatCompactDateTime(session.last_seen) }}</p>
+                      </button>
+                    </div>
+
+                    <div v-if="teamClientItems.length" class="dashboard-team-profile-section space-y-2">
+                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        客户端 / 工具分布
+                      </p>
+                      <div v-for="client in teamClientItems" :key="client.client" class="space-y-1">
+                        <div class="flex items-center justify-between gap-3 text-xs">
+                          <span class="truncate font-medium text-gray-900 dark:text-white">
+                            {{ client.client || 'Unknown' }}
+                          </span>
+                          <span class="shrink-0 text-gray-500 dark:text-gray-400">
+                            {{ formatPercent(client.token_share) }} / {{ formatTokens(client.total_tokens) }}
+                          </span>
+                        </div>
+                        <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                          <div
+                            class="h-full rounded-full bg-cyan-500"
+                            :style="{ width: `${shareBarWidth(client.token_share)}%` }"
+                          />
                         </div>
                       </div>
-                    </button>
+                    </div>
+
+                    <div v-if="teamCacheItems.length" class="dashboard-team-profile-section space-y-2">
+                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        缓存效率看板
+                      </p>
+                      <div
+                        v-for="item in teamCacheItems"
+                        :key="`${item.scope}-${item.user_id || item.model || item.label}`"
+                        class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
+                      >
+                        <div class="flex items-center justify-between gap-3">
+                          <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="item.label">
+                            {{ item.label || item.model || '-' }}
+                          </p>
+                          <p class="shrink-0 text-xs text-emerald-600 dark:text-emerald-400">
+                            {{ formatPercent(item.cache_share) }}
+                          </p>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          读 {{ formatTokens(item.cache_read_tokens) }} / 写 {{ formatTokens(item.cache_creation_tokens) }}
+                          <span v-if="item.ttl_override_count"> · TTL {{ item.ttl_override_count }}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div v-if="teamSessionItems.length" class="dashboard-team-profile-section space-y-2">
+                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        近期会话聚合
+                      </p>
+                      <button
+                        v-for="session in teamSessionItems"
+                        :key="session.session_id"
+                        type="button"
+                        class="w-full rounded-xl border border-gray-100 px-3 py-2 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
+                        @click="goToMemberUsage(session.user_id)"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="sessionDisplayName(session)">
+                              {{ sessionDisplayName(session) }}
+                            </p>
+                            <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${session.client} / ${session.model}`">
+                              {{ session.client }} / {{ session.model }}
+                            </p>
+                          </div>
+                          <div class="shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+                            <p>{{ formatTokens(session.total_tokens) }}</p>
+                            <p>{{ formatCompactDateTime(session.last_seen) }}</p>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div
@@ -1070,6 +1074,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import { useAntiDesignMode } from '@/composables/useAntiDesignMode'
 
 import {
   Chart as ChartJS,
@@ -1119,17 +1124,7 @@ let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let rankingLoadSeq = 0
 const rankingLimit = 12
-const antiDesignStorageKey = 'sub2api.admin.dashboard.antiDesign'
-const antiDesignMode = ref(
-  typeof window !== 'undefined' && window.localStorage.getItem(antiDesignStorageKey) === '1'
-)
-
-const toggleAntiDesignMode = () => {
-  antiDesignMode.value = !antiDesignMode.value
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(antiDesignStorageKey, antiDesignMode.value ? '1' : '0')
-  }
-}
+const { antiDesignMode } = useAntiDesignMode()
 
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
@@ -1841,6 +1836,14 @@ const insightCardCount = computed(() => [
   showMemberPulseCard.value,
   showTeamUsageProfileCard.value
 ].filter(Boolean).length)
+const compactInsightCardCount = computed(() => [
+  showUserContributionCard.value,
+  showUsageInsightsCard.value,
+  showMemberPulseCard.value
+].filter(Boolean).length)
+const shouldExpandMemberPulseCard = computed(() => {
+  return showMemberPulseCard.value && compactInsightCardCount.value % 2 === 1
+})
 const showInsightCards = computed(() => {
   return insightCardCount.value > 0
 })
@@ -2294,73 +2297,6 @@ onMounted(() => {
   transform: translateY(1px);
 }
 
-.dashboard-style-toggle {
-  position: relative;
-  display: inline-flex;
-  min-height: 2.5rem;
-  align-items: center;
-  gap: 0.5rem;
-  overflow: hidden;
-  border-radius: 0.75rem;
-  border: 1px solid rgb(var(--dashboard-border) / 0.86);
-  background: rgb(var(--dashboard-surface) / 0.82);
-  padding: 0 0.85rem;
-  color: rgb(71 85 105);
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 120ms ease;
-}
-
-.dark .dashboard-style-toggle {
-  color: rgb(203 213 225);
-}
-
-.dashboard-style-toggle:hover {
-  border-color: rgb(var(--dashboard-border-strong) / 0.95);
-  background: rgb(var(--dashboard-surface-soft) / 0.74);
-}
-
-.dashboard-style-toggle:active {
-  transform: translateY(1px);
-}
-
-.dashboard-style-toggle:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgb(var(--dashboard-ring) / 0.14);
-}
-
-.dashboard-style-toggle-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.45rem;
-  background: rgb(var(--dashboard-surface-muted) / 0.74);
-  padding: 0.2rem 0.35rem;
-  color: rgb(var(--dashboard-accent));
-  font-size: 0.62rem;
-  line-height: 1;
-}
-
-.dashboard-style-toggle-active {
-  border-color: rgb(15 23 42);
-  background: #ffeb3b;
-  color: #050505;
-  box-shadow: 5px 5px 0 #050505;
-}
-
-.dashboard-style-toggle-active .dashboard-style-toggle-mark {
-  border: 2px solid #050505;
-  border-radius: 0;
-  background: #ff0000;
-  color: #fff;
-  transform: rotate(-7deg);
-}
-
 .dashboard-analytics-card {
   border-radius: 1.25rem;
   border-color: rgb(var(--dashboard-border) / 0.76);
@@ -2517,17 +2453,41 @@ onMounted(() => {
 }
 
 .dashboard-masonry {
-  column-count: 1;
-  column-gap: 1.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
 }
 
 .dashboard-masonry-item {
-  display: inline-block;
   width: 100%;
-  margin-bottom: 1.5rem;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  -webkit-column-break-inside: avoid;
+}
+
+.dashboard-masonry-item-wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard-team-signal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.dashboard-team-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.dashboard-team-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.dashboard-team-profile-section {
+  min-width: 0;
 }
 
 .admin-dashboard-anti {
@@ -2685,8 +2645,7 @@ onMounted(() => {
 
 .admin-dashboard-anti .dashboard-filter-panel :deep(.date-picker-trigger),
 .admin-dashboard-anti .dashboard-filter-panel :deep(.select-trigger),
-.admin-dashboard-anti .dashboard-filter-panel .btn-secondary,
-.admin-dashboard-anti .dashboard-style-toggle {
+.admin-dashboard-anti .dashboard-filter-panel .btn-secondary {
   border: 4px solid #050505;
   border-radius: 0;
   background: #ffeb3b;
@@ -2696,8 +2655,7 @@ onMounted(() => {
   text-transform: uppercase;
 }
 
-.admin-dashboard-anti .dashboard-filter-panel .btn-secondary:hover,
-.admin-dashboard-anti .dashboard-style-toggle:hover {
+.admin-dashboard-anti .dashboard-filter-panel .btn-secondary:hover {
   background: #00ff00;
   transform: rotate(-2deg) translate(-1px, -1px);
 }
@@ -2710,19 +2668,13 @@ onMounted(() => {
   color: #050505;
 }
 
-.admin-dashboard-anti .dashboard-style-toggle-active {
-  background: #ff0000;
-  color: #fff;
-  box-shadow: 7px 7px 0 #0000ff;
-}
-
 .admin-dashboard-anti .dashboard-analytics-card {
   background:
     linear-gradient(180deg, #fff, #fff 64%, #ffeb3b 64%, #ffeb3b 100%);
 }
 
 .admin-dashboard-anti .dashboard-masonry {
-  column-gap: 2rem;
+  gap: 2rem;
 }
 
 .admin-dashboard-anti .dashboard-masonry-item:nth-child(odd) {
@@ -2804,11 +2756,25 @@ onMounted(() => {
 
 @media (min-width: 1024px) {
   .dashboard-masonry {
-    column-count: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .dashboard-masonry--single {
-    column-count: 1;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-team-signal-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-team-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .dashboard-team-profile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

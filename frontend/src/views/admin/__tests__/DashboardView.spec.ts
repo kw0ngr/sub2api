@@ -627,7 +627,9 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
   })
 
-  it('toggles and persists anti-design mode', async () => {
+  it('inherits the global backend anti-design mode', async () => {
+    window.localStorage.setItem('sub2api.ui.antiDesign', '1')
+
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
@@ -646,12 +648,7 @@ describe('admin DashboardView', () => {
     await flushPromises()
 
     const dashboardRoot = () => wrapper.find('.admin-dashboard-polish')
-    expect(dashboardRoot().classes()).not.toContain('admin-dashboard-anti')
-
-    await wrapper.find('button[title="一键切换反设计风格"]').trigger('click')
-
     expect(dashboardRoot().classes()).toContain('admin-dashboard-anti')
-    expect(window.localStorage.getItem('sub2api.admin.dashboard.antiDesign')).toBe('1')
-    expect(wrapper.text()).toContain('反设计 ON')
+    expect(wrapper.find('button[title="一键切换反设计风格"]').exists()).toBe(false)
   })
 })
