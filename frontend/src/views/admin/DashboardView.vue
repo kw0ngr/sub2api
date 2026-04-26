@@ -1903,157 +1903,373 @@ onMounted(() => {
 
 <style scoped>
 .admin-dashboard-polish {
-  --dashboard-accent: 20 184 166;
-  --dashboard-accent-strong: 13 148 136;
+  --dashboard-accent: 37 99 235;
+  --dashboard-accent-soft: 59 130 246;
   --dashboard-surface: 255 255 255;
+  --dashboard-surface-soft: 248 250 252;
+  --dashboard-surface-muted: 241 245 249;
+  --dashboard-border: 226 232 240;
+  --dashboard-border-strong: 203 213 225;
   --dashboard-ink-shadow: 15 23 42;
+  --dashboard-ring: 59 130 246;
+  --metric-accent: var(--dashboard-accent);
+  position: relative;
+  isolation: isolate;
+  padding-bottom: 0.25rem;
+}
+
+.dark .admin-dashboard-polish {
+  --dashboard-surface: 15 23 42;
+  --dashboard-surface-soft: 30 41 59;
+  --dashboard-surface-muted: 51 65 85;
+  --dashboard-border: 51 65 85;
+  --dashboard-border-strong: 71 85 105;
+  --dashboard-ink-shadow: 0 0 0;
+}
+
+.admin-dashboard-polish::before {
+  content: "";
+  position: absolute;
+  inset: -1.5rem -1rem auto;
+  z-index: -1;
+  height: 16rem;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 78% 0%, rgb(var(--dashboard-accent) / 0.08), transparent 34%),
+    linear-gradient(180deg, rgb(var(--dashboard-surface-soft) / 0.54), transparent 78%);
+  opacity: 0.9;
+}
+
+.dark .admin-dashboard-polish::before {
+  background:
+    radial-gradient(circle at 78% 0%, rgb(var(--dashboard-accent-soft) / 0.13), transparent 34%),
+    linear-gradient(180deg, rgb(15 23 42 / 0.74), transparent 78%);
+  opacity: 0.72;
 }
 
 .admin-dashboard-polish :deep(.card) {
-  border-color: rgb(226 232 240 / 0.72);
+  border-color: rgb(var(--dashboard-border) / 0.72);
+  box-shadow:
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.035),
+    0 16px 34px -30px rgb(var(--dashboard-ink-shadow) / 0.28);
 }
 
 .dark .admin-dashboard-polish :deep(.card) {
-  border-color: rgb(51 65 85 / 0.68);
+  border-color: rgb(var(--dashboard-border) / 0.68);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.035) inset,
+    0 16px 36px -30px rgb(0 0 0 / 0.55);
 }
 
 .dashboard-stat-grid {
-  perspective: 1000px;
+  align-items: stretch;
 }
 
 .dashboard-stat-card {
+  --metric-accent: var(--dashboard-accent);
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 100% 0%, rgb(var(--dashboard-accent) / 0.10), transparent 32%),
-    linear-gradient(135deg, rgb(var(--dashboard-surface) / 0.98), rgb(248 250 252 / 0.92));
+  min-height: 6.75rem;
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.98), rgb(var(--dashboard-surface-soft) / 0.86));
   box-shadow:
-    0 16px 48px rgb(var(--dashboard-ink-shadow) / 0.07),
-    inset 0 1px 0 rgb(255 255 255 / 0.78);
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.04),
+    0 14px 30px -26px rgb(var(--dashboard-ink-shadow) / 0.32),
+    inset 0 1px 0 rgb(255 255 255 / 0.70);
   transform: translateZ(0);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.dashboard-stat-grid .dashboard-stat-card:nth-child(1) {
+  --metric-accent: 37 99 235;
+}
+
+.dashboard-stat-grid .dashboard-stat-card:nth-child(2) {
+  --metric-accent: 124 58 237;
+}
+
+.dashboard-stat-grid .dashboard-stat-card:nth-child(3) {
+  --metric-accent: 22 163 74;
+}
+
+.dashboard-stat-grid .dashboard-stat-card:nth-child(4) {
+  --metric-accent: 5 150 105;
+}
+
+.dashboard-stat-grid:nth-of-type(2) .dashboard-stat-card:nth-child(1) {
+  --metric-accent: 217 119 6;
+}
+
+.dashboard-stat-grid:nth-of-type(2) .dashboard-stat-card:nth-child(2) {
+  --metric-accent: 79 70 229;
+}
+
+.dashboard-stat-grid:nth-of-type(2) .dashboard-stat-card:nth-child(3) {
+  --metric-accent: 124 58 237;
+}
+
+.dashboard-stat-grid:nth-of-type(2) .dashboard-stat-card:nth-child(4) {
+  --metric-accent: 225 29 72;
 }
 
 .dark .dashboard-stat-card {
-  background:
-    radial-gradient(circle at 100% 0%, rgb(var(--dashboard-accent) / 0.14), transparent 34%),
-    linear-gradient(135deg, rgb(30 41 59 / 0.74), rgb(15 23 42 / 0.64));
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface-soft) / 0.74), rgb(var(--dashboard-surface) / 0.62));
   box-shadow:
-    0 16px 48px rgb(0 0 0 / 0.18),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
+    0 1px 0 rgb(255 255 255 / 0.04) inset,
+    0 16px 34px -28px rgb(0 0 0 / 0.62);
+}
+
+.dashboard-stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, rgb(var(--metric-accent) / 0.62), transparent 72%);
+  opacity: 0.58;
 }
 
 .dashboard-stat-card::after {
   content: "";
   position: absolute;
-  right: -2rem;
-  top: -2.25rem;
+  inset: 0;
   z-index: -1;
-  height: 5rem;
-  width: 5rem;
-  border-radius: 9999px;
-  background: rgb(var(--dashboard-accent) / 0.10);
-  transition: transform 240ms ease, opacity 240ms ease;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(var(--metric-accent) / 0.075), transparent 42%),
+    linear-gradient(180deg, transparent, rgb(var(--dashboard-surface-muted) / 0.18));
+  opacity: 0.86;
+  transition: opacity 180ms ease;
 }
 
 .dashboard-stat-card:hover {
-  border-color: rgb(var(--dashboard-accent) / 0.34);
+  border-color: rgb(var(--metric-accent) / 0.28);
   box-shadow:
-    0 22px 60px rgb(var(--dashboard-ink-shadow) / 0.10),
-    inset 0 1px 0 rgb(255 255 255 / 0.88);
-  transform: translateY(-2px);
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.045),
+    0 18px 36px -28px rgb(var(--dashboard-ink-shadow) / 0.40),
+    inset 0 1px 0 rgb(255 255 255 / 0.76);
+  transform: translateY(-1px);
 }
 
 .dark .dashboard-stat-card:hover {
+  border-color: rgb(var(--metric-accent) / 0.34);
   box-shadow:
-    0 22px 60px rgb(0 0 0 / 0.24),
-    0 0 0 1px rgb(var(--dashboard-accent) / 0.08),
-    inset 0 1px 0 rgb(255 255 255 / 0.08);
+    0 1px 0 rgb(255 255 255 / 0.055) inset,
+    0 18px 38px -28px rgb(0 0 0 / 0.68);
 }
 
 .dashboard-stat-card:hover::after {
-  opacity: 0.9;
-  transform: scale(1.18);
+  opacity: 1;
 }
 
 .dashboard-stat-card > .flex > div:first-child {
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.58);
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--metric-accent) / 0.14);
+  background: rgb(var(--metric-accent) / 0.095) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.62),
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.04);
+}
+
+.dark .dashboard-stat-card > .flex > div:first-child {
+  border-color: rgb(var(--metric-accent) / 0.24);
+  background: rgb(var(--metric-accent) / 0.14) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+
+.dashboard-stat-card > .flex > div:last-child {
+  min-width: 0;
+}
+
+.dashboard-stat-card :is(.text-xl, .text-lg, .text-sm.font-semibold) {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}
+
+.dashboard-stat-card .text-xs {
+  line-height: 1.35;
 }
 
 .dashboard-filter-panel {
   position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 0% 0%, rgb(var(--dashboard-accent) / 0.10), transparent 34%),
-    linear-gradient(135deg, rgb(255 255 255 / 0.94), rgb(248 250 252 / 0.90));
+  border-color: rgb(var(--dashboard-border) / 0.78);
+  background: rgb(var(--dashboard-surface) / 0.88);
   box-shadow:
-    0 18px 54px rgb(var(--dashboard-ink-shadow) / 0.075),
-    inset 0 1px 0 rgb(255 255 255 / 0.78);
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.035),
+    0 14px 34px -30px rgb(var(--dashboard-ink-shadow) / 0.32),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(14px);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .dark .dashboard-filter-panel {
-  background:
-    radial-gradient(circle at 0% 0%, rgb(var(--dashboard-accent) / 0.14), transparent 36%),
-    linear-gradient(135deg, rgb(30 41 59 / 0.78), rgb(15 23 42 / 0.66));
+  background: rgb(var(--dashboard-surface-soft) / 0.62);
   box-shadow:
-    0 18px 54px rgb(0 0 0 / 0.18),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
+    0 1px 0 rgb(255 255 255 / 0.045) inset,
+    0 14px 34px -28px rgb(0 0 0 / 0.58);
+}
+
+.dashboard-filter-panel:focus-within {
+  border-color: rgb(var(--dashboard-ring) / 0.34);
+  box-shadow:
+    0 0 0 3px rgb(var(--dashboard-ring) / 0.08),
+    0 14px 34px -30px rgb(var(--dashboard-ink-shadow) / 0.34),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
 }
 
 .dashboard-filter-panel::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 0 auto 0 0;
+  width: 3px;
   pointer-events: none;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgb(var(--dashboard-accent) / 0.10), transparent 42%);
-  opacity: 0.72;
+  background: linear-gradient(180deg, rgb(var(--dashboard-accent) / 0.66), rgb(var(--dashboard-accent-soft) / 0.12));
+  opacity: 0.74;
 }
 
 .dashboard-filter-panel > * {
   position: relative;
 }
 
-.dashboard-analytics-card {
-  border-color: rgb(226 232 240 / 0.76);
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(248 250 252 / 0.92));
-  box-shadow:
-    0 16px 50px rgb(var(--dashboard-ink-shadow) / 0.07),
-    inset 0 1px 0 rgb(255 255 255 / 0.76);
+.dashboard-filter-panel :deep(.date-picker-trigger),
+.dashboard-filter-panel :deep(.select-trigger),
+.dashboard-filter-panel .btn-secondary {
+  min-height: 2.5rem;
+  border-radius: 0.75rem;
+  border-color: rgb(var(--dashboard-border) / 0.86);
+  background: rgb(var(--dashboard-surface) / 0.82);
+  box-shadow: none;
   transition:
-    border-color 220ms ease,
-    box-shadow 220ms ease,
-    transform 220ms ease,
-    background-color 220ms ease;
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+.dashboard-filter-panel :deep(.date-picker-trigger:hover),
+.dashboard-filter-panel :deep(.select-trigger:hover),
+.dashboard-filter-panel .btn-secondary:hover {
+  border-color: rgb(var(--dashboard-border-strong) / 0.95);
+  background: rgb(var(--dashboard-surface-soft) / 0.74);
+}
+
+.dashboard-filter-panel .btn-secondary:active {
+  transform: translateY(1px);
+}
+
+.dashboard-analytics-card {
+  border-color: rgb(var(--dashboard-border) / 0.76);
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.98), rgb(var(--dashboard-surface-soft) / 0.82));
+  box-shadow:
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.04),
+    0 16px 36px -30px rgb(var(--dashboard-ink-shadow) / 0.30),
+    inset 0 1px 0 rgb(255 255 255 / 0.74);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease;
 }
 
 .dark .dashboard-analytics-card {
-  border-color: rgb(51 65 85 / 0.68);
-  background:
-    linear-gradient(180deg, rgb(30 41 59 / 0.70), rgb(15 23 42 / 0.58));
+  border-color: rgb(var(--dashboard-border) / 0.68);
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface-soft) / 0.68), rgb(var(--dashboard-surface) / 0.58));
   box-shadow:
-    0 16px 50px rgb(0 0 0 / 0.17),
-    inset 0 1px 0 rgb(255 255 255 / 0.055);
+    0 1px 0 rgb(255 255 255 / 0.04) inset,
+    0 16px 36px -28px rgb(0 0 0 / 0.58);
 }
 
 .dashboard-analytics-card:hover {
-  border-color: rgb(var(--dashboard-accent) / 0.30);
+  border-color: rgb(var(--dashboard-border-strong) / 0.90);
   box-shadow:
-    0 22px 68px rgb(var(--dashboard-ink-shadow) / 0.10),
-    inset 0 1px 0 rgb(255 255 255 / 0.82);
+    0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.045),
+    0 18px 40px -30px rgb(var(--dashboard-ink-shadow) / 0.36),
+    inset 0 1px 0 rgb(255 255 255 / 0.78);
   transform: translateY(-1px);
 }
 
 .dark .dashboard-analytics-card:hover {
+  border-color: rgb(var(--dashboard-border-strong) / 0.80);
   box-shadow:
-    0 22px 68px rgb(0 0 0 / 0.24),
-    0 0 0 1px rgb(var(--dashboard-accent) / 0.08),
-    inset 0 1px 0 rgb(255 255 255 / 0.07);
+    0 1px 0 rgb(255 255 255 / 0.055) inset,
+    0 18px 40px -28px rgb(0 0 0 / 0.68);
 }
 
 .dashboard-analytics-card :deep(h3) {
   letter-spacing: -0.01em;
+}
+
+.dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border):not([class*="bg-"]) {
+  border-color: rgb(var(--dashboard-border) / 0.68);
+  background: rgb(var(--dashboard-surface-soft) / 0.52);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.54);
+}
+
+.dark .dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border):not([class*="bg-"]) {
+  border-color: rgb(var(--dashboard-border) / 0.66);
+  background: rgb(var(--dashboard-surface-soft) / 0.34);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.dashboard-analytics-card button {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+}
+
+.dashboard-analytics-card button:not([class*="border-blue"]):not([class*="border-cyan"]):not([class*="border-violet"]):not([class*="border-amber"]):not([class*="border-emerald"]):hover {
+  border-color: rgb(var(--dashboard-border-strong) / 0.88);
+}
+
+.dashboard-analytics-card button:active {
+  transform: translateY(1px);
+}
+
+.dashboard-analytics-card button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--dashboard-ring) / 0.14);
+}
+
+.dashboard-analytics-card table {
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-analytics-card table th {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dashboard-analytics-card tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"] {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.20);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
+}
+
+.dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"]:hover {
+  filter: saturate(1.08);
+  transform: scale(1.08);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.34),
+    0 3px 10px rgb(var(--dashboard-ink-shadow) / 0.12);
 }
 
 .dashboard-masonry {
@@ -2081,14 +2297,24 @@ onMounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .admin-dashboard-polish::before,
   .dashboard-stat-card,
+  .dashboard-stat-card::before,
   .dashboard-stat-card::after,
-  .dashboard-analytics-card {
+  .dashboard-filter-panel,
+  .dashboard-filter-panel :deep(.date-picker-trigger),
+  .dashboard-filter-panel :deep(.select-trigger),
+  .dashboard-filter-panel .btn-secondary,
+  .dashboard-analytics-card,
+  .dashboard-analytics-card button,
+  .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"] {
     transition-duration: 1ms;
   }
 
   .dashboard-stat-card:hover,
-  .dashboard-analytics-card:hover {
+  .dashboard-analytics-card:hover,
+  .dashboard-analytics-card button:active,
+  .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"]:hover {
     transform: none;
   }
 }
