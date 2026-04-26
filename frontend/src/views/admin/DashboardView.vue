@@ -2176,6 +2176,7 @@ onMounted(() => {
 }
 
 .dashboard-analytics-card {
+  border-radius: 1.25rem;
   border-color: rgb(var(--dashboard-border) / 0.76);
   background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.98), rgb(var(--dashboard-surface-soft) / 0.82));
   box-shadow:
@@ -2198,19 +2199,18 @@ onMounted(() => {
 }
 
 .dashboard-analytics-card:hover {
-  border-color: rgb(var(--dashboard-border-strong) / 0.90);
+  border-color: rgb(var(--dashboard-border-strong) / 0.84);
   box-shadow:
     0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.045),
-    0 18px 40px -30px rgb(var(--dashboard-ink-shadow) / 0.36),
+    0 16px 34px -30px rgb(var(--dashboard-ink-shadow) / 0.30),
     inset 0 1px 0 rgb(255 255 255 / 0.78);
-  transform: translateY(-1px);
 }
 
 .dark .dashboard-analytics-card:hover {
   border-color: rgb(var(--dashboard-border-strong) / 0.80);
   box-shadow:
     0 1px 0 rgb(255 255 255 / 0.055) inset,
-    0 18px 40px -28px rgb(0 0 0 / 0.68);
+    0 16px 34px -28px rgb(0 0 0 / 0.62);
 }
 
 .dashboard-analytics-card :deep(h3) {
@@ -2219,14 +2219,18 @@ onMounted(() => {
 
 .dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border):not([class*="bg-"]) {
   border-color: rgb(var(--dashboard-border) / 0.68);
-  background: rgb(var(--dashboard-surface-soft) / 0.52);
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.56), rgb(var(--dashboard-surface-soft) / 0.42));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.54);
 }
 
 .dark .dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border):not([class*="bg-"]) {
   border-color: rgb(var(--dashboard-border) / 0.66);
-  background: rgb(var(--dashboard-surface-soft) / 0.34);
+  background: linear-gradient(180deg, rgb(var(--dashboard-surface-soft) / 0.40), rgb(var(--dashboard-surface) / 0.30));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.dashboard-analytics-card :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border) p {
+  line-height: 1.35;
 }
 
 .dashboard-analytics-card button {
@@ -2250,7 +2254,17 @@ onMounted(() => {
   box-shadow: 0 0 0 3px rgb(var(--dashboard-ring) / 0.14);
 }
 
+.dashboard-analytics-card button.w-full:hover {
+  background-color: rgb(var(--dashboard-surface-muted) / 0.34);
+}
+
+.dark .dashboard-analytics-card button.w-full:hover {
+  background-color: rgb(var(--dashboard-surface-soft) / 0.44);
+}
+
 .dashboard-analytics-card table {
+  border-collapse: separate;
+  border-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2259,8 +2273,45 @@ onMounted(() => {
   letter-spacing: 0.01em;
 }
 
+.dashboard-analytics-card table :is(th, td) {
+  line-height: 1.45;
+}
+
 .dashboard-analytics-card tbody tr {
   transition: background-color 140ms ease;
+}
+
+.dashboard-analytics-card tbody tr:hover {
+  background-color: rgb(var(--dashboard-surface-muted) / 0.28);
+}
+
+.dark .dashboard-analytics-card tbody tr:hover {
+  background-color: rgb(var(--dashboard-surface-soft) / 0.32);
+}
+
+.dashboard-analytics-card :is(.h-2, .h-1\.5).overflow-hidden.rounded-full {
+  background: rgb(var(--dashboard-surface-muted) / 0.68);
+  box-shadow: inset 0 1px 1px rgb(var(--dashboard-ink-shadow) / 0.06);
+}
+
+.dark .dashboard-analytics-card :is(.h-2, .h-1\.5).overflow-hidden.rounded-full {
+  background: rgb(var(--dashboard-surface-muted) / 0.54);
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.28);
+}
+
+.dashboard-analytics-card td .relative.overflow-hidden.rounded-lg.border {
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.dashboard-analytics-card td .relative.overflow-hidden.rounded-lg.border:hover {
+  border-color: rgb(var(--dashboard-ring) / 0.28);
+  background: rgb(var(--dashboard-surface-soft) / 0.64);
+}
+
+.dark .dashboard-analytics-card td .relative.overflow-hidden.rounded-lg.border:hover {
+  background: rgb(var(--dashboard-surface-soft) / 0.46);
 }
 
 .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"] {
@@ -2272,11 +2323,11 @@ onMounted(() => {
 }
 
 .dashboard-analytics-card [data-testid^="admin-hourly-activity-cell"]:hover {
-  filter: saturate(1.08);
-  transform: scale(1.08);
+  filter: saturate(1.06) brightness(1.04);
+  transform: scale(1.035);
   box-shadow:
     inset 0 0 0 1px rgb(255 255 255 / 0.34),
-    0 3px 10px rgb(var(--dashboard-ink-shadow) / 0.12);
+    0 2px 8px rgb(var(--dashboard-ink-shadow) / 0.10);
 }
 
 .dashboard-masonry {
