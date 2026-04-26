@@ -235,7 +235,9 @@ describe('admin DashboardView', () => {
     expect(getHourlyActivity).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('admin.dashboard.projectDistribution')
     expect(wrapper.text()).toContain('internal-tools')
+    expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
     expect(wrapper.text()).toContain('admin.dashboard.usageInsights')
+    expect(wrapper.text()).toContain('admin.dashboard.peakActivity')
     expect(wrapper.text()).toContain('gpt-5.1')
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
@@ -304,6 +306,79 @@ describe('admin DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.dashboard.unattributedProject')
+    expect(wrapper.text()).toContain('admin.dashboard.attributionQuality')
+    expect(wrapper.text()).toContain('admin.dashboard.attributedShare')
+    expect(wrapper.text()).toContain('admin.dashboard.configureProjectHint')
     expect(wrapper.text()).not.toContain('Unattributed')
+  })
+
+  it('renders token composition and peak activity summary', async () => {
+    getUsageInsights.mockResolvedValueOnce({
+      insights: {
+        requests: 10,
+        input_tokens: 100,
+        output_tokens: 200,
+        cache_creation_tokens: 50,
+        cache_read_tokens: 650,
+        cache_tokens: 700,
+        total_tokens: 1000,
+        input_share: 0.1,
+        output_share: 0.2,
+        cache_creation_share: 0.05,
+        cache_read_share: 0.65,
+        cache_share: 0.7,
+        model_count: 2,
+        project_count: 1,
+        top_model: 'claude-opus-4-6',
+        top_model_tokens: 800,
+        top_model_share: 0.8,
+        top_project_key: 'p1',
+        top_project_label: 'internal-tools',
+        top_project_tokens: 1000,
+        top_project_share: 1
+      },
+      start_date: '',
+      end_date: ''
+    })
+    getHourlyActivity.mockResolvedValueOnce({
+      hourly_activity: Array.from({ length: 168 }, (_, index) => ({
+        weekday: Math.floor(index / 24),
+        hour: index % 24,
+        requests: index === 34 ? 7 : 0,
+        input_tokens: index === 34 ? 100 : 0,
+        output_tokens: index === 34 ? 200 : 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: index === 34 ? 700 : 0,
+        total_tokens: index === 34 ? 1000 : 0,
+        cost: 0,
+        actual_cost: 0
+      })),
+      start_date: '',
+      end_date: ''
+    })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
+    expect(wrapper.text()).toContain('admin.dashboard.cacheRead')
+    expect(wrapper.text()).toContain('admin.dashboard.cacheCreation')
+    expect(wrapper.text()).toContain('admin.dashboard.peakActivity')
+    expect(wrapper.text()).toContain('Mon 10:00')
+    expect(wrapper.find('[data-testid="admin-hourly-activity-cell-1-10"]').attributes('title')).toContain('1.00K')
   })
 })

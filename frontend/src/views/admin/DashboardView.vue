@@ -278,9 +278,55 @@
                 <LoadingSpinner size="md" />
               </div>
               <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-                {{ t('admin.dashboard.projectDistribution') }}
+                {{
+                  onlyUnattributedProject
+                    ? t('admin.dashboard.attributionQuality')
+                    : t('admin.dashboard.projectDistribution')
+                }}
               </h3>
-              <div v-if="projectStats.length" class="space-y-3">
+              <div v-if="onlyUnattributedProject && unattributedProject" class="space-y-4">
+                <div class="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <p class="text-xs font-medium uppercase tracking-wide text-amber-500 dark:text-amber-300">
+                        {{ t('admin.dashboard.unattributedProject') }}
+                      </p>
+                      <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+                        {{ formatTokens(unattributedProject.total_tokens) }}
+                      </p>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatNumber(unattributedProject.requests) }}
+                        {{ t('admin.dashboard.requests') }}
+                      </p>
+                    </div>
+                    <div class="rounded-full border border-amber-400/30 px-3 py-2 text-right">
+                      <p class="text-lg font-bold text-amber-600 dark:text-amber-300">
+                        {{ formatPercent(attributedProjectShare) }}
+                      </p>
+                      <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.attributedShare') }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-dashed border-gray-300 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.configureProjectHint') }}
+                  </p>
+                  <code class="mt-2 block rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    X-Sub2API-Project: internal-tools
+                  </code>
+                </div>
+              </div>
+              <div v-else-if="projectStats.length" class="space-y-3">
+                <div class="mb-2 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-800/70">
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.attributedShare') }}
+                  </span>
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ formatPercent(attributedProjectShare) }}
+                  </span>
+                </div>
                 <div v-for="project in topProjects" :key="project.project_key" class="space-y-1">
                   <div class="flex items-center justify-between gap-3 text-xs">
                     <span
@@ -295,7 +341,8 @@
                   </div>
                   <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                     <div
-                      class="h-full rounded-full bg-cyan-500"
+                      class="h-full rounded-full"
+                      :class="projectBarClass(project)"
                       :style="{ width: `${projectShare(project.total_tokens)}%` }"
                     />
                   </div>
@@ -350,60 +397,92 @@
               </h3>
               <div
                 v-if="usageInsights && usageInsights.total_tokens > 0"
-                class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                class="space-y-4"
               >
-                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.topModel') }}
-                  </p>
-                  <p
-                    class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                    :title="usageInsights.top_model"
-                  >
-                    {{ usageInsights.top_model || '-' }}
-                  </p>
-                  <p class="text-xs text-blue-600 dark:text-blue-400">
-                    {{ formatPercent(usageInsights.top_model_share) }} /
-                    {{ formatTokens(usageInsights.top_model_tokens) }}
-                  </p>
+                <div>
+                  <div class="mb-2 flex items-center justify-between">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.tokenComposition') }}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ formatTokens(usageInsights.total_tokens) }}
+                    </p>
+                  </div>
+                  <div class="flex h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                    <div
+                      v-for="segment in tokenCompositionSegments"
+                      :key="segment.key"
+                      class="h-full"
+                      :class="segment.class"
+                      :style="{ width: `${segment.width}%` }"
+                      :title="`${segment.label}: ${formatTokens(segment.tokens)} (${formatPercent(segment.share)})`"
+                    />
+                  </div>
+                  <div class="mt-3 grid grid-cols-2 gap-2">
+                    <div
+                      v-for="segment in tokenCompositionSegments"
+                      :key="`legend-${segment.key}`"
+                      class="rounded-lg border border-gray-100 p-2 dark:border-gray-700"
+                    >
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span class="h-2 w-2 rounded-full" :class="segment.class" />
+                          {{ segment.label }}
+                        </span>
+                        <span class="text-xs font-semibold text-gray-900 dark:text-white">
+                          {{ formatPercent(segment.share) }}
+                        </span>
+                      </div>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatTokens(segment.tokens) }}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.topProject') }}
-                  </p>
-                  <p
-                    class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                    :title="topProjectDisplayName"
-                  >
-                    {{ topProjectDisplayName }}
-                  </p>
-                  <p class="text-xs text-cyan-600 dark:text-cyan-400">
-                    {{ formatPercent(usageInsights.top_project_share) }} /
-                    {{ formatTokens(usageInsights.top_project_tokens) }}
-                  </p>
-                </div>
-                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.cacheShare') }}
-                  </p>
-                  <p class="text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ formatPercent(usageInsights.cache_share) }}
-                  </p>
-                  <p class="text-xs text-amber-600 dark:text-amber-400">
-                    {{ formatTokens(usageInsights.cache_tokens) }}
-                  </p>
-                </div>
-                <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.variety') }}
-                  </p>
-                  <p class="text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
-                    {{ usageInsights.project_count }} {{ t('admin.dashboard.project') }}
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
-                  </p>
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.topModel') }}
+                    </p>
+                    <p
+                      class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                      :title="usageInsights.top_model"
+                    >
+                      {{ usageInsights.top_model || '-' }}
+                    </p>
+                    <p class="text-xs text-blue-600 dark:text-blue-400">
+                      {{ formatPercent(usageInsights.top_model_share) }} /
+                      {{ formatTokens(usageInsights.top_model_tokens) }}
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.topProject') }}
+                    </p>
+                    <p
+                      class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                      :title="topProjectDisplayName"
+                    >
+                      {{ topProjectDisplayName }}
+                    </p>
+                    <p class="text-xs text-cyan-600 dark:text-cyan-400">
+                      {{ formatPercent(usageInsights.top_project_share) }} /
+                      {{ formatTokens(usageInsights.top_project_tokens) }}
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.dashboard.variety') }}
+                    </p>
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                      {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
+                      {{ usageInsights.project_count }} {{ t('admin.dashboard.project') }}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div
@@ -426,6 +505,29 @@
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
               {{ t('admin.dashboard.hourlyActivity') }}
             </h3>
+            <div
+              v-if="peakActivityCell"
+              class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3"
+            >
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-300">
+                  {{ t('admin.dashboard.peakActivity') }}
+                </p>
+                <p class="text-lg font-semibold text-gray-900 dark:text-white">
+                  {{ peakActivityLabel }}
+                </p>
+              </div>
+              <div class="text-right text-xs text-gray-500 dark:text-gray-400">
+                <p>
+                  {{ formatTokens(peakActivityCell.total_tokens) }}
+                  {{ t('admin.dashboard.tokens') }}
+                </p>
+                <p>
+                  {{ formatNumber(peakActivityCell.requests) }}
+                  {{ t('admin.dashboard.requests') }}
+                </p>
+              </div>
+            </div>
             <div v-if="hourlyActivity.length" class="overflow-x-auto">
               <div class="grid min-w-[720px] grid-cols-[48px_repeat(24,minmax(20px,1fr))] gap-1 text-[10px]">
                 <div />
@@ -775,6 +877,11 @@ const projectDisplayName = (project: ProjectStat): string => {
   }
   return project.project_label || project.project_key
 }
+const projectBarClass = (project: ProjectStat): string => {
+  return project.project_key === unattributedProjectKey
+    ? 'bg-amber-400 dark:bg-amber-500'
+    : 'bg-cyan-500'
+}
 const topProjectDisplayName = computed(() => {
   if (!usageInsights.value?.top_project_key) return '-'
   if (usageInsights.value.top_project_key === unattributedProjectKey) {
@@ -784,12 +891,68 @@ const topProjectDisplayName = computed(() => {
 })
 
 const topProjects = computed(() => projectStats.value.slice(0, 8))
-const totalProjectTokens = computed(() => topProjects.value.reduce((sum, project) => sum + project.total_tokens, 0))
+const totalProjectTokens = computed(() => projectStats.value.reduce((sum, project) => sum + project.total_tokens, 0))
+const attributedProjectTokens = computed(() => {
+  return projectStats.value
+    .filter((project) => project.project_key !== unattributedProjectKey)
+    .reduce((sum, project) => sum + project.total_tokens, 0)
+})
+const attributedProjectShare = computed(() => {
+  if (totalProjectTokens.value <= 0) return 0
+  return attributedProjectTokens.value / totalProjectTokens.value
+})
+const unattributedProject = computed(() => {
+  return projectStats.value.find((project) => project.project_key === unattributedProjectKey) || null
+})
+const onlyUnattributedProject = computed(() => {
+  return projectStats.value.length === 1 && projectStats.value[0]?.project_key === unattributedProjectKey
+})
 const projectShare = (tokens: number): number => {
   if (totalProjectTokens.value <= 0) return 0
   return Math.max(4, Math.round((tokens / totalProjectTokens.value) * 100))
 }
 const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+const tokenCompositionSegments = computed(() => {
+  const insight = usageInsights.value
+  if (!insight || insight.total_tokens <= 0) return []
+
+  const segments = [
+    {
+      key: 'input',
+      label: t('admin.dashboard.input'),
+      tokens: insight.input_tokens,
+      share: insight.input_share,
+      class: 'bg-blue-500'
+    },
+    {
+      key: 'output',
+      label: t('admin.dashboard.output'),
+      tokens: insight.output_tokens,
+      share: insight.output_share,
+      class: 'bg-violet-500'
+    },
+    {
+      key: 'cache_creation',
+      label: t('admin.dashboard.cacheCreation'),
+      tokens: insight.cache_creation_tokens,
+      share: insight.cache_creation_share,
+      class: 'bg-amber-500'
+    },
+    {
+      key: 'cache_read',
+      label: t('admin.dashboard.cacheRead'),
+      tokens: insight.cache_read_tokens,
+      share: insight.cache_read_share,
+      class: 'bg-emerald-500'
+    }
+  ]
+
+  return segments.map((segment) => ({
+    ...segment,
+    width: segment.tokens > 0 ? Math.max(segment.share * 100, 3) : 0
+  }))
+})
 
 const hours = Array.from({ length: 24 }, (_, index) => index)
 const weekdays = [
@@ -819,6 +982,21 @@ const heatmapTitle = (weekday: number, hour: number): string => {
   const requests = cell?.requests || 0
   return `${weekdays[weekday]?.label || weekday} ${hour.toString().padStart(2, '0')}:00 - ${formatTokens(tokens)} tokens - ${formatNumber(requests)} requests`
 }
+const peakActivityCell = computed(() => {
+  const peak = hourlyActivity.value.reduce<HourlyActivityHeatmapCell | null>((currentPeak, cell) => {
+    if (!currentPeak || cell.total_tokens > currentPeak.total_tokens) {
+      return cell
+    }
+    return currentPeak
+  }, null)
+  return peak && peak.total_tokens > 0 ? peak : null
+})
+const peakActivityLabel = computed(() => {
+  const cell = peakActivityCell.value
+  if (!cell || cell.total_tokens <= 0) return '-'
+  const weekday = weekdays.find((item) => item.value === cell.weekday)?.label || String(cell.weekday)
+  return `${weekday} ${cell.hour.toString().padStart(2, '0')}:00`
+})
 
 // Date range change handler
 const onDateRangeChange = (range: {
