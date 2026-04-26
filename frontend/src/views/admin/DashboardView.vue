@@ -250,8 +250,9 @@
           </div>
 
           <!-- Charts Grid -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div v-if="showChartCards" class="grid grid-cols-1 gap-6" :class="chartGridClass">
             <ModelDistributionChart
+              v-if="showModelDistributionCard"
               :model-stats="modelStats"
               :enable-ranking-view="true"
               :ranking-items="rankingItems"
@@ -265,12 +266,16 @@
               :end-date="endDate"
               @ranking-click="goToUserUsage"
             />
-            <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+            <TokenUsageTrend v-if="showTrendCard" :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
           <!-- Team Member and Insight Widgets -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
-            <div class="card relative overflow-hidden p-4">
+          <div
+            v-if="showInsightCards"
+            class="dashboard-masonry"
+            :class="{ 'dashboard-masonry--single': insightCardCount <= 1 }"
+          >
+            <div v-if="showUserContributionCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -427,15 +432,14 @@
                 </table>
               </div>
               <div
-                v-else
+                v-else-if="!rankingLoading"
                 class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
               </div>
             </div>
 
-            <div class="space-y-6">
-              <div class="card relative overflow-hidden p-4">
+            <div v-if="showUsageInsightsCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="chartsLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -445,10 +449,7 @@
               <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.dashboard.usageInsights') }}
               </h3>
-              <div
-                v-if="usageInsights && usageInsights.total_tokens > 0"
-                class="space-y-4"
-              >
+              <div v-if="usageInsights && hasUsageInsightsData" class="space-y-4">
                 <div>
                   <div class="mb-2 flex items-center justify-between">
                     <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -536,14 +537,14 @@
                 </div>
               </div>
               <div
-                v-else
+                v-else-if="!chartsLoading"
                 class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
               </div>
             </div>
 
-            <div class="card relative overflow-hidden p-4">
+            <div v-if="showMemberPulseCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -657,14 +658,14 @@
                 </div>
               </div>
               <div
-                v-else
+                v-else-if="!rankingLoading"
                 class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
               </div>
-              </div>
+            </div>
 
-              <div class="card relative overflow-hidden p-4">
+            <div v-if="showTeamUsageProfileCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
                 <div
                   v-if="chartsLoading"
                   class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -685,7 +686,7 @@
                   </span>
                 </div>
 
-                <div v-if="teamInsights && teamInsights.total_tokens > 0" class="space-y-5">
+                <div v-if="teamInsights && hasTeamInsightsData" class="space-y-5">
                   <div class="grid grid-cols-2 gap-2">
                     <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                       <p class="text-xs text-gray-500 dark:text-gray-400">团队缓存率</p>
@@ -814,17 +815,16 @@
                   </div>
                 </div>
                 <div
-                  v-else
+                  v-else-if="!chartsLoading"
                   class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {{ t('admin.dashboard.noDataAvailable') }}
                 </div>
-              </div>
             </div>
           </div>
 
           <!-- Member x Model Matrix -->
-          <div class="card relative overflow-hidden p-4">
+          <div v-if="showMatrixCard" class="card relative overflow-hidden p-4">
             <div
               v-if="chartsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -844,7 +844,7 @@
                 {{ matrixMembers.length }} 成员 / {{ matrixModels.length }} 模型
               </span>
             </div>
-            <div v-if="matrixMembers.length && matrixModels.length" class="overflow-x-auto">
+            <div v-if="hasMatrixData" class="overflow-x-auto">
               <table class="min-w-[860px] w-full text-xs">
                 <thead>
                   <tr class="border-b border-gray-100 text-gray-500 dark:border-gray-700 dark:text-gray-400">
@@ -907,7 +907,7 @@
               </table>
             </div>
             <div
-              v-else
+              v-else-if="!chartsLoading"
               class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
             >
               {{ t('admin.dashboard.noDataAvailable') }}
@@ -915,7 +915,7 @@
           </div>
 
           <!-- Hourly Activity Heatmap -->
-          <div class="card relative overflow-hidden p-4">
+          <div v-if="showHourlyActivityCard" class="card relative overflow-hidden p-4">
             <div
               v-if="chartsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -948,7 +948,7 @@
                 </p>
               </div>
             </div>
-            <div v-if="hourlyActivity.length" class="overflow-x-auto">
+            <div v-if="hasHourlyActivityData" class="overflow-x-auto">
               <div class="grid min-w-[720px] grid-cols-[48px_repeat(24,minmax(20px,1fr))] gap-1 text-[10px]">
                 <div />
                 <div
@@ -974,7 +974,7 @@
               </div>
             </div>
             <div
-              v-else
+              v-else-if="!chartsLoading"
               class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
             >
               {{ t('admin.dashboard.noDataAvailable') }}
@@ -982,7 +982,7 @@
           </div>
 
           <!-- User Usage Trend (Full Width) -->
-          <div class="card p-4">
+          <div v-if="showUserTrendCard" class="card p-4">
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
               {{ t('admin.dashboard.recentUsage') }} (Top 12)
             </h3>
@@ -992,7 +992,7 @@
               </div>
               <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
               <div
-                v-else
+                v-else-if="!userTrendLoading"
                 class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
@@ -1643,6 +1643,86 @@ const peakActivityLabel = computed(() => {
   return `${weekday} ${cell.hour.toString().padStart(2, '0')}:00`
 })
 
+const hasUsageValue = (...values: Array<number | null | undefined>): boolean => {
+  return values.some((value) => (value || 0) > 0)
+}
+
+const hasModelDistributionData = computed(() => {
+  return modelStats.value.some((item) => hasUsageValue(
+    item.requests,
+    item.total_tokens,
+    item.actual_cost,
+    item.account_cost,
+    item.cost
+  ))
+})
+
+const hasTrendData = computed(() => {
+  return trendData.value.some((item) => hasUsageValue(
+    item.requests,
+    item.total_tokens,
+    item.actual_cost,
+    item.cost
+  ))
+})
+
+const hasRankingData = computed(() => {
+  return hasUsageValue(
+    rankingTotalRequests.value,
+    rankingTotalTokens.value,
+    rankingTotalActualCost.value
+  ) || rankingItems.value.some((item) => hasUsageValue(item.requests, item.tokens, item.actual_cost))
+})
+
+const hasMemberPulseData = computed(() => {
+  return memberPulseItems.value.some((item) => hasUsageValue(item.requests, item.tokens, item.actual_cost))
+})
+
+const hasUsageInsightsData = computed(() => {
+  return hasUsageValue(usageInsights.value?.requests, usageInsights.value?.total_tokens)
+})
+
+const hasTeamInsightsData = computed(() => {
+  return hasUsageValue(teamInsights.value?.total_requests, teamInsights.value?.total_tokens)
+})
+
+const hasMatrixData = computed(() => {
+  return matrixMembers.value.length > 0 &&
+    matrixModels.value.length > 0 &&
+    (teamInsights.value?.member_model_matrix || []).some((item) => hasUsageValue(item.requests, item.total_tokens))
+})
+
+const hasHourlyActivityData = computed(() => {
+  return hourlyActivity.value.some((item) => hasUsageValue(item.requests, item.total_tokens))
+})
+
+const hasUserTrendData = computed(() => {
+  return userTrend.value.some((item) => hasUsageValue(item.requests, item.tokens, item.actual_cost, item.cost))
+})
+
+const showModelDistributionCard = computed(() => chartsLoading.value || hasModelDistributionData.value)
+const showTrendCard = computed(() => chartsLoading.value || hasTrendData.value)
+const showChartCards = computed(() => showModelDistributionCard.value || showTrendCard.value)
+const showUserContributionCard = computed(() => rankingLoading.value || rankingError.value || hasRankingData.value)
+const showUsageInsightsCard = computed(() => chartsLoading.value || hasUsageInsightsData.value)
+const showMemberPulseCard = computed(() => rankingLoading.value || hasMemberPulseData.value)
+const showTeamUsageProfileCard = computed(() => chartsLoading.value || hasTeamInsightsData.value)
+const chartGridClass = computed(() => {
+  return showModelDistributionCard.value && showTrendCard.value ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
+})
+const insightCardCount = computed(() => [
+  showUserContributionCard.value,
+  showUsageInsightsCard.value,
+  showMemberPulseCard.value,
+  showTeamUsageProfileCard.value
+].filter(Boolean).length)
+const showInsightCards = computed(() => {
+  return insightCardCount.value > 0
+})
+const showMatrixCard = computed(() => chartsLoading.value || hasMatrixData.value)
+const showHourlyActivityCard = computed(() => chartsLoading.value || hasHourlyActivityData.value)
+const showUserTrendCard = computed(() => userTrendLoading.value || hasUserTrendData.value)
+
 // Date range change handler
 const onDateRangeChange = (range: {
   startDate: string
@@ -1816,4 +1896,27 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.dashboard-masonry {
+  column-count: 1;
+  column-gap: 1.5rem;
+}
+
+.dashboard-masonry-item {
+  display: inline-block;
+  width: 100%;
+  margin-bottom: 1.5rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-masonry {
+    column-count: 2;
+  }
+
+  .dashboard-masonry--single {
+    column-count: 1;
+  }
+}
 </style>

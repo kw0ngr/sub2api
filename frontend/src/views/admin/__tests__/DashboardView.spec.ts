@@ -505,4 +505,95 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('Mon 10:00')
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-1-10"]').attributes('title')).toContain('1.00K')
   })
+
+  it('hides empty analytics cards for ranges without usage data', async () => {
+    getUsageInsights.mockResolvedValueOnce({
+      insights: {
+        requests: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        cache_tokens: 0,
+        total_tokens: 0,
+        input_share: 0,
+        output_share: 0,
+        cache_creation_share: 0,
+        cache_read_share: 0,
+        cache_share: 0,
+        model_count: 0,
+        project_count: 0,
+        top_model: '',
+        top_model_tokens: 0,
+        top_model_share: 0,
+        top_project_key: '',
+        top_project_label: '',
+        top_project_tokens: 0,
+        top_project_share: 0
+      },
+      start_date: '',
+      end_date: ''
+    })
+    getUserSpendingRanking.mockResolvedValueOnce({
+      ranking: [],
+      total_actual_cost: 0,
+      total_requests: 0,
+      total_tokens: 0,
+      total_users: 0,
+      start_date: '',
+      end_date: ''
+    })
+    getTeamUsageInsights.mockResolvedValueOnce({
+      insights: {
+        total_members: 0,
+        total_requests: 0,
+        total_tokens: 0,
+        cache_tokens: 0,
+        cache_share: 0,
+        client_distribution: [],
+        member_profiles: [],
+        member_model_matrix: [],
+        cache_efficiency: [],
+        sessions: []
+      },
+      start_date: '',
+      end_date: ''
+    })
+    getHourlyActivity.mockResolvedValueOnce({
+      hourly_activity: [],
+      start_date: '',
+      end_date: ''
+    })
+    getUserUsageTrend.mockResolvedValueOnce({
+      trend: [],
+      start_date: '',
+      end_date: '',
+      granularity: 'hour'
+    })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('admin.dashboard.userDistribution')
+    expect(wrapper.text()).not.toContain('admin.dashboard.usageInsights')
+    expect(wrapper.text()).not.toContain('admin.dashboard.memberPulse')
+    expect(wrapper.text()).not.toContain('团队使用画像')
+    expect(wrapper.text()).not.toContain('成员 × 模型矩阵')
+    expect(wrapper.text()).not.toContain('admin.dashboard.hourlyActivity')
+    expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
+  })
 })
