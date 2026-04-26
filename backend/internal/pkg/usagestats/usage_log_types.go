@@ -7,6 +7,9 @@ const (
 	ModelSourceRequested = "requested"
 	ModelSourceUpstream  = "upstream"
 	ModelSourceMapping   = "mapping"
+
+	UnattributedProjectKey   = "__unattributed__"
+	UnattributedProjectLabel = "Unattributed"
 )
 
 func IsValidModelSource(source string) bool {

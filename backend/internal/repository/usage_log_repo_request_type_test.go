@@ -420,7 +420,7 @@ func TestUsageLogRepositoryGetProjectStatsWithFilters(t *testing.T) {
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 
-	mock.ExpectQuery("SELECT\\s+project_key,").
+	mock.ExpectQuery("SELECT\\s+COALESCE\\(NULLIF\\(TRIM\\(project_key\\), ''\\), '__unattributed__'\\) AS project_key,").
 		WithArgs(start, end, int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"project_key", "project_label", "requests", "input_tokens", "output_tokens",
@@ -440,6 +440,34 @@ func TestUsageLogRepositoryGetProjectStatsWithFilters(t *testing.T) {
 	require.Equal(t, int64(33), results[0].TotalTokens)
 	require.Equal(t, 0.25, results[0].ActualCost)
 	require.Equal(t, 0.40, results[0].AccountCost)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetProjectStatsWithFiltersIncludesUnattributedBucket(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	mock.ExpectQuery("COALESCE\\(NULLIF\\(TRIM\\(project_key\\), ''\\), '__unattributed__'\\)").
+		WithArgs(start, end).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"project_key", "project_label", "requests", "input_tokens", "output_tokens",
+			"cache_creation_tokens", "cache_read_tokens", "total_tokens",
+			"cost", "actual_cost", "account_cost",
+		}).AddRow(
+			"__unattributed__", "Unattributed", int64(724), int64(100), int64(200),
+			int64(10), int64(690), int64(1000), 0.50, 0.25, 0.40,
+		))
+
+	results, err := repo.GetProjectStatsWithFilters(context.Background(), start, end, 0, 0, 0, 0, "", nil, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "__unattributed__", results[0].ProjectKey)
+	require.Equal(t, "Unattributed", results[0].ProjectLabel)
+	require.Equal(t, int64(724), results[0].Requests)
+	require.Equal(t, int64(1000), results[0].TotalTokens)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

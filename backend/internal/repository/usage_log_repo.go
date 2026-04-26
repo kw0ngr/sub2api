@@ -3097,18 +3097,25 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 	return results, nil
 }
 
-// GetProjectStatsWithFilters returns usage statistics grouped by caller-provided project attribution.
+// GetProjectStatsWithFilters returns usage statistics grouped by project attribution.
+// Requests without caller-provided attribution are grouped into a stable
+// "unattributed" bucket so dashboards do not look empty when legacy clients
+// omit project metadata.
 func (r *usageLogRepository) GetProjectStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) (results []usagestats.ProjectStat, err error) {
 	actualCostExpr := "COALESCE(SUM(actual_cost), 0) as actual_cost"
 	if accountID > 0 && userID == 0 && apiKeyID == 0 {
 		actualCostExpr = "COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as actual_cost"
 	}
 	accountCostExpr := "COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost"
+	projectKeyExpr := fmt.Sprintf("COALESCE(NULLIF(TRIM(project_key), ''), '%s')", usagestats.UnattributedProjectKey)
 
 	query := fmt.Sprintf(`
 		SELECT
-			project_key,
-			COALESCE(NULLIF(TRIM(MAX(project_label)), ''), project_key) AS project_label,
+			%s AS project_key,
+			CASE
+				WHEN %s = '%s' THEN '%s'
+				ELSE COALESCE(NULLIF(TRIM(MAX(project_label)), ''), %s)
+			END AS project_label,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
@@ -3120,9 +3127,7 @@ func (r *usageLogRepository) GetProjectStatsWithFilters(ctx context.Context, sta
 			%s
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
-			AND project_key IS NOT NULL
-			AND TRIM(project_key) <> ''
-	`, actualCostExpr, accountCostExpr)
+	`, projectKeyExpr, projectKeyExpr, usagestats.UnattributedProjectKey, usagestats.UnattributedProjectLabel, projectKeyExpr, actualCostExpr, accountCostExpr)
 
 	args := []any{startTime, endTime}
 	if userID > 0 {
@@ -3147,7 +3152,7 @@ func (r *usageLogRepository) GetProjectStatsWithFilters(ctx context.Context, sta
 		query += fmt.Sprintf(" AND billing_type = $%d", len(args)+1)
 		args = append(args, int16(*billingType))
 	}
-	query += " GROUP BY project_key ORDER BY total_tokens DESC, requests DESC"
+	query += fmt.Sprintf(" GROUP BY %s ORDER BY total_tokens DESC, requests DESC", projectKeyExpr)
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {

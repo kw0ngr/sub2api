@@ -239,4 +239,71 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('gpt-5.1')
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
+
+  it('renders unattributed project bucket with localized label', async () => {
+    getProjectStats.mockResolvedValueOnce({
+      projects: [{
+        project_key: '__unattributed__',
+        project_label: 'Unattributed',
+        requests: 724,
+        input_tokens: 100,
+        output_tokens: 200,
+        cache_creation_tokens: 10,
+        cache_read_tokens: 690,
+        total_tokens: 1000,
+        cost: 0,
+        actual_cost: 0,
+        account_cost: 0
+      }],
+      start_date: '',
+      end_date: ''
+    })
+    getUsageInsights.mockResolvedValueOnce({
+      insights: {
+        requests: 724,
+        input_tokens: 100,
+        output_tokens: 200,
+        cache_creation_tokens: 10,
+        cache_read_tokens: 690,
+        cache_tokens: 700,
+        total_tokens: 1000,
+        input_share: 0.1,
+        output_share: 0.2,
+        cache_creation_share: 0.01,
+        cache_read_share: 0.69,
+        cache_share: 0.7,
+        model_count: 8,
+        project_count: 1,
+        top_model: 'claude-opus-4-6',
+        top_model_tokens: 479,
+        top_model_share: 0.479,
+        top_project_key: '__unattributed__',
+        top_project_label: 'Unattributed',
+        top_project_tokens: 1000,
+        top_project_share: 1
+      },
+      start_date: '',
+      end_date: ''
+    })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.dashboard.unattributedProject')
+    expect(wrapper.text()).not.toContain('Unattributed')
+  })
 })

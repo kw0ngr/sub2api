@@ -71,7 +71,7 @@
         <div v-if="projects?.length" class="space-y-3">
           <div v-for="project in topProjects" :key="project.project_key" class="space-y-1">
             <div class="flex items-center justify-between gap-3 text-xs">
-              <span class="truncate font-medium text-gray-900 dark:text-white" :title="project.project_label">{{ project.project_label || project.project_key }}</span>
+              <span class="truncate font-medium text-gray-900 dark:text-white" :title="projectDisplayName(project)">{{ projectDisplayName(project) }}</span>
               <span class="shrink-0 text-gray-500 dark:text-gray-400">{{ formatTokens(project.total_tokens) }}</span>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
@@ -88,7 +88,7 @@
             </thead>
             <tbody>
               <tr v-for="project in topProjects" :key="`row-${project.project_key}`" class="border-t border-gray-100 dark:border-gray-700">
-                <td class="max-w-[160px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="project.project_label">{{ project.project_label || project.project_key }}</td>
+                <td class="max-w-[160px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="projectDisplayName(project)">{{ projectDisplayName(project) }}</td>
                 <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatNumber(project.requests) }}</td>
                 <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatTokens(project.total_tokens) }}</td>
               </tr>
@@ -112,7 +112,7 @@
           </div>
           <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.topProject') }}</p>
-            <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="insights.top_project_label">{{ insights.top_project_label || '-' }}</p>
+            <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="topProjectDisplayName">{{ topProjectDisplayName }}</p>
             <p class="text-xs text-cyan-600 dark:text-cyan-400">{{ formatPercent(insights.top_project_share) }} · {{ formatTokens(insights.top_project_tokens) }}</p>
           </div>
           <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
@@ -198,6 +198,20 @@ const doughnutOptions = {
 
 const topProjects = computed(() => (props.projects || []).slice(0, 8))
 const totalProjectTokens = computed(() => topProjects.value.reduce((sum, p) => sum + p.total_tokens, 0))
+const unattributedProjectKey = '__unattributed__'
+const projectDisplayName = (project: ProjectStat) => {
+  if (project.project_key === unattributedProjectKey) {
+    return t('dashboard.unattributedProject')
+  }
+  return project.project_label || project.project_key
+}
+const topProjectDisplayName = computed(() => {
+  if (!props.insights?.top_project_key) return '-'
+  if (props.insights.top_project_key === unattributedProjectKey) {
+    return t('dashboard.unattributedProject')
+  }
+  return props.insights.top_project_label || props.insights.top_project_key
+})
 const projectShare = (tokens: number) => totalProjectTokens.value > 0 ? Math.max(4, Math.round((tokens / totalProjectTokens.value) * 100)) : 0
 const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`
 

@@ -285,9 +285,9 @@
                   <div class="flex items-center justify-between gap-3 text-xs">
                     <span
                       class="truncate font-medium text-gray-900 dark:text-white"
-                      :title="project.project_label"
+                      :title="projectDisplayName(project)"
                     >
-                      {{ project.project_label || project.project_key }}
+                      {{ projectDisplayName(project) }}
                     </span>
                     <span class="shrink-0 text-gray-500 dark:text-gray-400">
                       {{ formatTokens(project.total_tokens) }}
@@ -316,9 +316,9 @@
                     >
                       <td
                         class="max-w-[160px] truncate py-1.5 font-medium text-gray-900 dark:text-white"
-                        :title="project.project_label"
+                        :title="projectDisplayName(project)"
                       >
-                        {{ project.project_label || project.project_key }}
+                        {{ projectDisplayName(project) }}
                       </td>
                       <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
                         {{ formatNumber(project.requests) }}
@@ -373,9 +373,9 @@
                   </p>
                   <p
                     class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                    :title="usageInsights.top_project_label"
+                    :title="topProjectDisplayName"
                   >
-                    {{ usageInsights.top_project_label || '-' }}
+                    {{ topProjectDisplayName }}
                   </p>
                   <p class="text-xs text-cyan-600 dark:text-cyan-400">
                     {{ formatPercent(usageInsights.top_project_share) }} /
@@ -767,6 +767,21 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
     }
   })
 }
+
+const unattributedProjectKey = '__unattributed__'
+const projectDisplayName = (project: ProjectStat): string => {
+  if (project.project_key === unattributedProjectKey) {
+    return t('admin.dashboard.unattributedProject')
+  }
+  return project.project_label || project.project_key
+}
+const topProjectDisplayName = computed(() => {
+  if (!usageInsights.value?.top_project_key) return '-'
+  if (usageInsights.value.top_project_key === unattributedProjectKey) {
+    return t('admin.dashboard.unattributedProject')
+  }
+  return usageInsights.value.top_project_label || usageInsights.value.top_project_key
+})
 
 const topProjects = computed(() => projectStats.value.slice(0, 8))
 const totalProjectTokens = computed(() => topProjects.value.reduce((sum, project) => sum + project.total_tokens, 0))
