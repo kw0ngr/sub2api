@@ -1390,6 +1390,120 @@ export interface UserSpendingRankingResponse {
   end_date: string
 }
 
+export interface ClientUsageStat {
+  client: string
+  requests: number
+  member_count: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  token_share: number
+  cache_share: number
+  last_seen: string
+}
+
+export interface MemberUsageProfile {
+  user_id: number
+  email: string
+  username: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  token_share: number
+  cache_share: number
+  average_duration_ms: number
+  active_days: number
+  top_model: string
+  top_model_tokens: number
+  top_client: string
+  top_client_tokens: number
+  first_seen: string
+  last_seen: string
+}
+
+export interface MemberModelMatrixRow {
+  user_id: number
+  email: string
+  username: string
+  model: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  member_total_tokens: number
+  share_of_member: number
+  cache_share: number
+}
+
+export interface CacheEfficiencyItem {
+  scope: 'member' | 'model' | 'self' | string
+  label: string
+  user_id?: number
+  email?: string
+  username?: string
+  model?: string
+  requests: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  cache_share: number
+  cache_read_share: number
+  ttl_override_count: number
+}
+
+export interface RequestSessionSummary {
+  session_id: string
+  user_id: number
+  email: string
+  username: string
+  api_key_id: number
+  api_key_name: string
+  client: string
+  model: string
+  requests: number
+  total_tokens: number
+  cache_tokens: number
+  cache_share: number
+  average_duration_ms: number
+  first_seen: string
+  last_seen: string
+}
+
+export interface TeamUsageInsights {
+  total_members: number
+  total_requests: number
+  total_tokens: number
+  cache_tokens: number
+  cache_share: number
+  client_distribution: ClientUsageStat[]
+  member_profiles: MemberUsageProfile[]
+  member_model_matrix: MemberModelMatrixRow[]
+  cache_efficiency: CacheEfficiencyItem[]
+  sessions: RequestSessionSummary[]
+}
+
+export interface SelfUsageInsights {
+  total_requests: number
+  total_tokens: number
+  cache_tokens: number
+  cache_share: number
+  client_distribution: ClientUsageStat[]
+  model_matrix: MemberModelMatrixRow[]
+  cache_efficiency: CacheEfficiencyItem[]
+  sessions: RequestSessionSummary[]
+}
+
 export interface ApiKeyUsageTrendPoint {
   date: string
   api_key_id: number

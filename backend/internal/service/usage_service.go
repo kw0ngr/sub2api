@@ -64,6 +64,10 @@ type projectStatsReader interface {
 	GetProjectStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ProjectStat, error)
 }
 
+type selfUsageInsightsReader interface {
+	GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error)
+}
+
 // NewUsageService 创建使用统计服务实例
 func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator) *UsageService {
 	return &UsageService{
@@ -330,6 +334,18 @@ func (s *UsageService) GetUserProjectStats(ctx context.Context, userID int64, st
 		return nil, fmt.Errorf("get user project stats: %w", err)
 	}
 	return stats, nil
+}
+
+func (s *UsageService) GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
+	repo, ok := s.usageRepo.(selfUsageInsightsReader)
+	if !ok {
+		return &usagestats.SelfUsageInsights{}, nil
+	}
+	insights, err := repo.GetUserSelfUsageInsights(ctx, userID, startTime, endTime, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get user self usage insights: %w", err)
+	}
+	return insights, nil
 }
 
 // GetAPIKeyModelStats returns per-model usage stats for a specific API Key.

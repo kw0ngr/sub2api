@@ -222,6 +222,127 @@ type UserSpendingRankingResponse struct {
 	TotalUsers      int64                     `json:"total_users"`
 }
 
+// ClientUsageStat aggregates usage by detected client/tool fingerprint.
+type ClientUsageStat struct {
+	Client              string    `json:"client"`
+	Requests            int64     `json:"requests"`
+	MemberCount         int64     `json:"member_count"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	CacheTokens         int64     `json:"cache_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	TokenShare          float64   `json:"token_share"`
+	CacheShare          float64   `json:"cache_share"`
+	LastSeen            time.Time `json:"last_seen"`
+}
+
+// MemberUsageProfile captures per-member behavior for internal team dashboards.
+type MemberUsageProfile struct {
+	UserID              int64     `json:"user_id"`
+	Email               string    `json:"email"`
+	Username            string    `json:"username"`
+	Requests            int64     `json:"requests"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	CacheTokens         int64     `json:"cache_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	TokenShare          float64   `json:"token_share"`
+	CacheShare          float64   `json:"cache_share"`
+	AverageDurationMs   float64   `json:"average_duration_ms"`
+	ActiveDays          int64     `json:"active_days"`
+	TopModel            string    `json:"top_model"`
+	TopModelTokens      int64     `json:"top_model_tokens"`
+	TopClient           string    `json:"top_client"`
+	TopClientTokens     int64     `json:"top_client_tokens"`
+	FirstSeen           time.Time `json:"first_seen"`
+	LastSeen            time.Time `json:"last_seen"`
+}
+
+// MemberModelMatrixRow aggregates one member x model cell.
+type MemberModelMatrixRow struct {
+	UserID              int64   `json:"user_id"`
+	Email               string  `json:"email"`
+	Username            string  `json:"username"`
+	Model               string  `json:"model"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheTokens         int64   `json:"cache_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	MemberTotalTokens   int64   `json:"member_total_tokens"`
+	ShareOfMember       float64 `json:"share_of_member"`
+	CacheShare          float64 `json:"cache_share"`
+}
+
+// CacheEfficiencyItem highlights high-impact cache reuse buckets.
+type CacheEfficiencyItem struct {
+	Scope               string  `json:"scope"` // member, model, or self
+	Label               string  `json:"label"`
+	UserID              int64   `json:"user_id,omitempty"`
+	Email               string  `json:"email,omitempty"`
+	Username            string  `json:"username,omitempty"`
+	Model               string  `json:"model,omitempty"`
+	Requests            int64   `json:"requests"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheTokens         int64   `json:"cache_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	CacheShare          float64 `json:"cache_share"`
+	CacheReadShare      float64 `json:"cache_read_share"`
+	TTLOverrideCount    int64   `json:"ttl_override_count"`
+}
+
+// RequestSessionSummary groups nearby requests into lightweight work sessions.
+type RequestSessionSummary struct {
+	SessionID         string    `json:"session_id"`
+	UserID            int64     `json:"user_id"`
+	Email             string    `json:"email"`
+	Username          string    `json:"username"`
+	APIKeyID          int64     `json:"api_key_id"`
+	APIKeyName        string    `json:"api_key_name"`
+	Client            string    `json:"client"`
+	Model             string    `json:"model"`
+	Requests          int64     `json:"requests"`
+	TotalTokens       int64     `json:"total_tokens"`
+	CacheTokens       int64     `json:"cache_tokens"`
+	CacheShare        float64   `json:"cache_share"`
+	AverageDurationMs float64   `json:"average_duration_ms"`
+	FirstSeen         time.Time `json:"first_seen"`
+	LastSeen          time.Time `json:"last_seen"`
+}
+
+// TeamUsageInsights bundles internal-team usage analytics for admin dashboards.
+type TeamUsageInsights struct {
+	TotalMembers       int64                   `json:"total_members"`
+	TotalRequests      int64                   `json:"total_requests"`
+	TotalTokens        int64                   `json:"total_tokens"`
+	CacheTokens        int64                   `json:"cache_tokens"`
+	CacheShare         float64                 `json:"cache_share"`
+	ClientDistribution []ClientUsageStat       `json:"client_distribution"`
+	MemberProfiles     []MemberUsageProfile    `json:"member_profiles"`
+	MemberModelMatrix  []MemberModelMatrixRow  `json:"member_model_matrix"`
+	CacheEfficiency    []CacheEfficiencyItem   `json:"cache_efficiency"`
+	Sessions           []RequestSessionSummary `json:"sessions"`
+}
+
+// SelfUsageInsights exposes the same operational insight style for one user.
+type SelfUsageInsights struct {
+	TotalRequests      int64                   `json:"total_requests"`
+	TotalTokens        int64                   `json:"total_tokens"`
+	CacheTokens        int64                   `json:"cache_tokens"`
+	CacheShare         float64                 `json:"cache_share"`
+	ClientDistribution []ClientUsageStat       `json:"client_distribution"`
+	ModelMatrix        []MemberModelMatrixRow  `json:"model_matrix"`
+	CacheEfficiency    []CacheEfficiencyItem   `json:"cache_efficiency"`
+	Sessions           []RequestSessionSummary `json:"sessions"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID      int64   `json:"user_id"`

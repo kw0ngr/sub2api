@@ -82,6 +82,7 @@ func RegisterUserRoutes(
 			usage.GET("/dashboard/models", h.Usage.DashboardModels)
 			usage.GET("/dashboard/projects", h.Usage.DashboardProjects)
 			usage.GET("/dashboard/insights", h.Usage.DashboardInsights)
+			usage.GET("/dashboard/self-insights", h.Usage.DashboardSelfInsights)
 			usage.GET("/dashboard/hourly-activity", h.Usage.DashboardHourlyActivity)
 			usage.POST("/dashboard/api-keys-usage", h.Usage.DashboardAPIKeysUsage)
 		}

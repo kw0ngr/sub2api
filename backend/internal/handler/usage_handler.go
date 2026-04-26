@@ -414,6 +414,37 @@ func (h *UsageHandler) DashboardInsights(c *gin.Context) {
 	})
 }
 
+// DashboardSelfInsights handles self-service client/model/cache/session insights.
+// GET /api/v1/usage/dashboard/self-insights
+func (h *UsageHandler) DashboardSelfInsights(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	startTime, endTime := parseUserTimeRange(c)
+	limit, err := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("limit", "8")))
+	if err != nil || limit <= 0 {
+		limit = 8
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	insights, err := h.usageService.GetUserSelfUsageInsights(c.Request.Context(), subject.UserID, startTime, endTime, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"insights":   insights,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // DashboardHourlyActivity handles getting user hourly activity heatmap data.
 // GET /api/v1/usage/dashboard/hourly-activity
 func (h *UsageHandler) DashboardHourlyActivity(c *gin.Context) {

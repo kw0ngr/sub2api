@@ -34,6 +34,10 @@ type dashboardStatsRangeFetcher interface {
 	GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error)
 }
 
+type teamUsageInsightsReader interface {
+	GetTeamUsageInsights(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.TeamUsageInsights, error)
+}
+
 type dashboardStatsCacheEntry struct {
 	Stats     *usagestats.DashboardStats `json:"stats"`
 	UpdatedAt int64                      `json:"updated_at"`
@@ -216,6 +220,18 @@ func (s *DashboardService) GetHourlyActivityWithFilters(ctx context.Context, sta
 		return nil, err
 	}
 	return BuildHourlyActivityHeatmap(trend, usageDashboardLocation(userTZ)), nil
+}
+
+func (s *DashboardService) GetTeamUsageInsights(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.TeamUsageInsights, error) {
+	repo, ok := s.usageRepo.(teamUsageInsightsReader)
+	if !ok {
+		return &usagestats.TeamUsageInsights{}, nil
+	}
+	insights, err := repo.GetTeamUsageInsights(ctx, startTime, endTime, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get team usage insights: %w", err)
+	}
+	return insights, nil
 }
 
 // GetGroupUsageSummary returns today's and cumulative cost for all groups.

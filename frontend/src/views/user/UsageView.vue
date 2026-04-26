@@ -84,6 +84,191 @@
           </div>
         </div>
         </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div class="card relative overflow-hidden p-4 xl:col-span-1">
+            <div
+              v-if="selfInsightsLoading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+            <div class="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">我的使用画像</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  当前时间范围内的工具、模型和缓存效率。
+                </p>
+              </div>
+              <span class="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-300">
+                缓存 {{ formatPercent(selfInsights?.cache_share || 0) }}
+              </span>
+            </div>
+            <div v-if="selfInsights && selfInsights.total_tokens > 0" class="space-y-3">
+              <div class="grid grid-cols-2 gap-2">
+                <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">Token</p>
+                  <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {{ formatTokens(selfInsights.total_tokens) }}
+                  </p>
+                </div>
+                <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">请求</p>
+                  <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {{ selfInsights.total_requests.toLocaleString() }}
+                  </p>
+                </div>
+              </div>
+              <div v-if="topSelfModel" class="rounded-xl border border-blue-400/20 bg-blue-500/10 p-3">
+                <p class="text-xs text-blue-600 dark:text-blue-300">主要模型</p>
+                <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white" :title="topSelfModel.model">
+                  {{ topSelfModel.model }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ formatTokens(topSelfModel.total_tokens) }} · {{ formatPercent(topSelfModel.cache_share) }} 缓存
+                </p>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无画像数据
+            </div>
+          </div>
+
+          <div class="card relative overflow-hidden p-4">
+            <div
+              v-if="selfInsightsLoading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">客户端 / 工具分布</h3>
+            <div v-if="selfClientItems.length" class="space-y-3">
+              <div v-for="client in selfClientItems" :key="client.client" class="space-y-1.5">
+                <div class="flex items-center justify-between gap-3 text-xs">
+                  <span class="truncate font-medium text-gray-900 dark:text-white">
+                    {{ client.client || 'Unknown' }}
+                  </span>
+                  <span class="shrink-0 text-gray-500 dark:text-gray-400">
+                    {{ formatPercent(client.token_share) }} / {{ formatTokens(client.total_tokens) }}
+                  </span>
+                </div>
+                <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                  <div
+                    class="h-full rounded-full bg-cyan-500"
+                    :style="{ width: `${clientShareWidth(client.token_share)}%` }"
+                  />
+                </div>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无客户端数据
+            </div>
+          </div>
+
+          <div class="card relative overflow-hidden p-4">
+            <div
+              v-if="selfInsightsLoading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">请求会话</h3>
+            <div v-if="selfSessionItems.length" class="space-y-2">
+              <div
+                v-for="session in selfSessionItems"
+                :key="session.session_id"
+                class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="`${session.client} / ${session.model}`">
+                      {{ session.client }} / {{ session.model }}
+                    </p>
+                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="session.api_key_name">
+                      {{ session.api_key_name || 'API Key' }}
+                    </p>
+                  </div>
+                  <div class="shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+                    <p>{{ formatTokens(session.total_tokens) }}</p>
+                    <p>{{ formatCompactDateTime(session.last_seen) }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无会话数据
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div class="card p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
+            </div>
+            <div v-if="selfModelItems.length" class="space-y-2">
+              <div
+                v-for="model in selfModelItems"
+                :key="model.model"
+                class="rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="model.model">
+                    {{ model.model }}
+                  </p>
+                  <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                    {{ formatPercent(model.share_of_member) }}
+                  </p>
+                </div>
+                <div class="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                  <div
+                    class="h-full rounded-full bg-blue-500"
+                    :style="{ width: `${clientShareWidth(model.share_of_member)}%` }"
+                  />
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ formatTokens(model.total_tokens) }} · 缓存 {{ formatPercent(model.cache_share) }}
+                </p>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无模型数据
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                读 {{ formatPercent(selfInsights?.cache_share || 0) }}
+              </span>
+            </div>
+            <div v-if="selfCacheItems.length" class="space-y-2">
+              <div
+                v-for="item in selfCacheItems"
+                :key="`${item.scope}-${item.model || item.label}`"
+                class="rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="item.label || item.model">
+                    {{ item.label || item.model || '-' }}
+                  </p>
+                  <p class="shrink-0 text-xs text-emerald-600 dark:text-emerald-400">
+                    {{ formatPercent(item.cache_share) }}
+                  </p>
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  读 {{ formatTokens(item.cache_read_tokens) }} / 写 {{ formatTokens(item.cache_creation_tokens) }}
+                  <span v-if="item.ttl_override_count"> · TTL {{ item.ttl_override_count }}</span>
+                </p>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无缓存数据
+            </div>
+          </div>
+        </div>
       </template>
 
       <template #filters>
@@ -516,7 +701,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse } from '@/types'
+import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, SelfUsageInsights } from '@/types'
 import type { Column } from '@/components/common/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -543,6 +728,8 @@ const tokenTooltipData = ref<UsageLog | null>(null)
 
 // Usage stats from API
 const usageStats = ref<UsageStatsResponse | null>(null)
+const selfInsights = ref<SelfUsageInsights | null>(null)
+const selfInsightsLoading = ref(false)
 
 const columns = computed<Column[]>(() => [
   { key: 'api_key', label: t('usage.apiKeyFilter'), sortable: false },
@@ -670,6 +857,31 @@ const formatTokens = (value: number): string => {
   return value.toLocaleString()
 }
 
+const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+const clientShareWidth = (share: number | null | undefined): number => {
+  if (!share || share <= 0) return 0
+  return Math.max(4, Math.round(share * 100))
+}
+
+const formatCompactDateTime = (value: string | undefined): string => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const selfClientItems = computed(() => selfInsights.value?.client_distribution?.slice(0, 5) || [])
+const selfModelItems = computed(() => selfInsights.value?.model_matrix?.slice(0, 6) || [])
+const selfCacheItems = computed(() => selfInsights.value?.cache_efficiency?.slice(0, 5) || [])
+const selfSessionItems = computed(() => selfInsights.value?.sessions?.slice(0, 5) || [])
+const topSelfModel = computed(() => selfModelItems.value[0] || null)
+
 type UsageTableQueryParams = UsageQueryParams & {
   sort_by?: string
   sort_order?: 'asc' | 'desc'
@@ -741,10 +953,28 @@ const loadUsageStats = async () => {
   }
 }
 
+const loadSelfInsights = async () => {
+  selfInsightsLoading.value = true
+  try {
+    const response = await usageAPI.getDashboardSelfInsights({
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value,
+      limit: 8
+    })
+    selfInsights.value = response.insights || null
+  } catch (error) {
+    console.error('Failed to load self usage insights:', error)
+    selfInsights.value = null
+  } finally {
+    selfInsightsLoading.value = false
+  }
+}
+
 const applyFilters = () => {
   pagination.page = 1
   loadUsageLogs()
   loadUsageStats()
+  loadSelfInsights()
 }
 
 const resetFilters = () => {
@@ -764,6 +994,7 @@ const resetFilters = () => {
   pagination.page = 1
   loadUsageLogs()
   loadUsageStats()
+  loadSelfInsights()
 }
 
 const handlePageChange = (page: number) => {
@@ -928,5 +1159,6 @@ onMounted(() => {
   loadApiKeys()
   loadUsageLogs()
   loadUsageStats()
+  loadSelfInsights()
 })
 </script>

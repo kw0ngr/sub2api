@@ -4,12 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getProjectStats, getUsageInsights, getHourlyActivity } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getProjectStats, getUsageInsights, getTeamUsageInsights, getHourlyActivity } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
   getUserSpendingRanking: vi.fn(),
   getProjectStats: vi.fn(),
   getUsageInsights: vi.fn(),
+  getTeamUsageInsights: vi.fn(),
   getHourlyActivity: vi.fn()
 }))
 
@@ -21,6 +22,7 @@ vi.mock('@/api/admin', () => ({
       getUserSpendingRanking,
       getProjectStats,
       getUsageInsights,
+      getTeamUsageInsights,
       getHourlyActivity
     }
   }
@@ -100,6 +102,7 @@ describe('admin DashboardView', () => {
     getUserSpendingRanking.mockReset()
     getProjectStats.mockReset()
     getUsageInsights.mockReset()
+    getTeamUsageInsights.mockReset()
     getHourlyActivity.mockReset()
 
     getSnapshotV2.mockResolvedValue({
@@ -194,6 +197,102 @@ describe('admin DashboardView', () => {
       start_date: '',
       end_date: ''
     })
+    getTeamUsageInsights.mockResolvedValue({
+      insights: {
+        total_members: 2,
+        total_requests: 12,
+        total_tokens: 1000,
+        cache_tokens: 300,
+        cache_share: 0.3,
+        client_distribution: [{
+          client: 'Claude Code',
+          requests: 8,
+          member_count: 2,
+          input_tokens: 100,
+          output_tokens: 200,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 250,
+          cache_tokens: 300,
+          total_tokens: 1000,
+          token_share: 1,
+          cache_share: 0.3,
+          last_seen: '2026-04-26T12:00:00Z'
+        }],
+        member_profiles: [{
+          user_id: 2,
+          email: 'alice@example.com',
+          username: 'alice',
+          requests: 8,
+          input_tokens: 100,
+          output_tokens: 200,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 250,
+          cache_tokens: 300,
+          total_tokens: 900,
+          token_share: 0.9,
+          cache_share: 0.3333,
+          average_duration_ms: 1234,
+          active_days: 1,
+          top_model: 'gpt-5.1',
+          top_model_tokens: 900,
+          top_client: 'Claude Code',
+          top_client_tokens: 900,
+          first_seen: '2026-04-26T10:00:00Z',
+          last_seen: '2026-04-26T12:00:00Z'
+        }],
+        member_model_matrix: [{
+          user_id: 2,
+          email: 'alice@example.com',
+          username: 'alice',
+          model: 'gpt-5.1',
+          requests: 8,
+          input_tokens: 100,
+          output_tokens: 200,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 250,
+          cache_tokens: 300,
+          total_tokens: 900,
+          member_total_tokens: 900,
+          share_of_member: 1,
+          cache_share: 0.3333
+        }],
+        cache_efficiency: [{
+          scope: 'member',
+          label: 'alice@example.com',
+          user_id: 2,
+          email: 'alice@example.com',
+          username: 'alice',
+          model: '',
+          requests: 8,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 250,
+          cache_tokens: 300,
+          total_tokens: 900,
+          cache_share: 0.3333,
+          cache_read_share: 0.8333,
+          ttl_override_count: 0
+        }],
+        sessions: [{
+          session_id: '2:1:Claude Code:gpt-5.1:2026042612',
+          user_id: 2,
+          email: 'alice@example.com',
+          username: 'alice',
+          api_key_id: 1,
+          api_key_name: 'dev-key',
+          client: 'Claude Code',
+          model: 'gpt-5.1',
+          requests: 8,
+          total_tokens: 900,
+          cache_tokens: 300,
+          cache_share: 0.3333,
+          average_duration_ms: 1234,
+          first_seen: '2026-04-26T11:00:00Z',
+          last_seen: '2026-04-26T12:00:00Z'
+        }]
+      },
+      start_date: '',
+      end_date: ''
+    })
   })
 
   it('uses last 24 hours as default dashboard range', async () => {
@@ -245,6 +344,7 @@ describe('admin DashboardView', () => {
 
     expect(getProjectStats).not.toHaveBeenCalled()
     expect(getUsageInsights).toHaveBeenCalledTimes(1)
+    expect(getTeamUsageInsights).toHaveBeenCalledTimes(1)
     expect(getHourlyActivity).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('admin.dashboard.userDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.memberContribution')
@@ -256,6 +356,9 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
     expect(wrapper.text()).toContain('admin.dashboard.usageInsights')
     expect(wrapper.text()).toContain('admin.dashboard.peakActivity')
+    expect(wrapper.text()).toContain('团队使用画像')
+    expect(wrapper.text()).toContain('成员 × 模型矩阵')
+    expect(wrapper.text()).toContain('Claude Code')
     expect(wrapper.text()).toContain('gpt-5.1')
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })

@@ -598,6 +598,25 @@ func (h *DashboardHandler) GetUsageInsights(c *gin.Context) {
 	})
 }
 
+// GetTeamUsageInsights handles internal-team usage portraits and operational breakdowns.
+// GET /api/v1/admin/dashboard/team-insights
+func (h *DashboardHandler) GetTeamUsageInsights(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	limit := parseRankingLimit(c.DefaultQuery("limit", "12"))
+
+	insights, err := h.dashboardService.GetTeamUsageInsights(c.Request.Context(), startTime, endTime, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get team usage insights")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"insights":   insights,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // GetHourlyActivity handles getting hourly usage grouped into a 7x24 heatmap.
 // GET /api/v1/admin/dashboard/hourly-activity
 // Query params: start_date, end_date (YYYY-MM-DD), timezone, user_id, api_key_id, account_id, group_id, model, request_type, stream, billing_type

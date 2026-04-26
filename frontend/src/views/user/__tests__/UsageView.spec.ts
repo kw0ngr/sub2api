@@ -4,9 +4,10 @@ import { nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { query, getStatsByDateRange, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
+const { query, getStatsByDateRange, getDashboardSelfInsights, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
   query: vi.fn(),
   getStatsByDateRange: vi.fn(),
+  getDashboardSelfInsights: vi.fn(),
   list: vi.fn(),
   showError: vi.fn(),
   showWarning: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('@/api', () => ({
   usageAPI: {
     query,
     getStatsByDateRange,
+    getDashboardSelfInsights,
   },
   keysAPI: {
     list,
@@ -76,6 +78,7 @@ describe('user UsageView tooltip', () => {
   beforeEach(() => {
     query.mockReset()
     getStatsByDateRange.mockReset()
+    getDashboardSelfInsights.mockReset()
     list.mockReset()
     showError.mockReset()
     showWarning.mockReset()
@@ -98,6 +101,21 @@ describe('user UsageView tooltip', () => {
       observe() {}
       disconnect() {}
     }
+
+    getDashboardSelfInsights.mockResolvedValue({
+      insights: {
+        total_requests: 1,
+        total_tokens: 100,
+        cache_tokens: 20,
+        cache_share: 0.2,
+        client_distribution: [],
+        model_matrix: [],
+        cache_efficiency: [],
+        sessions: [],
+      },
+      start_date: '',
+      end_date: '',
+    })
   })
 
   it('shows fast service tier and unit prices in user tooltip', async () => {

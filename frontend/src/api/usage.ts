@@ -13,7 +13,8 @@ import type {
   ModelStat,
   ProjectStat,
   UsageInsightSummary,
-  HourlyActivityHeatmapCell
+  HourlyActivityHeatmapCell,
+  SelfUsageInsights
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -75,6 +76,12 @@ export interface UsageInsightsResponse {
 
 export interface HourlyActivityResponse {
   hourly_activity: HourlyActivityHeatmapCell[]
+  start_date: string
+  end_date: string
+}
+
+export interface SelfUsageInsightsResponse {
+  insights: SelfUsageInsights
   start_date: string
   end_date: string
 }
@@ -269,6 +276,18 @@ export async function getDashboardHourlyActivity(params?: {
   return data
 }
 
+export async function getDashboardSelfInsights(params?: {
+  start_date?: string
+  end_date?: string
+  limit?: number
+}): Promise<SelfUsageInsightsResponse> {
+  const { data } = await apiClient.get<SelfUsageInsightsResponse>(
+    '/usage/dashboard/self-insights',
+    { params }
+  )
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -317,6 +336,7 @@ export const usageAPI = {
   getDashboardProjects,
   getDashboardInsights,
   getDashboardHourlyActivity,
+  getDashboardSelfInsights,
   getDashboardApiKeysUsage
 }
 

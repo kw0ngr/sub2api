@@ -15,6 +15,7 @@ import type {
   ApiKeyUsageTrendPoint,
   UserUsageTrendPoint,
   UserSpendingRankingResponse,
+  TeamUsageInsights,
   UserBreakdownItem,
   UsageRequestType
 } from '@/types'
@@ -151,6 +152,17 @@ export interface UsageInsightsResponse {
   end_date: string
 }
 
+export interface TeamUsageInsightsParams
+  extends Pick<TrendParams, 'start_date' | 'end_date'> {
+  limit?: number
+}
+
+export interface TeamUsageInsightsResponse {
+  insights: TeamUsageInsights
+  start_date: string
+  end_date: string
+}
+
 export interface HourlyActivityParams extends ProjectStatsParams {
   timezone?: string
 }
@@ -203,6 +215,16 @@ export async function getProjectStats(params?: ProjectStatsParams): Promise<Proj
 
 export async function getUsageInsights(params?: ProjectStatsParams): Promise<UsageInsightsResponse> {
   const { data } = await apiClient.get<UsageInsightsResponse>('/admin/dashboard/insights', { params })
+  return data
+}
+
+export async function getTeamUsageInsights(
+  params?: TeamUsageInsightsParams
+): Promise<TeamUsageInsightsResponse> {
+  const { data } = await apiClient.get<TeamUsageInsightsResponse>(
+    '/admin/dashboard/team-insights',
+    { params }
+  )
   return data
 }
 
@@ -380,6 +402,7 @@ export const dashboardAPI = {
   getGroupStats,
   getProjectStats,
   getUsageInsights,
+  getTeamUsageInsights,
   getHourlyActivity,
   getSnapshotV2,
   getApiKeyUsageTrend,

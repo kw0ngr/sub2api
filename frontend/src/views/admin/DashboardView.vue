@@ -663,6 +663,254 @@
                 {{ t('admin.dashboard.noDataAvailable') }}
               </div>
               </div>
+
+              <div class="card relative overflow-hidden p-4">
+                <div
+                  v-if="chartsLoading"
+                  class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+                >
+                  <LoadingSpinner size="md" />
+                </div>
+                <div class="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      团队使用画像
+                    </h3>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      工具、缓存、成员画像和近期会话，默认不统计管理员。
+                    </p>
+                  </div>
+                  <span class="shrink-0 rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-600 dark:text-violet-300">
+                    {{ formatTokens(teamInsights?.total_tokens || 0) }}
+                  </span>
+                </div>
+
+                <div v-if="teamInsights && teamInsights.total_tokens > 0" class="space-y-5">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                      <p class="text-xs text-gray-500 dark:text-gray-400">团队缓存率</p>
+                      <p class="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                        {{ formatPercent(teamInsights.cache_share) }}
+                      </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatTokens(teamInsights.cache_tokens) }}
+                      </p>
+                    </div>
+                    <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                      <p class="text-xs text-gray-500 dark:text-gray-400">工具 / 客户端</p>
+                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                        {{ formatNumber(teamClientItems.length) }}
+                      </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatNumber(teamInsights.total_requests) }} 请求
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-if="teamProfileItems.length" class="space-y-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      成员画像
+                    </p>
+                    <button
+                      v-for="profile in teamProfileItems"
+                      :key="`profile-${profile.user_id}`"
+                      type="button"
+                      class="w-full rounded-xl border border-gray-100 p-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
+                      @click="goToMemberUsage(profile.user_id)"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="memberDisplayName(profile)">
+                            {{ memberDisplayName(profile) }}
+                          </p>
+                          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${profile.top_client || '-'} / ${profile.top_model || '-'}`">
+                            {{ profile.top_client || '-' }} / {{ profile.top_model || '-' }}
+                          </p>
+                        </div>
+                        <div class="shrink-0 text-right text-xs">
+                          <p class="font-semibold text-gray-900 dark:text-white">
+                            {{ formatTokens(profile.total_tokens) }}
+                          </p>
+                          <p class="text-emerald-600 dark:text-emerald-400">
+                            缓存 {{ formatPercent(profile.cache_share) }}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div v-if="teamClientItems.length" class="space-y-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      客户端 / 工具分布
+                    </p>
+                    <div v-for="client in teamClientItems" :key="client.client" class="space-y-1">
+                      <div class="flex items-center justify-between gap-3 text-xs">
+                        <span class="truncate font-medium text-gray-900 dark:text-white">
+                          {{ client.client || 'Unknown' }}
+                        </span>
+                        <span class="shrink-0 text-gray-500 dark:text-gray-400">
+                          {{ formatPercent(client.token_share) }} / {{ formatTokens(client.total_tokens) }}
+                        </span>
+                      </div>
+                      <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        <div
+                          class="h-full rounded-full bg-cyan-500"
+                          :style="{ width: `${shareBarWidth(client.token_share)}%` }"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="teamCacheItems.length" class="space-y-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      缓存效率看板
+                    </p>
+                    <div
+                      v-for="item in teamCacheItems"
+                      :key="`${item.scope}-${item.user_id || item.model || item.label}`"
+                      class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-700"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="item.label">
+                          {{ item.label || item.model || '-' }}
+                        </p>
+                        <p class="shrink-0 text-xs text-emerald-600 dark:text-emerald-400">
+                          {{ formatPercent(item.cache_share) }}
+                        </p>
+                      </div>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        读 {{ formatTokens(item.cache_read_tokens) }} / 写 {{ formatTokens(item.cache_creation_tokens) }}
+                        <span v-if="item.ttl_override_count"> · TTL {{ item.ttl_override_count }}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-if="teamSessionItems.length" class="space-y-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      近期会话聚合
+                    </p>
+                    <button
+                      v-for="session in teamSessionItems"
+                      :key="session.session_id"
+                      type="button"
+                      class="w-full rounded-xl border border-gray-100 px-3 py-2 text-left transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50"
+                      @click="goToMemberUsage(session.user_id)"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="truncate text-xs font-semibold text-gray-900 dark:text-white" :title="sessionDisplayName(session)">
+                            {{ sessionDisplayName(session) }}
+                          </p>
+                          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${session.client} / ${session.model}`">
+                            {{ session.client }} / {{ session.model }}
+                          </p>
+                        </div>
+                        <div class="shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+                          <p>{{ formatTokens(session.total_tokens) }}</p>
+                          <p>{{ formatCompactDateTime(session.last_seen) }}</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                >
+                  {{ t('admin.dashboard.noDataAvailable') }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Member x Model Matrix -->
+          <div class="card relative overflow-hidden p-4">
+            <div
+              v-if="chartsLoading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <LoadingSpinner size="md" />
+            </div>
+            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                  成员 × 模型矩阵
+                </h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  观察团队成员在不同模型上的使用偏好与缓存占比。
+                </p>
+              </div>
+              <span class="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
+                {{ matrixMembers.length }} 成员 / {{ matrixModels.length }} 模型
+              </span>
+            </div>
+            <div v-if="matrixMembers.length && matrixModels.length" class="overflow-x-auto">
+              <table class="min-w-[860px] w-full text-xs">
+                <thead>
+                  <tr class="border-b border-gray-100 text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    <th class="w-56 pb-2 text-left font-medium">成员</th>
+                    <th
+                      v-for="model in matrixModels"
+                      :key="`matrix-head-${model}`"
+                      class="min-w-32 pb-2 text-left font-medium"
+                    >
+                      <span class="block truncate" :title="model">{{ model }}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="member in matrixMembers"
+                    :key="`matrix-member-${member.user_id}`"
+                    class="border-b border-gray-100 dark:border-gray-700"
+                  >
+                    <td class="py-2 pr-3">
+                      <button
+                        type="button"
+                        class="max-w-52 truncate text-left font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-300"
+                        :title="memberDisplayName(member)"
+                        @click="goToMemberUsage(member.user_id)"
+                      >
+                        {{ memberDisplayName(member) }}
+                      </button>
+                      <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                        {{ formatTokens(member.total_tokens) }}
+                      </p>
+                    </td>
+                    <td
+                      v-for="model in matrixModels"
+                      :key="`matrix-cell-${member.user_id}-${model}`"
+                      class="py-2 pr-3"
+                    >
+                      <div
+                        v-if="matrixCell(member.user_id, model)"
+                        class="relative overflow-hidden rounded-lg border border-gray-100 px-2 py-1.5 dark:border-gray-700"
+                      >
+                        <div
+                          class="absolute inset-y-0 left-0 bg-blue-500/10"
+                          :style="{ width: `${matrixCellWidth(matrixCell(member.user_id, model)?.total_tokens || 0)}%` }"
+                        />
+                        <div class="relative">
+                          <p class="font-semibold text-gray-900 dark:text-white">
+                            {{ formatTokens(matrixCell(member.user_id, model)?.total_tokens || 0) }}
+                          </p>
+                          <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                            {{ formatPercent(matrixCell(member.user_id, model)?.share_of_member || 0) }}
+                            · 缓存 {{ formatPercent(matrixCell(member.user_id, model)?.cache_share || 0) }}
+                          </p>
+                        </div>
+                      </div>
+                      <span v-else class="text-gray-300 dark:text-gray-600">-</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div
+              v-else
+              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+            >
+              {{ t('admin.dashboard.noDataAvailable') }}
             </div>
           </div>
 
@@ -772,7 +1020,10 @@ import type {
   UsageInsightSummary,
   HourlyActivityHeatmapCell,
   UserUsageTrendPoint,
-  UserSpendingRankingItem
+  UserSpendingRankingItem,
+  TeamUsageInsights,
+  MemberModelMatrixRow,
+  MemberUsageProfile
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -818,6 +1069,7 @@ const rankingError = ref(false)
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const usageInsights = ref<UsageInsightSummary | null>(null)
+const teamInsights = ref<TeamUsageInsights | null>(null)
 const hourlyActivity = ref<HourlyActivityHeatmapCell[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
 const rankingItems = ref<UserSpendingRankingItem[]>([])
@@ -1041,13 +1293,40 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
   })
 }
 
+const goToMemberUsage = (userID: number) => {
+  if (!userID) return
+  void router.push({
+    path: '/admin/usage',
+    query: {
+      user_id: String(userID),
+      start_date: startDate.value,
+      end_date: endDate.value
+    }
+  })
+}
+
 const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
+
+const shareBarWidth = (share: number | null | undefined): number => {
+  if (!share || share <= 0) return 0
+  return Math.max(4, Math.round(share * 100))
+}
 
 type UserContributionItem = UserSpendingRankingItem & { isOther?: boolean }
 
 const userDisplayName = (item: Pick<UserSpendingRankingItem, 'user_id' | 'email'>): string => {
   const email = item.email?.trim()
   if (email) return email
+  return t('admin.redeem.userPrefix', { id: item.user_id })
+}
+
+const memberDisplayName = (
+  item: Pick<MemberUsageProfile | MemberModelMatrixRow, 'user_id' | 'email' | 'username'>
+): string => {
+  const email = item.email?.trim()
+  if (email) return email
+  const username = item.username?.trim()
+  if (username) return username
   return t('admin.redeem.userPrefix', { id: item.user_id })
 }
 
@@ -1163,6 +1442,77 @@ const memberPulseAdviceBody = computed(() => {
       return t('admin.dashboard.memberPulseBalancedBody')
   }
 })
+
+const teamClientItems = computed(() => teamInsights.value?.client_distribution?.slice(0, 6) || [])
+const teamProfileItems = computed(() => teamInsights.value?.member_profiles?.slice(0, 4) || [])
+const teamCacheItems = computed(() => teamInsights.value?.cache_efficiency?.slice(0, 5) || [])
+const teamSessionItems = computed(() => teamInsights.value?.sessions?.slice(0, 5) || [])
+
+type MatrixMember = {
+  user_id: number
+  email: string
+  username: string
+  total_tokens: number
+}
+
+const matrixMembers = computed<MatrixMember[]>(() => {
+  const members = new Map<number, MatrixMember>()
+  for (const row of teamInsights.value?.member_model_matrix || []) {
+    const current = members.get(row.user_id)
+    const total = Math.max(row.member_total_tokens || 0, row.total_tokens || 0)
+    if (!current || total > current.total_tokens) {
+      members.set(row.user_id, {
+        user_id: row.user_id,
+        email: row.email,
+        username: row.username,
+        total_tokens: total
+      })
+    }
+  }
+  return Array.from(members.values()).sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 8)
+})
+
+const matrixModels = computed(() => {
+  const totals = new Map<string, number>()
+  for (const row of teamInsights.value?.member_model_matrix || []) {
+    totals.set(row.model, (totals.get(row.model) || 0) + row.total_tokens)
+  }
+  return Array.from(totals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([model]) => model)
+})
+
+const matrixMaxTokens = computed(() => {
+  return Math.max(0, ...(teamInsights.value?.member_model_matrix || []).map((row) => row.total_tokens))
+})
+
+const matrixCell = (userID: number, model: string): MemberModelMatrixRow | undefined => {
+  return teamInsights.value?.member_model_matrix?.find(
+    (row) => row.user_id === userID && row.model === model
+  )
+}
+
+const matrixCellWidth = (tokens: number): number => {
+  if (!tokens || matrixMaxTokens.value <= 0) return 0
+  return Math.max(8, Math.round((tokens / matrixMaxTokens.value) * 100))
+}
+
+const sessionDisplayName = (session: { user_id: number; email: string; username: string }): string => {
+  return memberDisplayName(session)
+}
+
+const formatCompactDateTime = (value: string | undefined): string => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
 const otherUserContribution = computed<UserContributionItem | null>(() => {
   const otherTokens = Math.max(rankingTotalTokens.value - rankedUserTokens.value, 0)
@@ -1326,7 +1676,7 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
       start_date: startDate.value,
       end_date: endDate.value
     }
-    const [snapshotResult, insightsResult, activityResult] = await Promise.allSettled([
+    const [snapshotResult, insightsResult, activityResult, teamInsightsResult] = await Promise.allSettled([
       adminAPI.dashboard.getSnapshotV2({
         ...params,
         granularity: granularity.value,
@@ -1340,6 +1690,10 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
       adminAPI.dashboard.getHourlyActivity({
         ...params,
         timezone: dashboardTimezone()
+      }),
+      adminAPI.dashboard.getTeamUsageInsights({
+        ...params,
+        limit: rankingLimit
       })
     ])
 
@@ -1360,6 +1714,12 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
     } else {
       hourlyActivity.value = []
       console.error('Error loading admin hourly activity:', activityResult.reason)
+    }
+    if (teamInsightsResult.status === 'fulfilled') {
+      teamInsights.value = teamInsightsResult.value.insights || null
+    } else {
+      teamInsights.value = null
+      console.error('Error loading admin team usage insights:', teamInsightsResult.reason)
     }
 
     if (includeStats && response.stats) {

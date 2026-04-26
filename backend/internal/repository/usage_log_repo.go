@@ -2378,6 +2378,712 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 	}, nil
 }
 
+func normalizeUsageInsightLimit(limit int) int {
+	if limit <= 0 {
+		return 12
+	}
+	if limit > 50 {
+		return 50
+	}
+	return limit
+}
+
+func usageInsightShare(part, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(part) / float64(total)
+}
+
+func usageInsightClientLabelExpression(alias string) string {
+	prefix := ""
+	if strings.TrimSpace(alias) != "" {
+		prefix = alias + "."
+	}
+	ua := fmt.Sprintf("LOWER(COALESCE(NULLIF(TRIM(%suser_agent), ''), ''))", prefix)
+	return fmt.Sprintf(`CASE
+			WHEN %[1]s = '' THEN 'Unknown'
+			WHEN %[1]s LIKE '%%claude-code%%' OR %[1]s LIKE '%%claude_cli%%' OR %[1]s LIKE '%%claude-cli%%' OR %[1]s LIKE '%%claude code%%' THEN 'Claude Code'
+			WHEN %[1]s LIKE '%%codex%%' THEN 'Codex CLI'
+			WHEN %[1]s LIKE '%%gemini%%' THEN 'Gemini CLI'
+			WHEN %[1]s LIKE '%%cursor%%' THEN 'Cursor'
+			WHEN %[1]s LIKE '%%cline%%' THEN 'Cline'
+			WHEN %[1]s LIKE '%%roo%%' THEN 'Roo Code'
+			WHEN %[1]s LIKE '%%open-webui%%' OR %[1]s LIKE '%%openwebui%%' THEN 'OpenWebUI'
+			WHEN %[1]s LIKE '%%cherry%%' THEN 'Cherry Studio'
+			WHEN %[1]s LIKE '%%chatbox%%' THEN 'Chatbox'
+			WHEN %[1]s LIKE '%%apifox%%' OR %[1]s LIKE '%%postman%%' OR %[1]s LIKE '%%curl/%%' THEN 'API Tool'
+			ELSE 'Other'
+		END`, ua)
+}
+
+func usageInsightModelExpression(alias string) string {
+	prefix := ""
+	if strings.TrimSpace(alias) != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf("COALESCE(NULLIF(TRIM(%[1]srequested_model), ''), NULLIF(TRIM(%[1]smodel), ''), 'unknown')", prefix)
+}
+
+func buildUsageInsightScopeFilter(startTime, endTime time.Time, userID int64, excludeAdmins bool) (string, []any) {
+	args := []any{startTime, endTime}
+	filter := "ul.created_at >= $1 AND ul.created_at < $2"
+	if userID > 0 {
+		filter += fmt.Sprintf(" AND ul.user_id = $%d", len(args)+1)
+		args = append(args, userID)
+	}
+	if excludeAdmins {
+		filter += " AND COALESCE(us.role, 'user') <> 'admin'"
+	}
+	return filter, args
+}
+
+// GetTeamUsageInsights returns internal-team usage analytics for admin dashboards.
+// Admin users are excluded by default so rankings reflect real team members.
+func (r *usageLogRepository) GetTeamUsageInsights(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.TeamUsageInsights, error) {
+	limit = normalizeUsageInsightLimit(limit)
+	result := &usagestats.TeamUsageInsights{}
+
+	totalMembers, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, 0, true)
+	if err != nil {
+		return nil, err
+	}
+	result.TotalMembers = totalMembers
+	result.TotalRequests = totalRequests
+	result.TotalTokens = totalTokens
+	result.CacheTokens = cacheTokens
+	result.CacheShare = usageInsightShare(cacheTokens, totalTokens)
+
+	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, 0, true, totalTokens)
+	if err != nil {
+		return nil, err
+	}
+	result.MemberProfiles, err = r.getUsageInsightMemberProfiles(ctx, startTime, endTime, limit, true, totalTokens)
+	if err != nil {
+		return nil, err
+	}
+	result.MemberModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, limit, 8, 0, true)
+	if err != nil {
+		return nil, err
+	}
+	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, 0, true)
+	if err != nil {
+		return nil, err
+	}
+	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, 0, true)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetUserSelfUsageInsights returns self-service analytics scoped to one user.
+func (r *usageLogRepository) GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
+	limit = normalizeUsageInsightLimit(limit)
+	result := &usagestats.SelfUsageInsights{}
+
+	_, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	result.TotalRequests = totalRequests
+	result.TotalTokens = totalTokens
+	result.CacheTokens = cacheTokens
+	result.CacheShare = usageInsightShare(cacheTokens, totalTokens)
+
+	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, userID, false, totalTokens)
+	if err != nil {
+		return nil, err
+	}
+	result.ModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, 1, limit, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *usageLogRepository) getUsageInsightTotals(ctx context.Context, startTime, endTime time.Time, userID int64, excludeAdmins bool) (members, requests, tokens, cacheTokens int64, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	query := fmt.Sprintf(`
+		SELECT
+			COUNT(DISTINCT ul.user_id) as members,
+			COUNT(*) as requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as tokens,
+			COALESCE(SUM(ul.cache_creation_tokens + ul.cache_read_tokens), 0) as cache_tokens
+		FROM usage_logs ul
+		LEFT JOIN users us ON ul.user_id = us.id
+		WHERE %s
+	`, filter)
+	if err := scanSingleRow(ctx, r.sql, query, args, &members, &requests, &tokens, &cacheTokens); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return members, requests, tokens, cacheTokens, nil
+}
+
+func (r *usageLogRepository) getUsageInsightClientDistribution(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool, totalTokens int64) (results []usagestats.ClientUsageStat, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	args = append(args, normalizeUsageInsightLimit(limit))
+	limitRef := fmt.Sprintf("$%d", len(args))
+	clientExpr := usageInsightClientLabelExpression("ul")
+	query := fmt.Sprintf(`
+		WITH scoped AS (
+			SELECT
+				ul.user_id,
+				ul.created_at,
+				%s as client,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens
+			FROM usage_logs ul
+			LEFT JOIN users us ON ul.user_id = us.id
+			WHERE %s
+		)
+		SELECT
+			client,
+			COUNT(*) as requests,
+			COUNT(DISTINCT user_id) as member_count,
+			COALESCE(SUM(input_tokens), 0) as input_tokens,
+			COALESCE(SUM(output_tokens), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			MAX(created_at) as last_seen
+		FROM scoped
+		GROUP BY client
+		ORDER BY total_tokens DESC, requests DESC, client ASC
+		LIMIT %s
+	`, clientExpr, filter, limitRef)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.ClientUsageStat, 0)
+	for rows.Next() {
+		var row usagestats.ClientUsageStat
+		if err = rows.Scan(
+			&row.Client,
+			&row.Requests,
+			&row.MemberCount,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.CacheTokens,
+			&row.TotalTokens,
+			&row.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		row.TokenShare = usageInsightShare(row.TotalTokens, totalTokens)
+		row.CacheShare = usageInsightShare(row.CacheTokens, row.TotalTokens)
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *usageLogRepository) getUsageInsightMemberProfiles(ctx context.Context, startTime, endTime time.Time, limit int, excludeAdmins bool, totalTokens int64) (results []usagestats.MemberUsageProfile, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, 0, excludeAdmins)
+	args = append(args, normalizeUsageInsightLimit(limit))
+	limitRef := fmt.Sprintf("$%d", len(args))
+	clientExpr := usageInsightClientLabelExpression("ul")
+	modelExpr := usageInsightModelExpression("ul")
+	query := fmt.Sprintf(`
+		WITH scoped AS (
+			SELECT
+				ul.user_id,
+				COALESCE(us.email, '') as email,
+				COALESCE(us.username, '') as username,
+				ul.created_at,
+				%s as client,
+				%s as model,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens,
+				ul.duration_ms
+			FROM usage_logs ul
+			LEFT JOIN users us ON ul.user_id = us.id
+			WHERE %s
+		),
+		member_totals AS (
+			SELECT
+				user_id,
+				email,
+				username,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens), 0) as input_tokens,
+				COALESCE(SUM(output_tokens), 0) as output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(AVG(NULLIF(duration_ms, 0)), 0) as average_duration_ms,
+				COUNT(DISTINCT DATE(created_at)) as active_days,
+				MIN(created_at) as first_seen,
+				MAX(created_at) as last_seen
+			FROM scoped
+			GROUP BY user_id, email, username
+		),
+		model_rank AS (
+			SELECT
+				user_id,
+				model,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as model_tokens,
+				ROW_NUMBER() OVER (
+					PARTITION BY user_id
+					ORDER BY COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) DESC, model ASC
+				) as rn
+			FROM scoped
+			GROUP BY user_id, model
+		),
+		client_rank AS (
+			SELECT
+				user_id,
+				client,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as client_tokens,
+				ROW_NUMBER() OVER (
+					PARTITION BY user_id
+					ORDER BY COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) DESC, client ASC
+				) as rn
+			FROM scoped
+			GROUP BY user_id, client
+		)
+		SELECT
+			mt.user_id,
+			mt.email,
+			mt.username,
+			mt.requests,
+			mt.input_tokens,
+			mt.output_tokens,
+			mt.cache_creation_tokens,
+			mt.cache_read_tokens,
+			mt.cache_tokens,
+			mt.total_tokens,
+			mt.average_duration_ms,
+			mt.active_days,
+			COALESCE(mr.model, '') as top_model,
+			COALESCE(mr.model_tokens, 0) as top_model_tokens,
+			COALESCE(cr.client, '') as top_client,
+			COALESCE(cr.client_tokens, 0) as top_client_tokens,
+			mt.first_seen,
+			mt.last_seen
+		FROM member_totals mt
+		LEFT JOIN model_rank mr ON mr.user_id = mt.user_id AND mr.rn = 1
+		LEFT JOIN client_rank cr ON cr.user_id = mt.user_id AND cr.rn = 1
+		ORDER BY mt.total_tokens DESC, mt.requests DESC, mt.user_id ASC
+		LIMIT %s
+	`, clientExpr, modelExpr, filter, limitRef)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.MemberUsageProfile, 0)
+	for rows.Next() {
+		var row usagestats.MemberUsageProfile
+		if err = rows.Scan(
+			&row.UserID,
+			&row.Email,
+			&row.Username,
+			&row.Requests,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.CacheTokens,
+			&row.TotalTokens,
+			&row.AverageDurationMs,
+			&row.ActiveDays,
+			&row.TopModel,
+			&row.TopModelTokens,
+			&row.TopClient,
+			&row.TopClientTokens,
+			&row.FirstSeen,
+			&row.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		row.TokenShare = usageInsightShare(row.TotalTokens, totalTokens)
+		row.CacheShare = usageInsightShare(row.CacheTokens, row.TotalTokens)
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *usageLogRepository) getUsageInsightMemberModelMatrix(ctx context.Context, startTime, endTime time.Time, memberLimit, modelLimit int, userID int64, excludeAdmins bool) (results []usagestats.MemberModelMatrixRow, err error) {
+	memberLimit = normalizeUsageInsightLimit(memberLimit)
+	modelLimit = normalizeUsageInsightLimit(modelLimit)
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	args = append(args, memberLimit)
+	memberLimitRef := fmt.Sprintf("$%d", len(args))
+	args = append(args, modelLimit)
+	modelLimitRef := fmt.Sprintf("$%d", len(args))
+	modelExpr := usageInsightModelExpression("ul")
+	query := fmt.Sprintf(`
+		WITH scoped AS (
+			SELECT
+				ul.user_id,
+				COALESCE(us.email, '') as email,
+				COALESCE(us.username, '') as username,
+				%s as model,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens
+			FROM usage_logs ul
+			LEFT JOIN users us ON ul.user_id = us.id
+			WHERE %s
+		),
+		member_totals AS (
+			SELECT
+				user_id,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as member_total_tokens
+			FROM scoped
+			GROUP BY user_id
+			ORDER BY member_total_tokens DESC, user_id ASC
+			LIMIT %s
+		),
+		model_totals AS (
+			SELECT
+				model,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as model_total_tokens
+			FROM scoped
+			GROUP BY model
+			ORDER BY model_total_tokens DESC, model ASC
+			LIMIT %s
+		),
+		matrix AS (
+			SELECT
+				s.user_id,
+				s.email,
+				s.username,
+				s.model,
+				COUNT(*) as requests,
+				COALESCE(SUM(s.input_tokens), 0) as input_tokens,
+				COALESCE(SUM(s.output_tokens), 0) as output_tokens,
+				COALESCE(SUM(s.cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(s.cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(s.cache_creation_tokens + s.cache_read_tokens), 0) as cache_tokens,
+				COALESCE(SUM(s.input_tokens + s.output_tokens + s.cache_creation_tokens + s.cache_read_tokens), 0) as total_tokens
+			FROM scoped s
+			JOIN member_totals mt ON mt.user_id = s.user_id
+			JOIN model_totals mot ON mot.model = s.model
+			GROUP BY s.user_id, s.email, s.username, s.model
+		)
+		SELECT
+			m.user_id,
+			m.email,
+			m.username,
+			m.model,
+			m.requests,
+			m.input_tokens,
+			m.output_tokens,
+			m.cache_creation_tokens,
+			m.cache_read_tokens,
+			m.cache_tokens,
+			m.total_tokens,
+			mt.member_total_tokens
+		FROM matrix m
+		JOIN member_totals mt ON mt.user_id = m.user_id
+		ORDER BY mt.member_total_tokens DESC, m.total_tokens DESC, m.model ASC
+	`, modelExpr, filter, memberLimitRef, modelLimitRef)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.MemberModelMatrixRow, 0)
+	for rows.Next() {
+		var row usagestats.MemberModelMatrixRow
+		if err = rows.Scan(
+			&row.UserID,
+			&row.Email,
+			&row.Username,
+			&row.Model,
+			&row.Requests,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.CacheTokens,
+			&row.TotalTokens,
+			&row.MemberTotalTokens,
+		); err != nil {
+			return nil, err
+		}
+		row.ShareOfMember = usageInsightShare(row.TotalTokens, row.MemberTotalTokens)
+		row.CacheShare = usageInsightShare(row.CacheTokens, row.TotalTokens)
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *usageLogRepository) getUsageInsightCacheEfficiency(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool) (results []usagestats.CacheEfficiencyItem, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	args = append(args, normalizeUsageInsightLimit(limit))
+	limitRef := fmt.Sprintf("$%d", len(args))
+	modelExpr := usageInsightModelExpression("ul")
+	if userID > 0 {
+		query := fmt.Sprintf(`
+			WITH scoped AS (
+				SELECT
+					%s as model,
+					ul.input_tokens,
+					ul.output_tokens,
+					ul.cache_creation_tokens,
+					ul.cache_read_tokens,
+					ul.cache_ttl_overridden
+				FROM usage_logs ul
+				LEFT JOIN users us ON ul.user_id = us.id
+				WHERE %s
+			)
+			SELECT
+				'model' as scope,
+				model as label,
+				0::bigint as user_id,
+				'' as email,
+				'' as username,
+				model,
+				COUNT(*) as requests,
+				COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+				COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(CASE WHEN cache_ttl_overridden THEN 1 ELSE 0 END), 0) as ttl_override_count
+			FROM scoped
+			GROUP BY model
+			ORDER BY cache_tokens DESC, total_tokens DESC, model ASC
+			LIMIT %s
+		`, modelExpr, filter, limitRef)
+		return r.scanUsageInsightCacheEfficiency(ctx, query, args...)
+	}
+
+	query := fmt.Sprintf(`
+		WITH scoped AS (
+			SELECT
+				ul.user_id,
+				COALESCE(us.email, '') as email,
+				COALESCE(us.username, '') as username,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens,
+				ul.cache_ttl_overridden
+			FROM usage_logs ul
+			LEFT JOIN users us ON ul.user_id = us.id
+			WHERE %s
+		)
+		SELECT
+			'member' as scope,
+			COALESCE(NULLIF(email, ''), NULLIF(username, ''), user_id::text) as label,
+			user_id,
+			email,
+			username,
+			'' as model,
+			COUNT(*) as requests,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+			COALESCE(SUM(CASE WHEN cache_ttl_overridden THEN 1 ELSE 0 END), 0) as ttl_override_count
+		FROM scoped
+		GROUP BY user_id, email, username
+		ORDER BY cache_tokens DESC, total_tokens DESC, user_id ASC
+		LIMIT %s
+	`, filter, limitRef)
+	return r.scanUsageInsightCacheEfficiency(ctx, query, args...)
+}
+
+func (r *usageLogRepository) scanUsageInsightCacheEfficiency(ctx context.Context, query string, args ...any) (results []usagestats.CacheEfficiencyItem, err error) {
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.CacheEfficiencyItem, 0)
+	for rows.Next() {
+		var row usagestats.CacheEfficiencyItem
+		if err = rows.Scan(
+			&row.Scope,
+			&row.Label,
+			&row.UserID,
+			&row.Email,
+			&row.Username,
+			&row.Model,
+			&row.Requests,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.CacheTokens,
+			&row.TotalTokens,
+			&row.TTLOverrideCount,
+		); err != nil {
+			return nil, err
+		}
+		row.CacheShare = usageInsightShare(row.CacheTokens, row.TotalTokens)
+		row.CacheReadShare = usageInsightShare(row.CacheReadTokens, row.CacheTokens)
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *usageLogRepository) getUsageInsightSessions(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool) (results []usagestats.RequestSessionSummary, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	args = append(args, normalizeUsageInsightLimit(limit))
+	limitRef := fmt.Sprintf("$%d", len(args))
+	clientExpr := usageInsightClientLabelExpression("ul")
+	modelExpr := usageInsightModelExpression("ul")
+	query := fmt.Sprintf(`
+		WITH scoped AS (
+			SELECT
+				ul.user_id,
+				COALESCE(us.email, '') as email,
+				COALESCE(us.username, '') as username,
+				ul.api_key_id,
+				COALESCE(k.name, '') as api_key_name,
+				%s as client,
+				%s as model,
+				DATE_TRUNC('hour', ul.created_at) as session_hour,
+				ul.created_at,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens,
+				ul.duration_ms
+			FROM usage_logs ul
+			LEFT JOIN users us ON ul.user_id = us.id
+			LEFT JOIN api_keys k ON ul.api_key_id = k.id
+			WHERE %s
+		),
+		sessions AS (
+			SELECT
+				CONCAT(user_id, ':', COALESCE(api_key_id, 0), ':', client, ':', model, ':', TO_CHAR(session_hour, 'YYYYMMDDHH24')) as session_id,
+				user_id,
+				email,
+				username,
+				COALESCE(api_key_id, 0) as api_key_id,
+				api_key_name,
+				client,
+				model,
+				COUNT(*) as requests,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
+				COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+				COALESCE(AVG(NULLIF(duration_ms, 0)), 0) as average_duration_ms,
+				MIN(created_at) as first_seen,
+				MAX(created_at) as last_seen
+			FROM scoped
+			GROUP BY user_id, email, username, api_key_id, api_key_name, client, model, session_hour
+		)
+		SELECT
+			session_id,
+			user_id,
+			email,
+			username,
+			api_key_id,
+			api_key_name,
+			client,
+			model,
+			requests,
+			total_tokens,
+			cache_tokens,
+			average_duration_ms,
+			first_seen,
+			last_seen
+		FROM sessions
+		ORDER BY last_seen DESC, total_tokens DESC
+		LIMIT %s
+	`, clientExpr, modelExpr, filter, limitRef)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.RequestSessionSummary, 0)
+	for rows.Next() {
+		var row usagestats.RequestSessionSummary
+		if err = rows.Scan(
+			&row.SessionID,
+			&row.UserID,
+			&row.Email,
+			&row.Username,
+			&row.APIKeyID,
+			&row.APIKeyName,
+			&row.Client,
+			&row.Model,
+			&row.Requests,
+			&row.TotalTokens,
+			&row.CacheTokens,
+			&row.AverageDurationMs,
+			&row.FirstSeen,
+			&row.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		row.CacheShare = usageInsightShare(row.CacheTokens, row.TotalTokens)
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // UserDashboardStats 用户仪表盘统计
 type UserDashboardStats = usagestats.UserDashboardStats
 

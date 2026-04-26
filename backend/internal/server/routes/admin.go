@@ -204,6 +204,7 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		dashboard.GET("/groups", h.Admin.Dashboard.GetGroupStats)
 		dashboard.GET("/projects", h.Admin.Dashboard.GetProjectStats)
 		dashboard.GET("/insights", h.Admin.Dashboard.GetUsageInsights)
+		dashboard.GET("/team-insights", h.Admin.Dashboard.GetTeamUsageInsights)
 		dashboard.GET("/hourly-activity", h.Admin.Dashboard.GetHourlyActivity)
 		dashboard.GET("/api-keys-trend", h.Admin.Dashboard.GetAPIKeyUsageTrend)
 		dashboard.GET("/users-trend", h.Admin.Dashboard.GetUserUsageTrend)
