@@ -363,6 +363,30 @@ describe('admin DashboardView', () => {
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
 
+  it('keeps the dashboard visual polish hooks on the existing layout', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('.admin-dashboard-polish').exists()).toBe(true)
+    expect(wrapper.find('.dashboard-filter-panel').exists()).toBe(true)
+    expect(wrapper.findAll('.dashboard-stat-card')).toHaveLength(8)
+    expect(wrapper.findAll('.dashboard-analytics-card').length).toBeGreaterThanOrEqual(3)
+  })
+
   it('keeps unattributed project data out of the admin team summary', async () => {
     getProjectStats.mockResolvedValueOnce({
       projects: [{

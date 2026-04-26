@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="admin-dashboard-polish space-y-6">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <LoadingSpinner />
@@ -8,9 +8,9 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="dashboard-stat-grid grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- Total API Keys -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                 <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
@@ -30,7 +30,7 @@
           </div>
 
           <!-- Service Accounts -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
                 <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
@@ -55,7 +55,7 @@
           </div>
 
           <!-- Today Requests -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
                 <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
@@ -75,7 +75,7 @@
           </div>
 
           <!-- New Users Today -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
                 <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
@@ -96,9 +96,9 @@
         </div>
 
         <!-- Row 2: Token Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="dashboard-stat-grid grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- Today Tokens -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
                 <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
@@ -134,7 +134,7 @@
           </div>
 
           <!-- Total Tokens -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
                 <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
@@ -170,7 +170,7 @@
           </div>
 
           <!-- Performance (RPM/TPM) -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
@@ -196,7 +196,7 @@
           </div>
 
           <!-- Avg Response Time -->
-          <div class="card p-4">
+          <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
@@ -219,7 +219,7 @@
         <!-- Charts Section -->
         <div class="space-y-6">
           <!-- Date Range Filter -->
-          <div class="card p-4">
+          <div class="card dashboard-filter-panel p-4">
             <div class="flex flex-wrap items-center gap-4">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -253,6 +253,7 @@
           <div v-if="showChartCards" class="grid grid-cols-1 gap-6" :class="chartGridClass">
             <ModelDistributionChart
               v-if="showModelDistributionCard"
+              class="dashboard-analytics-card"
               :model-stats="modelStats"
               :enable-ranking-view="true"
               :ranking-items="rankingItems"
@@ -266,7 +267,12 @@
               :end-date="endDate"
               @ranking-click="goToUserUsage"
             />
-            <TokenUsageTrend v-if="showTrendCard" :trend-data="trendData" :loading="chartsLoading" />
+            <TokenUsageTrend
+              v-if="showTrendCard"
+              class="dashboard-analytics-card"
+              :trend-data="trendData"
+              :loading="chartsLoading"
+            />
           </div>
 
           <!-- Team Member and Insight Widgets -->
@@ -275,7 +281,7 @@
             class="dashboard-masonry"
             :class="{ 'dashboard-masonry--single': insightCardCount <= 1 }"
           >
-            <div v-if="showUserContributionCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
+            <div v-if="showUserContributionCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -439,7 +445,7 @@
               </div>
             </div>
 
-            <div v-if="showUsageInsightsCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
+            <div v-if="showUsageInsightsCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="chartsLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -544,7 +550,7 @@
               </div>
             </div>
 
-            <div v-if="showMemberPulseCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
+            <div v-if="showMemberPulseCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
               <div
                 v-if="rankingLoading"
                 class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -665,7 +671,7 @@
               </div>
             </div>
 
-            <div v-if="showTeamUsageProfileCard" class="card dashboard-masonry-item relative overflow-hidden p-4">
+            <div v-if="showTeamUsageProfileCard" class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4">
                 <div
                   v-if="chartsLoading"
                   class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -824,7 +830,7 @@
           </div>
 
           <!-- Member x Model Matrix -->
-          <div v-if="showMatrixCard" class="card relative overflow-hidden p-4">
+          <div v-if="showMatrixCard" class="card dashboard-analytics-card relative overflow-hidden p-4">
             <div
               v-if="chartsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -915,7 +921,7 @@
           </div>
 
           <!-- Hourly Activity Heatmap -->
-          <div v-if="showHourlyActivityCard" class="card relative overflow-hidden p-4">
+          <div v-if="showHourlyActivityCard" class="card dashboard-analytics-card relative overflow-hidden p-4">
             <div
               v-if="chartsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -982,7 +988,7 @@
           </div>
 
           <!-- User Usage Trend (Full Width) -->
-          <div v-if="showUserTrendCard" class="card p-4">
+          <div v-if="showUserTrendCard" class="card dashboard-analytics-card p-4">
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
               {{ t('admin.dashboard.recentUsage') }} (Top 12)
             </h3>
@@ -1896,6 +1902,160 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.admin-dashboard-polish {
+  --dashboard-accent: 20 184 166;
+  --dashboard-accent-strong: 13 148 136;
+  --dashboard-surface: 255 255 255;
+  --dashboard-ink-shadow: 15 23 42;
+}
+
+.admin-dashboard-polish :deep(.card) {
+  border-color: rgb(226 232 240 / 0.72);
+}
+
+.dark .admin-dashboard-polish :deep(.card) {
+  border-color: rgb(51 65 85 / 0.68);
+}
+
+.dashboard-stat-grid {
+  perspective: 1000px;
+}
+
+.dashboard-stat-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(var(--dashboard-accent) / 0.10), transparent 32%),
+    linear-gradient(135deg, rgb(var(--dashboard-surface) / 0.98), rgb(248 250 252 / 0.92));
+  box-shadow:
+    0 16px 48px rgb(var(--dashboard-ink-shadow) / 0.07),
+    inset 0 1px 0 rgb(255 255 255 / 0.78);
+  transform: translateZ(0);
+}
+
+.dark .dashboard-stat-card {
+  background:
+    radial-gradient(circle at 100% 0%, rgb(var(--dashboard-accent) / 0.14), transparent 34%),
+    linear-gradient(135deg, rgb(30 41 59 / 0.74), rgb(15 23 42 / 0.64));
+  box-shadow:
+    0 16px 48px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.dashboard-stat-card::after {
+  content: "";
+  position: absolute;
+  right: -2rem;
+  top: -2.25rem;
+  z-index: -1;
+  height: 5rem;
+  width: 5rem;
+  border-radius: 9999px;
+  background: rgb(var(--dashboard-accent) / 0.10);
+  transition: transform 240ms ease, opacity 240ms ease;
+}
+
+.dashboard-stat-card:hover {
+  border-color: rgb(var(--dashboard-accent) / 0.34);
+  box-shadow:
+    0 22px 60px rgb(var(--dashboard-ink-shadow) / 0.10),
+    inset 0 1px 0 rgb(255 255 255 / 0.88);
+  transform: translateY(-2px);
+}
+
+.dark .dashboard-stat-card:hover {
+  box-shadow:
+    0 22px 60px rgb(0 0 0 / 0.24),
+    0 0 0 1px rgb(var(--dashboard-accent) / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.dashboard-stat-card:hover::after {
+  opacity: 0.9;
+  transform: scale(1.18);
+}
+
+.dashboard-stat-card > .flex > div:first-child {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.58);
+}
+
+.dashboard-filter-panel {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 0% 0%, rgb(var(--dashboard-accent) / 0.10), transparent 34%),
+    linear-gradient(135deg, rgb(255 255 255 / 0.94), rgb(248 250 252 / 0.90));
+  box-shadow:
+    0 18px 54px rgb(var(--dashboard-ink-shadow) / 0.075),
+    inset 0 1px 0 rgb(255 255 255 / 0.78);
+}
+
+.dark .dashboard-filter-panel {
+  background:
+    radial-gradient(circle at 0% 0%, rgb(var(--dashboard-accent) / 0.14), transparent 36%),
+    linear-gradient(135deg, rgb(30 41 59 / 0.78), rgb(15 23 42 / 0.66));
+  box-shadow:
+    0 18px 54px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.dashboard-filter-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(var(--dashboard-accent) / 0.10), transparent 42%);
+  opacity: 0.72;
+}
+
+.dashboard-filter-panel > * {
+  position: relative;
+}
+
+.dashboard-analytics-card {
+  border-color: rgb(226 232 240 / 0.76);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(248 250 252 / 0.92));
+  box-shadow:
+    0 16px 50px rgb(var(--dashboard-ink-shadow) / 0.07),
+    inset 0 1px 0 rgb(255 255 255 / 0.76);
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease,
+    background-color 220ms ease;
+}
+
+.dark .dashboard-analytics-card {
+  border-color: rgb(51 65 85 / 0.68);
+  background:
+    linear-gradient(180deg, rgb(30 41 59 / 0.70), rgb(15 23 42 / 0.58));
+  box-shadow:
+    0 16px 50px rgb(0 0 0 / 0.17),
+    inset 0 1px 0 rgb(255 255 255 / 0.055);
+}
+
+.dashboard-analytics-card:hover {
+  border-color: rgb(var(--dashboard-accent) / 0.30);
+  box-shadow:
+    0 22px 68px rgb(var(--dashboard-ink-shadow) / 0.10),
+    inset 0 1px 0 rgb(255 255 255 / 0.82);
+  transform: translateY(-1px);
+}
+
+.dark .dashboard-analytics-card:hover {
+  box-shadow:
+    0 22px 68px rgb(0 0 0 / 0.24),
+    0 0 0 1px rgb(var(--dashboard-accent) / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+
+.dashboard-analytics-card :deep(h3) {
+  letter-spacing: -0.01em;
+}
+
 .dashboard-masonry {
   column-count: 1;
   column-gap: 1.5rem;
@@ -1917,6 +2077,19 @@ onMounted(() => {
 
   .dashboard-masonry--single {
     column-count: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-stat-card,
+  .dashboard-stat-card::after,
+  .dashboard-analytics-card {
+    transition-duration: 1ms;
+  }
+
+  .dashboard-stat-card:hover,
+  .dashboard-analytics-card:hover {
+    transform: none;
   }
 }
 </style>
