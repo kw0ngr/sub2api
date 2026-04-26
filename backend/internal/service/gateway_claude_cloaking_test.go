@@ -108,19 +108,19 @@ func newGatewayForwardingSettingService(t *testing.T, values map[string]string) 
 
 func TestComputeClaudeCodeBillingFingerprint(t *testing.T) {
 	message := "01234567890123456789012345"
-	got := computeClaudeCodeBillingFingerprint(message, "2.1.88")
-	require.Equal(t, "d4e", got)
+	got := computeClaudeCodeBillingFingerprint(message, "2.1.92")
+	require.Equal(t, "f34", got)
 }
 
 func TestGenerateClaudeCodeBillingHeader(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
-	got := generateClaudeCodeBillingHeader(body, "2.1.88", "cli", "")
-	require.Equal(t, "x-anthropic-billing-header: cc_version=2.1.88.d4e; cc_entrypoint=cli;", got)
+	got := generateClaudeCodeBillingHeader(body, "2.1.92", "cli", "")
+	require.Equal(t, "x-anthropic-billing-header: cc_version=2.1.92.f34; cc_entrypoint=cli; cch=00000;", got)
 }
 
 func TestEnsureClaudeOAuthSystemCloaking_InsertsBillingAndPrefix(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-6","system":[{"type":"text","text":"custom system"}],"messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
-	next, changed := ensureClaudeOAuthSystemCloaking(body, "2.1.88", "cli")
+	next, changed := ensureClaudeOAuthSystemCloaking(body, "2.1.92", "cli")
 	require.True(t, changed)
 
 	system := gjson.GetBytes(next, "system")
@@ -130,7 +130,7 @@ func TestEnsureClaudeOAuthSystemCloaking_InsertsBillingAndPrefix(t *testing.T) {
 
 	first := system.Array()[0].Get("text").String()
 	require.Contains(t, first, "x-anthropic-billing-header:")
-	require.Contains(t, first, "cc_version=2.1.88.d4e")
+	require.Contains(t, first, "cc_version=2.1.92.f34")
 	require.Contains(t, first, "cc_entrypoint=cli")
 
 	second := system.Array()[1].Get("text").String()
@@ -141,7 +141,7 @@ func TestEnsureClaudeOAuthSystemCloaking_InsertsBillingAndPrefix(t *testing.T) {
 func TestEnsureClaudeOAuthSystemCloaking_PreservesExistingBillingBlock(t *testing.T) {
 	existingBilling := "x-anthropic-billing-header: cc_version=2.0.0.abc; cc_entrypoint=cli;"
 	body := []byte(`{"model":"claude-sonnet-4-6","system":[{"type":"text","text":"` + existingBilling + `"},{"type":"text","text":"You are Claude Code, Anthropic's official CLI for Claude."},{"type":"text","text":"custom"}],"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
-	next, changed := ensureClaudeOAuthSystemCloaking(body, "2.1.88", "cli")
+	next, changed := ensureClaudeOAuthSystemCloaking(body, "2.1.92", "cli")
 	require.True(t, changed)
 
 	system := gjson.GetBytes(next, "system")

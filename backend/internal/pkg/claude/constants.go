@@ -12,6 +12,11 @@ const (
 	BetaTokenCounting            = "token-counting-2024-11-01"
 	BetaContext1M                = "context-1m-2025-08-07"
 	BetaFastMode                 = "fast-mode-2026-02-01"
+	BetaPromptCachingScope       = "prompt-caching-scope-2026-01-05"
+	BetaEffort                   = "effort-2025-11-24"
+	BetaRedactThinking           = "redact-thinking-2026-02-12"
+	BetaContextManagement        = "context-management-2025-06-27"
+	BetaExtendedCacheTTL         = "extended-cache-ttl-2025-04-11"
 )
 
 // DroppedBetas 是转发时需要从 anthropic-beta header 中移除的 beta token 列表。
@@ -44,17 +49,37 @@ const APIKeyBetaHeader = BetaClaudeCode + "," + BetaInterleavedThinking + "," + 
 // APIKeyHaikuBetaHeader Haiku 模型在 API-key 账号下使用的 anthropic-beta header（不包含 oauth / claude-code）
 const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 
+// DefaultCacheControlTTL 是网关生成 Claude Code cache_control 块时使用的默认 ttl。
+const DefaultCacheControlTTL = "5m"
+
+// CLICurrentVersion 是当前伪装的 Claude Code CLI 版本号。
+const CLICurrentVersion = "2.1.92"
+
+// FullClaudeCodeMimicryBetas 返回当前真实 Claude Code CLI 请求中最关键的 beta token 集合。
+func FullClaudeCodeMimicryBetas() []string {
+	return []string{
+		BetaClaudeCode,
+		BetaOAuth,
+		BetaInterleavedThinking,
+		BetaPromptCachingScope,
+		BetaEffort,
+		BetaRedactThinking,
+		BetaContextManagement,
+		BetaExtendedCacheTTL,
+	}
+}
+
 // DefaultHeaders 是 Claude Code 客户端默认请求头。
 var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
-	"User-Agent":                                "claude-cli/2.1.88 (external, cli)",
+	"User-Agent":                                "claude-cli/2.1.92 (external, cli)",
 	"X-Stainless-Lang":                          "js",
-	"X-Stainless-Package-Version":               "0.74.0",
-	"X-Stainless-Os":                            "Linux",
+	"X-Stainless-Package-Version":               "0.70.0",
+	"X-Stainless-OS":                            "Linux",
 	"X-Stainless-Arch":                          "arm64",
 	"X-Stainless-Runtime":                       "node",
-	"X-Stainless-Runtime-Version":               "v22.13.0",
+	"X-Stainless-Runtime-Version":               "v24.13.0",
 	"X-Stainless-Retry-Count":                   "0",
 	"X-Stainless-Timeout":                       "600",
 	"X-App":                                     "cli",

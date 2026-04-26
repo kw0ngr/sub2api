@@ -143,7 +143,7 @@ func openAIStreamEventIsTerminal(data string) bool {
 		return true
 	}
 	switch gjson.Get(trimmed, "type").String() {
-	case "response.completed", "response.done", "response.failed":
+	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
 		return true
 	default:
 		return false
@@ -480,7 +480,7 @@ func isClaudeCodeCredentialScopeError(msg string) bool {
 // Some upstream APIs return non-standard "data:" without space (should be "data: ").
 var (
 	sseDataRe            = regexp.MustCompile(`^data:\s*`)
-	claudeCliUserAgentRe = regexp.MustCompile(`^claude-cli/\d+\.\d+\.\d+`)
+	claudeCliUserAgentRe = regexp.MustCompile(`(?i)^claude-cli/\d+\.\d+\.\d+`)
 
 	// claudeCodePromptPrefixes 用于检测 Claude Code 系统提示词的前缀列表
 	// 支持多种变体：标准版、Agent SDK 版、Explore Agent 版、Compact 版等
@@ -1020,6 +1020,7 @@ func (s *GatewayService) hashContent(content string) string {
 
 type anthropicCacheControlPayload struct {
 	Type string `json:"type"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type anthropicSystemTextBlockPayload struct {
@@ -1071,7 +1072,10 @@ func marshalAnthropicSystemTextBlock(text string, includeCacheControl bool) ([]b
 		Text: text,
 	}
 	if includeCacheControl {
-		block.CacheControl = &anthropicCacheControlPayload{Type: "ephemeral"}
+		block.CacheControl = &anthropicCacheControlPayload{
+			Type: "ephemeral",
+			TTL:  claude.DefaultCacheControlTTL,
+		}
 	}
 	return json.Marshal(block)
 }
@@ -1214,7 +1218,7 @@ func resolveClaudeCodeCLIVersion(ua string) string {
 	if v := ExtractCLIVersion(claude.DefaultHeaders["User-Agent"]); v != "" {
 		return v
 	}
-	return "2.1.88"
+	return claude.CLICurrentVersion
 }
 
 func extractFirstAnthropicUserMessageText(body []byte) string {
@@ -1255,12 +1259,11 @@ func extractFirstAnthropicUserMessageText(body []byte) string {
 }
 
 func computeClaudeCodeBillingFingerprint(messageText, version string) string {
-	runes := []rune(messageText)
 	indices := []int{4, 7, 20}
-	chars := make([]rune, 0, len(indices))
+	chars := make([]byte, 0, len(indices))
 	for _, idx := range indices {
-		if idx >= 0 && idx < len(runes) {
-			chars = append(chars, runes[idx])
+		if idx >= 0 && idx < len(messageText) {
+			chars = append(chars, messageText[idx])
 			continue
 		}
 		chars = append(chars, '0')
@@ -1278,7 +1281,11 @@ func generateClaudeCodeBillingHeader(body []byte, cliVersion, entrypoint, worklo
 	if strings.TrimSpace(workload) != "" {
 		workloadPair = " cc_workload=" + strings.TrimSpace(workload) + ";"
 	}
-	return "x-anthropic-billing-header: cc_version=" + cliVersion + "." + fp + "; cc_entrypoint=" + entrypoint + ";" + workloadPair
+	text := "x-anthropic-billing-header: cc_version=" + cliVersion + "." + fp + "; cc_entrypoint=" + entrypoint + "; cch=00000;"
+	if workloadPair != "" {
+		text += workloadPair
+	}
+	return text
 }
 
 func isBillingHeaderSystemText(text string) bool {
@@ -1444,6 +1451,17 @@ func buildAuth2APIDynamicBetaTokens(modelID string, structured bool) []string {
 		betaAdvancedToolUse,
 		betaEffort,
 	}
+}
+
+func claudeCodeMimicryBetas(modelID string, body []byte) []string {
+	if strings.Contains(strings.ToLower(modelID), "haiku") {
+		return []string{claude.BetaOAuth, claude.BetaInterleavedThinking}
+	}
+	tokens := claude.FullClaudeCodeMimicryBetas()
+	if isStructuredOutputRequest(body) {
+		tokens = append(tokens, betaStructuredOutputs)
+	}
+	return tokens
 }
 
 func joinBetaTokens(tokens []string) string {
@@ -3974,13 +3992,14 @@ func sleepWithContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// isClaudeCodeClient 判断请求是否来自 Claude Code 客户端
-// 简化判断：User-Agent 匹配 + metadata.user_id 存在
+// isClaudeCodeClient 判断请求是否来自真正的 Claude Code 客户端。
+// 只检查 metadata.user_id 非空不够严格：第三方工具可能伪造 claude-cli UA
+// 并附带任意 user_id，从而绕过 mimicry。
 func isClaudeCodeClient(userAgent string, metadataUserID string) bool {
-	if metadataUserID == "" {
+	if !claudeCliUserAgentRe.MatchString(userAgent) {
 		return false
 	}
-	return claudeCliUserAgentRe.MatchString(userAgent)
+	return ParseMetadataUserID(metadataUserID) != nil
 }
 
 func isClaudeCodeRequest(ctx context.Context, c *gin.Context, parsed *ParsedRequest) bool {
@@ -6114,6 +6133,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if deviceID == "" {
 			deviceID = generateClientID()
 		}
+		if mimicClaudeCode {
+			cliVersion = claude.CLICurrentVersion
+		}
 
 		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
 			body = next
@@ -6130,7 +6152,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if fingerprint != nil && enableFP {
+	if account.IsOAuth() && mimicClaudeCode {
+		body = syncBillingHeaderVersion(body, claude.DefaultHeaders["User-Agent"])
+	} else if fingerprint != nil && enableFP {
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
 	} else if account.IsOAuth() {
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
@@ -6152,13 +6176,17 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		setHeaderRaw(req.Header, "x-api-key", token)
 	}
 
-	// 白名单透传headers（恢复真实 wire casing）
-	for key, values := range clientHeaders {
-		lowerKey := strings.ToLower(key)
-		if allowedHeaders[lowerKey] {
-			wireKey := resolveWireCasing(key)
-			for _, v := range values {
-				addHeaderRaw(req.Header, wireKey, v)
+	// 白名单透传 headers（恢复真实 wire casing）。
+	// OAuth mimicry 路径跳过客户端 header 透传，避免下游 UA/x-stainless/beta
+	// 与我们强制注入的 Claude Code 指纹混杂。
+	if tokenType != "oauth" || !mimicClaudeCode {
+		for key, values := range clientHeaders {
+			lowerKey := strings.ToLower(key)
+			if allowedHeaders[lowerKey] {
+				wireKey := resolveWireCasing(key)
+				for _, v := range values {
+					addHeaderRaw(req.Header, wireKey, v)
+				}
 			}
 		}
 	}
@@ -6198,7 +6226,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			// this as a legitimate Claude Code request; without it, the request is
 			// rejected as third-party ("out of extra usage").
 			// Haiku models are exempt from third-party detection and don't need it.
-			requiredBetas := buildAuth2APIDynamicBetaTokens(modelID, isStructuredOutputRequest(body))
+			requiredBetas := claudeCodeMimicryBetas(modelID, body)
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, effectiveDropSet))
 		} else {
 			// Claude Code 客户端：尽量透传原始 header，仅补齐 oauth beta
@@ -6215,6 +6243,14 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 				if beta := defaultAPIKeyBetaHeader(body); beta != "" {
 					setHeaderRaw(req.Header, "anthropic-beta", beta)
 				}
+			}
+		}
+	}
+
+	if tokenType == "oauth" {
+		if uid := gjson.GetBytes(body, "metadata.user_id").String(); uid != "" {
+			if parsed := ParseMetadataUserID(uid); parsed != nil {
+				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
 			}
 		}
 	}
@@ -6297,8 +6333,8 @@ func applyClaudeOAuthHeaderDefaults(req *http.Request, isStream bool) {
 	if getHeaderRaw(req.Header, "X-Stainless-Arch") == "" {
 		setHeaderRaw(req.Header, "X-Stainless-Arch", resolveStainlessArch())
 	}
-	if getHeaderRaw(req.Header, "X-Stainless-Os") == "" {
-		setHeaderRaw(req.Header, "X-Stainless-Os", resolveStainlessOS())
+	if getHeaderRaw(req.Header, "X-Stainless-OS") == "" {
+		setHeaderRaw(req.Header, "X-Stainless-OS", resolveStainlessOS())
 	}
 	if getHeaderRaw(req.Header, "x-client-request-id") == "" {
 		setHeaderRaw(req.Header, "x-client-request-id", uuid.NewString())
@@ -6659,12 +6695,14 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 		}
 		setHeaderRaw(req.Header, resolveWireCasing(key), value)
 	}
-	setHeaderRaw(req.Header, "X-Stainless-Arch", resolveStainlessArch())
-	setHeaderRaw(req.Header, "X-Stainless-Os", resolveStainlessOS())
+	// Real Claude CLI keeps application/json even for streaming requests and
+	// marks stream mode via x-stainless-helper-method.
+	setHeaderRaw(req.Header, "Accept", "application/json")
 	if isStream {
-		setHeaderRaw(req.Header, "Accept", "text/event-stream")
-	} else {
-		setHeaderRaw(req.Header, "Accept", "application/json")
+		setHeaderRaw(req.Header, "x-stainless-helper-method", "stream")
+	}
+	if getHeaderRaw(req.Header, "x-client-request-id") == "" {
+		setHeaderRaw(req.Header, "x-client-request-id", uuid.NewString())
 	}
 }
 
@@ -9155,7 +9193,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if ctFingerprint != nil && ctEnableFP {
+	if account.IsOAuth() && mimicClaudeCode {
+		body = syncBillingHeaderVersion(body, claude.DefaultHeaders["User-Agent"])
+	} else if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	} else if account.IsOAuth() {
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
@@ -9176,13 +9216,15 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		setHeaderRaw(req.Header, "x-api-key", token)
 	}
 
-	// 白名单透传 headers（恢复真实 wire casing）
-	for key, values := range clientHeaders {
-		lowerKey := strings.ToLower(key)
-		if allowedHeaders[lowerKey] {
-			wireKey := resolveWireCasing(key)
-			for _, v := range values {
-				addHeaderRaw(req.Header, wireKey, v)
+	// 白名单透传 headers（恢复真实 wire casing）。
+	if tokenType != "oauth" || !mimicClaudeCode {
+		for key, values := range clientHeaders {
+			lowerKey := strings.ToLower(key)
+			if allowedHeaders[lowerKey] {
+				wireKey := resolveWireCasing(key)
+				for _, v := range values {
+					addHeaderRaw(req.Header, wireKey, v)
+				}
 			}
 		}
 	}
@@ -9213,10 +9255,21 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
 			applyClaudeCodeMimicHeaders(req, false)
+			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+			requiredBetas := append(claudeCodeMimicryBetas(modelID, body), claude.BetaTokenCounting)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, ctEffectiveDropSet))
+		} else {
+			clientBetaHeader := getHeaderRaw(req.Header, "anthropic-beta")
+			if clientBetaHeader == "" {
+				setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(claude.CountTokensBetaHeader, ctEffectiveDropSet))
+			} else {
+				beta := s.getBetaHeader(modelID, body, clientBetaHeader)
+				if !containsBetaToken(beta, claude.BetaTokenCounting) {
+					beta = beta + "," + claude.BetaTokenCounting
+				}
+				setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(beta, ctEffectiveDropSet))
+			}
 		}
-		clientBetaHeader := getHeaderRaw(req.Header, "anthropic-beta")
-		beta := s.getBetaHeader(modelID, body, clientBetaHeader)
-		setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(beta, ctEffectiveDropSet))
 	} else {
 		// API-key accounts: apply beta policy filter to strip controlled tokens
 		if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
@@ -9227,6 +9280,14 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 				if beta := defaultAPIKeyBetaHeader(body); beta != "" {
 					setHeaderRaw(req.Header, "anthropic-beta", beta)
 				}
+			}
+		}
+	}
+
+	if tokenType == "oauth" {
+		if uid := gjson.GetBytes(body, "metadata.user_id").String(); uid != "" {
+			if parsed := ParseMetadataUserID(uid); parsed != nil {
+				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
 			}
 		}
 	}
