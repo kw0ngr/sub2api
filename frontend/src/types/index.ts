@@ -1304,6 +1304,43 @@ export interface ProjectStat {
   account_cost: number
 }
 
+export interface UsageInsightSummary {
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  input_share: number
+  output_share: number
+  cache_creation_share: number
+  cache_read_share: number
+  cache_share: number
+  model_count: number
+  project_count: number
+  top_model: string
+  top_model_tokens: number
+  top_model_share: number
+  top_project_key: string
+  top_project_label: string
+  top_project_tokens: number
+  top_project_share: number
+}
+
+export interface HourlyActivityHeatmapCell {
+  weekday: number
+  hour: number
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+}
+
 export interface GroupStat {
   group_id: number
   group_name: string

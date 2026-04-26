@@ -130,6 +130,47 @@ type ProjectStat struct {
 	AccountCost         float64 `json:"account_cost"` // 账号成本
 }
 
+// UsageInsightSummary captures lightweight TokenArena-style usage composition
+// and focus metrics for a dashboard date range.
+type UsageInsightSummary struct {
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheTokens         int64   `json:"cache_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	InputShare          float64 `json:"input_share"`
+	OutputShare         float64 `json:"output_share"`
+	CacheCreationShare  float64 `json:"cache_creation_share"`
+	CacheReadShare      float64 `json:"cache_read_share"`
+	CacheShare          float64 `json:"cache_share"`
+	ModelCount          int     `json:"model_count"`
+	ProjectCount        int     `json:"project_count"`
+	TopModel            string  `json:"top_model"`
+	TopModelTokens      int64   `json:"top_model_tokens"`
+	TopModelShare       float64 `json:"top_model_share"`
+	TopProjectKey       string  `json:"top_project_key"`
+	TopProjectLabel     string  `json:"top_project_label"`
+	TopProjectTokens    int64   `json:"top_project_tokens"`
+	TopProjectShare     float64 `json:"top_project_share"`
+}
+
+// HourlyActivityHeatmapCell aggregates usage by local weekday and hour.
+// Weekday follows Go/JavaScript convention: Sunday=0, Monday=1, ... Saturday=6.
+type HourlyActivityHeatmapCell struct {
+	Weekday             int     `json:"weekday"`
+	Hour                int     `json:"hour"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	Cost                float64 `json:"cost"`
+	ActualCost          float64 `json:"actual_cost"`
+}
+
 // GroupUsageSummary represents today's and cumulative cost for a single group.
 type GroupUsageSummary struct {
 	GroupID   int64   `json:"group_id"`

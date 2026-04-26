@@ -20,6 +20,8 @@ type userUsageRepoCapture struct {
 	listParams    pagination.PaginationParams
 	listFilters   usagestats.UsageLogFilters
 	projectUserID int64
+	modelUserID   int64
+	trendUserID   int64
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
@@ -51,6 +53,27 @@ func (s *userUsageRepoCapture) GetProjectStatsWithFilters(
 	}}, nil
 }
 
+func (s *userUsageRepoCapture) GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
+	s.modelUserID = userID
+	return []usagestats.ModelStat{{
+		Model:        "gpt-5.1",
+		Requests:     2,
+		InputTokens:  10,
+		OutputTokens: 5,
+		TotalTokens:  15,
+	}}, nil
+}
+
+func (s *userUsageRepoCapture) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
+	s.trendUserID = userID
+	return []usagestats.TrendDataPoint{{
+		Date:        "2026-04-26 09:00",
+		Requests:    1,
+		InputTokens: 7,
+		TotalTokens: 7,
+	}}, nil
+}
+
 func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	usageSvc := service.NewUsageService(repo, nil, nil, nil)
@@ -62,6 +85,8 @@ func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {
 	})
 	router.GET("/usage", handler.List)
 	router.GET("/usage/dashboard/projects", handler.DashboardProjects)
+	router.GET("/usage/dashboard/insights", handler.DashboardInsights)
+	router.GET("/usage/dashboard/hourly-activity", handler.DashboardHourlyActivity)
 	return router
 }
 
@@ -114,4 +139,35 @@ func TestUserUsageDashboardProjectsUsesCurrentUser(t *testing.T) {
 	require.Equal(t, int64(42), repo.projectUserID)
 	require.Contains(t, rec.Body.String(), `"projects"`)
 	require.Contains(t, rec.Body.String(), `"project_label":"internal-tools"`)
+}
+
+func TestUserUsageDashboardInsightsUsesCurrentUser(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/dashboard/insights", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.modelUserID)
+	require.Equal(t, int64(42), repo.projectUserID)
+	require.Contains(t, rec.Body.String(), `"insights"`)
+	require.Contains(t, rec.Body.String(), `"top_model":"gpt-5.1"`)
+	require.Contains(t, rec.Body.String(), `"top_project_label":"internal-tools"`)
+}
+
+func TestUserUsageDashboardHourlyActivityUsesCurrentUser(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/dashboard/hourly-activity?timezone=Asia/Shanghai", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), repo.trendUserID)
+	require.Contains(t, rec.Body.String(), `"hourly_activity"`)
+	require.Contains(t, rec.Body.String(), `"weekday":0`)
+	require.Contains(t, rec.Body.String(), `"hour":9`)
 }

@@ -4,7 +4,7 @@
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
         <UserDashboardStats :stats="stats" :balance="user?.balance || 0" :is-simple="authStore.isSimpleMode" />
-        <UserDashboardCharts v-model:startDate="startDate" v-model:endDate="endDate" v-model:granularity="granularity" :loading="loadingCharts" :trend="trendData" :models="modelStats" @dateRangeChange="loadCharts" @granularityChange="loadCharts" @refresh="refreshAll" />
+        <UserDashboardCharts v-model:startDate="startDate" v-model:endDate="endDate" v-model:granularity="granularity" :loading="loadingCharts" :trend="trendData" :models="modelStats" :projects="projectStats" :insights="usageInsights" :hourly-activity="hourlyActivity" @dateRangeChange="loadCharts" @granularityChange="loadCharts" @refresh="refreshAll" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div class="lg:col-span-2"><UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" /></div>
           <div class="lg:col-span-1"><UserDashboardQuickActions /></div>
@@ -19,17 +19,18 @@ import { ref, computed, onMounted } from 'vue'; import { useAuthStore } from '@/
 import AppLayout from '@/components/layout/AppLayout.vue'; import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'; import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'; import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
-import type { UsageLog, TrendDataPoint, ModelStat } from '@/types'
+import type { UsageLog, TrendDataPoint, ModelStat, ProjectStat, UsageInsightSummary, HourlyActivityHeatmapCell } from '@/types'
 
 const authStore = useAuthStore(); const user = computed(() => authStore.user)
 const stats = ref<UserStatsType | null>(null); const loading = ref(false); const loadingUsage = ref(false); const loadingCharts = ref(false)
-const trendData = ref<TrendDataPoint[]>([]); const modelStats = ref<ModelStat[]>([]); const recentUsage = ref<UsageLog[]>([])
+const trendData = ref<TrendDataPoint[]>([]); const modelStats = ref<ModelStat[]>([]); const projectStats = ref<ProjectStat[]>([]); const usageInsights = ref<UsageInsightSummary | null>(null); const hourlyActivity = ref<HourlyActivityHeatmapCell[]>([]); const recentUsage = ref<UsageLog[]>([])
 
 const formatLD = (d: Date) => d.toISOString().split('T')[0]
 const startDate = ref(formatLD(new Date(Date.now() - 6 * 86400000))); const endDate = ref(formatLD(new Date())); const granularity = ref('day')
 
 const loadStats = async () => { loading.value = true; try { await authStore.refreshUser(); stats.value = await usageAPI.getDashboardStats() } catch (error) { console.error('Failed to load dashboard stats:', error) } finally { loading.value = false } }
-const loadCharts = async () => { loadingCharts.value = true; try { const res = await Promise.all([usageAPI.getDashboardTrend({ start_date: startDate.value, end_date: endDate.value, granularity: granularity.value as any }), usageAPI.getDashboardModels({ start_date: startDate.value, end_date: endDate.value })]); trendData.value = res[0].trend || []; modelStats.value = res[1].models || [] } catch (error) { console.error('Failed to load charts:', error) } finally { loadingCharts.value = false } }
+const dashboardTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+const loadCharts = async () => { loadingCharts.value = true; try { const params = { start_date: startDate.value, end_date: endDate.value }; const res = await Promise.allSettled([usageAPI.getDashboardTrend({ ...params, granularity: granularity.value as any }), usageAPI.getDashboardModels(params), usageAPI.getDashboardProjects(params), usageAPI.getDashboardInsights(params), usageAPI.getDashboardHourlyActivity({ ...params, timezone: dashboardTimezone() })]); if (res[0].status === 'fulfilled') trendData.value = res[0].value.trend || []; if (res[1].status === 'fulfilled') modelStats.value = res[1].value.models || []; if (res[2].status === 'fulfilled') projectStats.value = res[2].value.projects || []; if (res[3].status === 'fulfilled') usageInsights.value = res[3].value.insights || null; if (res[4].status === 'fulfilled') hourlyActivity.value = res[4].value.hourly_activity || []; res.forEach((item, index) => { if (item.status === 'rejected') console.error(`Failed to load dashboard chart segment ${index}:`, item.reason) }) } catch (error) { console.error('Failed to load charts:', error) } finally { loadingCharts.value = false } }
 const loadRecent = async () => { loadingUsage.value = true; try { const res = await usageAPI.getByDateRange(startDate.value, endDate.value); recentUsage.value = res.items.slice(0, 5) } catch (error) { console.error('Failed to load recent usage:', error) } finally { loadingUsage.value = false } }
 const refreshAll = () => { loadStats(); loadCharts(); loadRecent() }
 

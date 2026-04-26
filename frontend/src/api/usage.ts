@@ -11,7 +11,9 @@ import type {
   PaginatedResponse,
   TrendDataPoint,
   ModelStat,
-  ProjectStat
+  ProjectStat,
+  UsageInsightSummary,
+  HourlyActivityHeatmapCell
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -61,6 +63,18 @@ export interface ModelStatsResponse {
 
 export interface ProjectStatsResponse {
   projects: ProjectStat[]
+  start_date: string
+  end_date: string
+}
+
+export interface UsageInsightsResponse {
+  insights: UsageInsightSummary
+  start_date: string
+  end_date: string
+}
+
+export interface HourlyActivityResponse {
+  hourly_activity: HourlyActivityHeatmapCell[]
   start_date: string
   end_date: string
 }
@@ -238,6 +252,23 @@ export async function getDashboardProjects(params?: {
   return data
 }
 
+export async function getDashboardInsights(params?: {
+  start_date?: string
+  end_date?: string
+}): Promise<UsageInsightsResponse> {
+  const { data } = await apiClient.get<UsageInsightsResponse>('/usage/dashboard/insights', { params })
+  return data
+}
+
+export async function getDashboardHourlyActivity(params?: {
+  start_date?: string
+  end_date?: string
+  timezone?: string
+}): Promise<HourlyActivityResponse> {
+  const { data } = await apiClient.get<HourlyActivityResponse>('/usage/dashboard/hourly-activity', { params })
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -284,6 +315,8 @@ export const usageAPI = {
   getDashboardTrend,
   getDashboardModels,
   getDashboardProjects,
+  getDashboardInsights,
+  getDashboardHourlyActivity,
   getDashboardApiKeysUsage
 }
 
