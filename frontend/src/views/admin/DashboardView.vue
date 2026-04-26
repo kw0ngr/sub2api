@@ -283,8 +283,7 @@
           >
             <div
               v-if="showUserContributionCard"
-              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
-              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
+              class="card dashboard-analytics-card dashboard-masonry-item dashboard-masonry-item-wide relative overflow-hidden p-4"
             >
               <div
                 v-if="rankingLoading"
@@ -561,7 +560,7 @@
             <div
               v-if="showMemberPulseCard"
               class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
-              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 || shouldExpandMemberPulseCard }"
+              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
             >
               <div
                 v-if="rankingLoading"
@@ -1837,13 +1836,9 @@ const insightCardCount = computed(() => [
   showTeamUsageProfileCard.value
 ].filter(Boolean).length)
 const compactInsightCardCount = computed(() => [
-  showUserContributionCard.value,
   showUsageInsightsCard.value,
   showMemberPulseCard.value
 ].filter(Boolean).length)
-const shouldExpandMemberPulseCard = computed(() => {
-  return showMemberPulseCard.value && compactInsightCardCount.value % 2 === 1
-})
 const showInsightCards = computed(() => {
   return insightCardCount.value > 0
 })

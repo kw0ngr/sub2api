@@ -43,6 +43,7 @@ const messages: Record<string, string> = {
   'usage.duration': 'Duration',
   'usage.time': 'Time',
   'usage.userAgent': 'User Agent',
+  'usage.noRecords': 'No usage records',
 }
 
 vi.mock('@/api', () => ({
@@ -76,7 +77,79 @@ vi.mock('vue-i18n', async () => {
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const TablePageLayoutStub = {
-  template: '<div><slot name="actions" /><slot name="filters" /><slot /></div>',
+  template:
+    '<div><slot name="actions" /><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>',
+}
+const DataTableStub = {
+  props: ['columns', 'data', 'loading'],
+  template: `
+    <div data-testid="usage-data-table">
+      <div v-if="loading" data-testid="usage-loading">Loading</div>
+      <slot v-else-if="!data || data.length === 0" name="empty" />
+      <div v-else>
+        <div v-for="row in data" :key="row.request_id || row.id" data-testid="usage-row">
+          <slot name="cell-api_key" :row="row" :value="row.api_key" />
+          <slot name="cell-model" :row="row" :value="row.model">{{ row.model }}</slot>
+          <slot name="cell-created_at" :row="row" :value="row.created_at">{{ row.created_at }}</slot>
+        </div>
+      </div>
+    </div>
+  `,
+}
+const PaginationStub = {
+  props: ['page', 'total', 'pageSize'],
+  template: '<div data-testid="usage-pagination">{{ total }}</div>',
+}
+
+const mountUsageView = () => mount(UsageView, {
+  global: {
+    stubs: {
+      AppLayout: AppLayoutStub,
+      TablePageLayout: TablePageLayoutStub,
+      DataTable: DataTableStub,
+      Pagination: PaginationStub,
+      EmptyState: true,
+      Select: true,
+      DateRangePicker: true,
+      Icon: true,
+      Teleport: true,
+    },
+  },
+})
+
+const usageLog = (overrides: Record<string, unknown> = {}) => ({
+  request_id: 'req-user-1',
+  actual_cost: 0.092883,
+  total_cost: 0.092883,
+  rate_multiplier: 1,
+  service_tier: 'priority',
+  input_cost: 0.020285,
+  output_cost: 0.00303,
+  cache_creation_cost: 0,
+  cache_read_cost: 0.069568,
+  input_tokens: 4057,
+  output_tokens: 101,
+  cache_creation_tokens: 0,
+  cache_read_tokens: 278272,
+  cache_creation_5m_tokens: 0,
+  cache_creation_1h_tokens: 0,
+  image_count: 0,
+  image_size: null,
+  first_token_ms: null,
+  duration_ms: 1,
+  created_at: '2026-03-08T00:00:00Z',
+  model: 'gpt-5.4',
+  api_key: { name: 'work-key' },
+  ...overrides,
+})
+
+const mockEmptyStats = () => {
+  getStatsByDateRange.mockResolvedValue({
+    total_requests: 0,
+    total_tokens: 0,
+    total_cost: 0,
+    avg_duration_ms: 0,
+  })
 }
 
 describe('user UsageView tooltip', () => {
@@ -125,6 +198,73 @@ describe('user UsageView tooltip', () => {
     })
   })
 
+  it('calls the personal usage list API on mount and renders returned records', async () => {
+    query.mockResolvedValue({
+      items: [
+        usageLog({
+          request_id: 'req-visible',
+          model: 'claude-sonnet-4-6',
+          api_key: { name: 'personal-key' },
+        }),
+      ],
+      total: 1,
+      pages: 1,
+    })
+    mockEmptyStats()
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mountUsageView()
+
+    await flushPromises()
+
+    expect(query).toHaveBeenCalledTimes(1)
+    const [params, config] = query.mock.calls[0]
+    expect(params).toEqual(expect.objectContaining({
+      page: 1,
+      page_size: expect.any(Number),
+      sort_by: 'created_at',
+      sort_order: 'desc',
+      start_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      end_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    }))
+    expect(params).not.toHaveProperty('api_key_id')
+    expect(config).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.findAll('[data-testid="usage-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('claude-sonnet-4-6')
+    expect(wrapper.text()).toContain('personal-key')
+    expect(wrapper.find('[data-testid="usage-pagination"]').exists()).toBe(true)
+  })
+
+  it('omits the api_key_id filter when all API keys are selected', async () => {
+    query.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    mockEmptyStats()
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    query.mockClear()
+    getStatsByDateRange.mockClear()
+    const setupState = (wrapper.vm as any).$?.setupState
+    const filters = setupState.filters?.value ?? setupState.filters
+    filters.api_key_id = null
+
+    setupState.applyFilters()
+    await flushPromises()
+
+    const params = query.mock.calls[0][0] as Record<string, unknown>
+    expect(params).not.toHaveProperty('api_key_id')
+    expect(getStatsByDateRange).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      undefined
+    )
+  })
+
   it('shows fast service tier and unit prices in user tooltip', async () => {
     query.mockResolvedValue({
       items: [
@@ -162,20 +302,7 @@ describe('user UsageView tooltip', () => {
     })
     list.mockResolvedValue({ items: [] })
 
-    const wrapper = mount(UsageView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          TablePageLayout: TablePageLayoutStub,
-          Pagination: true,
-          EmptyState: true,
-          Select: true,
-          DateRangePicker: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
+    const wrapper = mountUsageView()
 
     await flushPromises()
     await nextTick()
@@ -236,20 +363,7 @@ describe('user UsageView tooltip', () => {
     })
     list.mockResolvedValue({ items: [] })
 
-    const wrapper = mount(UsageView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          TablePageLayout: TablePageLayoutStub,
-          Pagination: true,
-          EmptyState: true,
-          Select: true,
-          DateRangePicker: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
+    const wrapper = mountUsageView()
 
     await flushPromises()
 
@@ -332,20 +446,7 @@ describe('user UsageView tooltip', () => {
     })
     list.mockResolvedValue({ items: [] })
 
-    const wrapper = mount(UsageView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          TablePageLayout: TablePageLayoutStub,
-          Pagination: true,
-          EmptyState: true,
-          Select: true,
-          DateRangePicker: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
+    const wrapper = mountUsageView()
 
     await flushPromises()
 
@@ -421,20 +522,7 @@ describe('user UsageView tooltip', () => {
     window.URL.revokeObjectURL = vi.fn(() => {}) as typeof window.URL.revokeObjectURL
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 
-    const wrapper = mount(UsageView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          TablePageLayout: TablePageLayoutStub,
-          Pagination: true,
-          EmptyState: true,
-          Select: true,
-          DateRangePicker: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
+    const wrapper = mountUsageView()
 
     await flushPromises()
 

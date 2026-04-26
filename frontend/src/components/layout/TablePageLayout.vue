@@ -56,6 +56,12 @@ onUnmounted(() => {
 
 .layout-section-scrollable {
   @apply flex-1 min-h-0 flex flex-col;
+  /*
+   * Keep the table body visible when fixed sections (stats, filters, insight cards)
+   * become tall. Without a floor, the flex area can collapse and virtualized
+   * tables render as an empty line while pagination still shows real totals.
+   */
+  min-height: clamp(18rem, 40vh, 34rem);
 }
 
 /* 表格滚动容器 - 增强版表体滚动方案 */
@@ -98,6 +104,7 @@ onUnmounted(() => {
 
 .table-page-layout.mobile-mode .layout-section-scrollable {
   @apply flex-none min-h-fit;
+  min-height: auto;
 }
 
 .table-page-layout.mobile-mode .table-scroll-container :deep(.table-wrapper) {

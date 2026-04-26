@@ -367,6 +367,33 @@ describe('admin DashboardView', () => {
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
 
+  it('keeps the tall member contribution card out of the two-column compact row', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const insightItems = wrapper.findAll('.dashboard-masonry .dashboard-masonry-item')
+    expect(insightItems[0].text()).toContain('admin.dashboard.userDistribution')
+    expect(insightItems[0].classes()).toContain('dashboard-masonry-item-wide')
+    expect(insightItems[1].text()).toContain('admin.dashboard.usageInsights')
+    expect(insightItems[1].classes()).not.toContain('dashboard-masonry-item-wide')
+    expect(insightItems[2].text()).toContain('admin.dashboard.memberPulse')
+    expect(insightItems[2].classes()).not.toContain('dashboard-masonry-item-wide')
+  })
+
   it('keeps the dashboard visual polish hooks on the existing layout', async () => {
     const wrapper = mount(DashboardView, {
       global: {

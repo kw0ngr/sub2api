@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout class="user-usage-layout">
       <template #actions>
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- Total Requests -->
@@ -1000,7 +1000,8 @@ const selfInsightTips = computed<SelfInsightTip[]>(() => {
 
 const selfInsightSummary = computed(() => {
   if (!selfInsightTips.value.length || !selfInsights.value) return ''
-  const dateRange = `${filters.value.start_date || startDate.value} ~ ${filters.value.end_date || endDate.value}`
+  const { start_date, end_date } = getActiveDateRange()
+  const dateRange = `${start_date} ~ ${end_date}`
   return [
     `个人使用洞察（${dateRange}）`,
     `请求 ${selfInsights.value.total_requests.toLocaleString()} / Token ${formatTokens(selfInsights.value.total_tokens)} / 缓存 ${formatPercent(selfInsights.value.cache_share)}`,
@@ -1017,13 +1018,38 @@ type UsageTableQueryParams = UsageQueryParams & {
   sort_order?: 'asc' | 'desc'
 }
 
-const buildUsageQueryParams = (page: number, pageSize: number): UsageTableQueryParams => ({
-  page,
-  page_size: pageSize,
-  ...filters.value,
-  sort_by: sortState.sort_by,
-  sort_order: sortState.sort_order
+const getActiveDateRange = () => ({
+  start_date: filters.value.start_date || startDate.value,
+  end_date: filters.value.end_date || endDate.value
 })
+
+const getSelectedApiKeyId = (): number | undefined => {
+  const value = filters.value.api_key_id as number | string | null | undefined
+  if (value === null || value === undefined || value === '') return undefined
+
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : undefined
+}
+
+const buildUsageQueryParams = (page: number, pageSize: number): UsageTableQueryParams => {
+  const { start_date, end_date } = getActiveDateRange()
+  const params: UsageTableQueryParams = {
+    page,
+    page_size: pageSize,
+    sort_by: sortState.sort_by,
+    sort_order: sortState.sort_order
+  }
+
+  if (start_date) params.start_date = start_date
+  if (end_date) params.end_date = end_date
+
+  const apiKeyId = getSelectedApiKeyId()
+  if (apiKeyId !== undefined) {
+    params.api_key_id = apiKeyId
+  }
+
+  return params
+}
 
 const loadUsageLogs = async () => {
   if (abortController) {
@@ -1071,10 +1097,11 @@ const loadApiKeys = async () => {
 
 const loadUsageStats = async () => {
   try {
-    const apiKeyId = filters.value.api_key_id ? Number(filters.value.api_key_id) : undefined
+    const apiKeyId = getSelectedApiKeyId()
+    const { start_date, end_date } = getActiveDateRange()
     const stats = await usageAPI.getStatsByDateRange(
-      filters.value.start_date || startDate.value,
-      filters.value.end_date || endDate.value,
+      start_date,
+      end_date,
       apiKeyId
     )
     usageStats.value = stats
@@ -1086,9 +1113,10 @@ const loadUsageStats = async () => {
 const loadSelfInsights = async () => {
   selfInsightsLoading.value = true
   try {
+    const { start_date, end_date } = getActiveDateRange()
     const response = await usageAPI.getDashboardSelfInsights({
-      start_date: filters.value.start_date || startDate.value,
-      end_date: filters.value.end_date || endDate.value,
+      start_date,
+      end_date,
       limit: 8
     })
     selfInsights.value = response.insights || null
@@ -1238,8 +1266,9 @@ const exportToCSV = async () => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
+    const { start_date, end_date } = getActiveDateRange()
     link.href = url
-    link.download = `usage_${filters.value.start_date}_to_${filters.value.end_date}.csv`
+    link.download = `usage_${start_date}_to_${end_date}.csv`
     link.click()
     window.URL.revokeObjectURL(url)
 
@@ -1294,6 +1323,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.user-usage-layout {
+  height: auto;
+  min-height: calc(100vh - 64px - 4rem);
+}
+
+@media (min-width: 1024px) {
+  .user-usage-layout :deep(.layout-section-scrollable),
+  .user-usage-layout :deep(.table-scroll-container) {
+    min-height: 24rem;
+  }
+}
+
 .user-usage-insights {
   position: relative;
 }
