@@ -181,14 +181,14 @@ func parseDashboardUsageFilters(c *gin.Context) (dashboardUsageFilters, error) {
 	} else if streamStr := c.Query("stream"); streamStr != "" {
 		streamVal, err := strconv.ParseBool(streamStr)
 		if err != nil {
-			return filters, errors.New("Invalid stream value, use true or false")
+			return filters, errors.New("invalid stream value, use true or false")
 		}
 		filters.stream = &streamVal
 	}
 	if billingTypeStr := c.Query("billing_type"); billingTypeStr != "" {
 		v, err := strconv.ParseInt(billingTypeStr, 10, 8)
 		if err != nil {
-			return filters, errors.New("Invalid billing_type")
+			return filters, errors.New("invalid billing_type")
 		}
 		bt := int8(v)
 		filters.billingType = &bt
