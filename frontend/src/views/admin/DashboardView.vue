@@ -2099,7 +2099,8 @@ onMounted(() => {
 
 .dashboard-filter-panel {
   position: relative;
-  overflow: hidden;
+  z-index: 30;
+  overflow: visible;
   border-color: rgb(var(--dashboard-border) / 0.78);
   background: rgb(var(--dashboard-surface) / 0.88);
   box-shadow:
@@ -2120,6 +2121,7 @@ onMounted(() => {
 }
 
 .dashboard-filter-panel:focus-within {
+  z-index: 70;
   border-color: rgb(var(--dashboard-ring) / 0.34);
   box-shadow:
     0 0 0 3px rgb(var(--dashboard-ring) / 0.08),
@@ -2140,6 +2142,11 @@ onMounted(() => {
 
 .dashboard-filter-panel > * {
   position: relative;
+  z-index: 1;
+}
+
+.dashboard-filter-panel :deep(.date-picker-dropdown) {
+  z-index: 1000;
 }
 
 .dashboard-filter-panel :deep(.date-picker-trigger),
