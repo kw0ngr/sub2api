@@ -87,7 +87,39 @@
 
         <div v-if="showSelfInsightArea" class="user-usage-insights mt-4">
           <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
+            <div v-if="selfInsightTips.length" class="card self-insight-summary xl:col-span-3">
+              <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
+                    Personal Signals
+                  </p>
+                  <h3 class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">个人使用洞察</h3>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  基于当前时间范围，优先提示模型、工具、缓存和会话变化。
+                </p>
+              </div>
+              <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div
+                  v-for="tip in selfInsightTips"
+                  :key="tip.title"
+                  class="self-insight-tip"
+                  :class="`self-insight-tip-${tip.tone}`"
+                >
+                  <div class="flex items-start gap-3">
+                    <span class="self-insight-tip-dot" />
+                    <div class="min-w-0">
+                      <p class="text-xs font-semibold text-gray-900 dark:text-white">{{ tip.title }}</p>
+                      <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {{ tip.description }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -133,9 +165,9 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无画像数据
             </div>
-          </div>
+            </div>
 
-          <div v-if="showSelfClientCard" class="card self-insight-card relative overflow-hidden p-4">
+            <div v-if="showSelfClientCard" class="card self-insight-card relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -164,9 +196,9 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无客户端数据
             </div>
-          </div>
+            </div>
 
-          <div v-if="showSelfSessionCard" class="card self-insight-card relative overflow-hidden p-4">
+            <div v-if="showSelfSessionCard" class="card self-insight-card relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -199,9 +231,9 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无会话数据
             </div>
-          </div>
+            </div>
 
-          <div v-if="showSelfModelCard" class="card self-insight-card p-4">
+            <div v-if="showSelfModelCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
@@ -234,9 +266,9 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无模型数据
             </div>
-          </div>
+            </div>
 
-          <div v-if="showSelfCacheCard" class="card self-insight-card p-4">
+            <div v-if="showSelfCacheCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -266,7 +298,7 @@
             <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               暂无缓存数据
             </div>
-          </div>
+            </div>
           </div>
         </div>
       </template>
@@ -881,6 +913,7 @@ const selfModelItems = computed(() => selfInsights.value?.model_matrix?.slice(0,
 const selfCacheItems = computed(() => selfInsights.value?.cache_efficiency?.slice(0, 5) || [])
 const selfSessionItems = computed(() => selfInsights.value?.sessions?.slice(0, 5) || [])
 const topSelfModel = computed(() => selfModelItems.value[0] || null)
+const topSelfClient = computed(() => selfClientItems.value[0] || null)
 const hasSelfProfileData = computed(() => (selfInsights.value?.total_tokens || 0) > 0)
 const showSelfProfileCard = computed(() => selfInsightsLoading.value || hasSelfProfileData.value)
 const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClientItems.value.length > 0)
@@ -895,6 +928,62 @@ const showSelfInsightArea = computed(
     showSelfModelCard.value ||
     showSelfCacheCard.value
 )
+
+type SelfInsightTip = {
+  title: string
+  description: string
+  tone: 'blue' | 'emerald' | 'amber' | 'violet'
+}
+
+const selfInsightTips = computed<SelfInsightTip[]>(() => {
+  if (!hasSelfProfileData.value) return []
+
+  const tips: SelfInsightTip[] = []
+  const model = topSelfModel.value
+  const client = topSelfClient.value
+  const cacheShare = selfInsights.value?.cache_share || 0
+
+  if (model) {
+    tips.push({
+      title: '主要模型',
+      description: `${model.model} 占本期用量 ${formatPercent(model.share_of_member)}，共 ${formatTokens(model.total_tokens)} Token。`,
+      tone: 'blue'
+    })
+  }
+
+  if (client) {
+    tips.push({
+      title: '主要工具',
+      description: `${client.client || 'Unknown'} 贡献 ${formatPercent(client.token_share)} 用量，可用来判断团队客户端迁移情况。`,
+      tone: 'violet'
+    })
+  }
+
+  if (cacheShare >= 0.45) {
+    tips.push({
+      title: '缓存利用较好',
+      description: `缓存占比 ${formatPercent(cacheShare)}，长上下文复用比较充分。`,
+      tone: 'emerald'
+    })
+  } else if (cacheShare > 0) {
+    tips.push({
+      title: '缓存仍可优化',
+      description: `缓存占比 ${formatPercent(cacheShare)}，高频提示词或长上下文可以考虑稳定复用。`,
+      tone: 'amber'
+    })
+  }
+
+  const session = selfSessionItems.value[0]
+  if (session && tips.length < 3) {
+    tips.push({
+      title: '最近会话',
+      description: `${session.client || 'Unknown'} / ${session.model || '-'} 最近活跃于 ${formatCompactDateTime(session.last_seen)}。`,
+      tone: 'emerald'
+    })
+  }
+
+  return tips.slice(0, 3)
+})
 
 type UsageTableQueryParams = UsageQueryParams & {
   sort_by?: string
@@ -1195,12 +1284,30 @@ onMounted(() => {
     transform 180ms ease;
 }
 
+.self-insight-summary {
+  overflow: hidden;
+  border-color: rgb(191 219 254 / 0.72);
+  background:
+    radial-gradient(circle at 6% 20%, rgb(59 130 246 / 0.12), transparent 28%),
+    linear-gradient(135deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.92));
+  padding: 1rem;
+  box-shadow: 0 18px 42px rgb(15 23 42 / 0.07);
+}
+
 .dark .self-insight-card {
   border-color: rgb(51 65 85 / 0.88);
   background:
     linear-gradient(180deg, rgb(15 23 42 / 0.95), rgb(15 23 42 / 0.88)),
     radial-gradient(circle at 100% 0%, rgb(56 189 248 / 0.12), transparent 36%);
   box-shadow: 0 20px 46px rgb(0 0 0 / 0.22);
+}
+
+.dark .self-insight-summary {
+  border-color: rgb(30 64 175 / 0.46);
+  background:
+    radial-gradient(circle at 6% 20%, rgb(59 130 246 / 0.16), transparent 30%),
+    linear-gradient(135deg, rgb(15 23 42 / 0.96), rgb(2 6 23 / 0.92));
+  box-shadow: 0 22px 52px rgb(0 0 0 / 0.25);
 }
 
 .self-insight-card:hover {
@@ -1228,6 +1335,58 @@ onMounted(() => {
 
 .self-insight-pill {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55);
+}
+
+.self-insight-tip {
+  border: 1px solid rgb(226 232 240 / 0.92);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.74);
+  padding: 0.85rem;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.dark .self-insight-tip {
+  border-color: rgb(51 65 85 / 0.82);
+  background: rgb(15 23 42 / 0.64);
+}
+
+.self-insight-tip:hover {
+  border-color: rgb(147 197 253 / 0.72);
+  background: rgb(239 246 255 / 0.76);
+  transform: translateY(-1px);
+}
+
+.dark .self-insight-tip:hover {
+  border-color: rgb(96 165 250 / 0.38);
+  background: rgb(30 41 59 / 0.76);
+}
+
+.self-insight-tip-dot {
+  margin-top: 0.25rem;
+  height: 0.55rem;
+  width: 0.55rem;
+  flex: none;
+  border-radius: 9999px;
+  background: rgb(59 130 246);
+  box-shadow: 0 0 0 4px rgb(59 130 246 / 0.12);
+}
+
+.self-insight-tip-emerald .self-insight-tip-dot {
+  background: rgb(16 185 129);
+  box-shadow: 0 0 0 4px rgb(16 185 129 / 0.12);
+}
+
+.self-insight-tip-amber .self-insight-tip-dot {
+  background: rgb(245 158 11);
+  box-shadow: 0 0 0 4px rgb(245 158 11 / 0.14);
+}
+
+.self-insight-tip-violet .self-insight-tip-dot {
+  background: rgb(139 92 246);
+  box-shadow: 0 0 0 4px rgb(139 92 246 / 0.12);
 }
 
 .self-insight-metric,

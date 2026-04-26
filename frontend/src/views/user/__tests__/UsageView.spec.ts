@@ -252,6 +252,7 @@ describe('user UsageView tooltip', () => {
     expect(text).not.toContain('请求会话')
     expect(text).not.toContain('模型使用矩阵')
     expect(text).not.toContain('缓存效率')
+    expect(text).not.toContain('个人使用洞察')
   })
 
   it('renders self-service insight cards when data exists', async () => {
@@ -347,6 +348,10 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('请求会话')
     expect(text).toContain('模型使用矩阵')
     expect(text).toContain('缓存效率')
+    expect(text).toContain('个人使用洞察')
+    expect(text).toContain('主要模型')
+    expect(text).toContain('主要工具')
+    expect(text).toContain('缓存仍可优化')
     expect(text).toContain('Claude Code')
     expect(text).toContain('claude-sonnet-4-6')
   })
