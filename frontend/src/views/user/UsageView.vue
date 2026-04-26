@@ -556,6 +556,16 @@
             <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
           </template>
 
+          <template #cell-actions="{ row }">
+            <button
+              type="button"
+              class="inline-flex items-center rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-600 transition hover:border-sky-400/50 hover:bg-sky-500/15 dark:text-sky-300"
+              @click="openTrace(row)"
+            >
+              Trace
+            </button>
+          </template>
+
           <template #empty>
             <EmptyState :message="t('usage.noRecords')" />
           </template>
@@ -729,6 +739,12 @@
       </div>
     </div>
   </Teleport>
+
+  <RequestTraceDrawer
+    :show="Boolean(traceLog)"
+    :log="traceLog"
+    @close="closeTrace"
+  />
 </template>
 
 <script setup lang="ts">
@@ -744,6 +760,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Icon from '@/components/icons/Icon.vue'
+import RequestTraceDrawer from '@/components/usage/RequestTraceDrawer.vue'
 import type { UsageLog, ApiKey, UsageQueryParams, UsageStatsResponse, SelfUsageInsights } from '@/types'
 import type { Column } from '@/components/common/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
@@ -770,6 +787,7 @@ const tooltipData = ref<UsageLog | null>(null)
 const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<UsageLog | null>(null)
+const traceLog = ref<UsageLog | null>(null)
 
 // Usage stats from API
 const usageStats = ref<UsageStatsResponse | null>(null)
@@ -788,7 +806,8 @@ const columns = computed<Column[]>(() => [
   { key: 'first_token', label: t('usage.firstToken'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
-  { key: 'user_agent', label: t('usage.userAgent'), sortable: false }
+  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  { key: 'actions', label: 'Trace', sortable: false }
 ])
 
 const usageLogs = ref<UsageLog[]>([])
@@ -889,6 +908,14 @@ const getRequestTypeExportText = (log: UsageLog): string => {
 const formatUsageEndpoints = (log: UsageLog): string => {
   const inbound = log.inbound_endpoint?.trim()
   return inbound || '-'
+}
+
+const openTrace = (row: UsageLog) => {
+  traceLog.value = row
+}
+
+const closeTrace = () => {
+  traceLog.value = null
 }
 
 const formatTokens = (value: number): string => {

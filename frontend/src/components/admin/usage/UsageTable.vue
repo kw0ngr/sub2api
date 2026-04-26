@@ -183,10 +183,27 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-actions="{ row }">
+          <button
+            type="button"
+            class="inline-flex items-center rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-600 transition hover:border-sky-400/50 hover:bg-sky-500/15 dark:text-sky-300"
+            @click="openTrace(row)"
+          >
+            Trace
+          </button>
+        </template>
+
         <template #empty><EmptyState :message="t('usage.noRecords')" /></template>
       </DataTable>
     </div>
   </div>
+
+  <RequestTraceDrawer
+    :show="Boolean(traceLog)"
+    :log="traceLog"
+    admin
+    @close="closeTrace"
+  />
 
   <!-- Token Tooltip Portal -->
   <Teleport to="body">
@@ -363,6 +380,7 @@ function accountBilled(row: { total_cost?: number | null; account_stats_cost?: n
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
+import RequestTraceDrawer from '@/components/usage/RequestTraceDrawer.vue'
 import type { AdminUsageLog } from '@/types'
 import type { Column } from '@/components/common/types'
 
@@ -396,6 +414,7 @@ const tooltipData = ref<AdminUsageLog | null>(null)
 const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
+const traceLog = ref<AdminUsageLog | null>(null)
 
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
@@ -453,5 +472,13 @@ const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {
 const hideTokenTooltip = () => {
   tokenTooltipVisible.value = false
   tokenTooltipData.value = null
+}
+
+const openTrace = (row: AdminUsageLog) => {
+  traceLog.value = row
+}
+
+const closeTrace = () => {
+  traceLog.value = null
 }
 </script>

@@ -41,6 +41,7 @@ const DataTableStub = {
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-actions" :row="row" />
       </div>
     </div>
   `,
@@ -146,5 +147,56 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('opens a gateway trace drawer for a usage row', async () => {
+    const row = {
+      request_id: 'req-admin-trace-1',
+      model: 'gpt-5.4',
+      upstream_model: 'gpt-5.4-20260401',
+      actual_cost: 0.1,
+      total_cost: 0.1,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0.02,
+      output_cost: 0.03,
+      cache_creation_cost: 0,
+      cache_read_cost: 0.05,
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 800,
+      duration_ms: 1234,
+      first_token_ms: 456,
+      created_at: '2026-04-27T00:00:00Z',
+      api_key_id: 1,
+      api_key: { name: 'team-key' },
+      user_id: 2,
+      user: { email: 'user@example.com' },
+      user_agent: 'Codex CLI',
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await wrapper.find('button').trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Gateway Trace')
+    expect(wrapper.text()).toContain('req-admin-trace-1')
+    expect(wrapper.text()).toContain('team-key')
   })
 })

@@ -91,6 +91,7 @@ const DataTableStub = {
           <slot name="cell-api_key" :row="row" :value="row.api_key" />
           <slot name="cell-model" :row="row" :value="row.model">{{ row.model }}</slot>
           <slot name="cell-created_at" :row="row" :value="row.created_at">{{ row.created_at }}</slot>
+          <slot name="cell-actions" :row="row" />
         </div>
       </div>
     </div>
@@ -233,6 +234,35 @@ describe('user UsageView tooltip', () => {
     expect(wrapper.text()).toContain('claude-sonnet-4-6')
     expect(wrapper.text()).toContain('personal-key')
     expect(wrapper.find('[data-testid="usage-pagination"]').exists()).toBe(true)
+  })
+
+  it('opens a gateway trace drawer from a personal usage record', async () => {
+    query.mockResolvedValue({
+      items: [
+        usageLog({
+          request_id: 'req-user-trace',
+          model: 'gpt-5.4',
+          api_key: { name: 'personal-key' },
+          user_agent: 'Claude Code',
+        }),
+      ],
+      total: 1,
+      pages: 1,
+    })
+    mockEmptyStats()
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mountUsageView()
+
+    await flushPromises()
+    const traceButton = wrapper.findAll('button').find(button => button.text() === 'Trace')
+    expect(traceButton).toBeTruthy()
+    await traceButton!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Gateway Trace')
+    expect(wrapper.text()).toContain('req-user-trace')
+    expect(wrapper.text()).toContain('personal-key')
   })
 
   it('omits the api_key_id filter when all API keys are selected', async () => {
