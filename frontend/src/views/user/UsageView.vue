@@ -130,6 +130,64 @@
               </div>
             </div>
 
+            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4 xl:col-span-2">
+            <div
+              v-if="loading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+            <div class="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">近期调用</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  直接展示当前筛选范围内最新请求，点击可打开 Trace。
+                </p>
+              </div>
+              <span class="self-insight-pill rounded-full border border-sky-400/30 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-600 dark:text-sky-300">
+                {{ pagination.total.toLocaleString() }} 条
+              </span>
+            </div>
+            <div v-if="recentUsageLogs.length" class="space-y-2">
+              <button
+                v-for="log in recentUsageLogs"
+                :key="`recent-${log.id}`"
+                type="button"
+                class="self-recent-row w-full rounded-xl border border-gray-100 px-3 py-2 text-left dark:border-gray-700"
+                @click="openTrace(log)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="self-recent-dot" />
+                      <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="log.model">
+                        {{ log.model || '-' }}
+                      </p>
+                    </div>
+                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="formatUsageEndpoints(log)">
+                      {{ log.api_key?.name || 'API Key' }} · {{ getRequestTypeLabel(log) }} · {{ formatUsageEndpoints(log) }}
+                    </p>
+                  </div>
+                  <div class="shrink-0 text-right">
+                    <p class="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                      ${{ log.actual_cost.toFixed(5) }}
+                    </p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ formatTokens(usageLogTotalTokens(log)) }} · {{ formatDuration(log.duration_ms) }}
+                    </p>
+                  </div>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+                  <span>{{ formatCompactDateTime(log.created_at) }}</span>
+                  <span>Trace →</span>
+                </div>
+              </button>
+            </div>
+            <div v-else-if="!loading" class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无近期调用
+            </div>
+            </div>
+
             <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
             <div
               v-if="selfInsightsLoading"
@@ -948,6 +1006,15 @@ const formatCompactDateTime = (value: string | undefined): string => {
   })
 }
 
+const usageLogTotalTokens = (log: UsageLog): number => {
+  return (
+    (log.input_tokens || 0) +
+    (log.output_tokens || 0) +
+    (log.cache_creation_tokens || 0) +
+    (log.cache_read_tokens || 0)
+  )
+}
+
 const selfClientItems = computed(() => selfInsights.value?.client_distribution?.slice(0, 5) || [])
 const selfModelItems = computed(() => selfInsights.value?.model_matrix?.slice(0, 6) || [])
 const selfCacheItems = computed(() => selfInsights.value?.cache_efficiency?.slice(0, 5) || [])
@@ -955,7 +1022,9 @@ const selfSessionItems = computed(() => selfInsights.value?.sessions?.slice(0, 5
 const topSelfModel = computed(() => selfModelItems.value[0] || null)
 const topSelfClient = computed(() => selfClientItems.value[0] || null)
 const hasSelfProfileData = computed(() => (selfInsights.value?.total_tokens || 0) > 0)
+const recentUsageLogs = computed(() => usageLogs.value.slice(0, 6))
 const showSelfProfileCard = computed(() => selfInsightsLoading.value || hasSelfProfileData.value)
+const showSelfRecentCallsCard = computed(() => loading.value || recentUsageLogs.value.length > 0)
 const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClientItems.value.length > 0)
 const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
 const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
@@ -963,6 +1032,7 @@ const showSelfCacheCard = computed(() => selfInsightsLoading.value || selfCacheI
 const showSelfInsightArea = computed(
   () =>
     showSelfProfileCard.value ||
+    showSelfRecentCallsCard.value ||
     showSelfClientCard.value ||
     showSelfSessionCard.value ||
     showSelfModelCard.value ||
@@ -1524,6 +1594,7 @@ onMounted(() => {
 .self-insight-metric,
 .self-insight-focus,
 .self-session-row,
+.self-recent-row,
 .self-model-row,
 .self-cache-row {
   background: rgb(255 255 255 / 0.72);
@@ -1536,12 +1607,27 @@ onMounted(() => {
 .dark .self-insight-metric,
 .dark .self-insight-focus,
 .dark .self-session-row,
+.dark .self-recent-row,
 .dark .self-model-row,
 .dark .self-cache-row {
   background: rgb(15 23 42 / 0.58);
 }
 
+.self-recent-row {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.72);
+}
+
+.self-recent-dot {
+  height: 0.55rem;
+  width: 0.55rem;
+  flex: none;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, rgb(14 165 233), rgb(16 185 129));
+  box-shadow: 0 0 0 4px rgb(14 165 233 / 0.10);
+}
+
 .self-session-row:hover,
+.self-recent-row:hover,
 .self-model-row:hover,
 .self-cache-row:hover {
   border-color: rgb(96 165 250 / 0.42);
@@ -1550,6 +1636,7 @@ onMounted(() => {
 }
 
 .dark .self-session-row:hover,
+.dark .self-recent-row:hover,
 .dark .self-model-row:hover,
 .dark .self-cache-row:hover {
   border-color: rgb(96 165 250 / 0.34);

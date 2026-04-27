@@ -354,6 +354,8 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('admin.dashboard.nonAdminOnly')
     expect(wrapper.text()).toContain('admin.dashboard.gatewayBrief')
     expect(wrapper.text()).toContain('admin.dashboard.gatewayBriefAccounts')
+    expect(wrapper.text()).toContain('网关运行雷达')
+    expect(wrapper.text()).toContain('账户可用性')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).not.toContain('admin.dashboard.projectDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
@@ -395,6 +397,7 @@ describe('admin DashboardView', () => {
     expect(insightItems[1].text()).toContain('admin.dashboard.usageInsights')
     expect(insightItems[1].text()).toContain('admin.dashboard.gatewayBrief')
     expect(insightItems[1].text()).toContain('admin.dashboard.memberPulse')
+    expect(insightItems[1].text()).toContain('网关运行雷达')
   })
 
   it('keeps the dashboard visual polish hooks on the existing layout', async () => {

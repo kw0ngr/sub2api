@@ -157,11 +157,11 @@
             </td>
           </tr>
           <tr
-            v-for="virtualRow in virtualItems"
-            :key="resolveRowKey(sortedData[virtualRow.index], virtualRow.index)"
-            :data-row-id="resolveRowKey(sortedData[virtualRow.index], virtualRow.index)"
-            :data-index="virtualRow.index"
-            :ref="measureElement"
+            v-for="tableRow in renderedTableRows"
+            :key="resolveRowKey(sortedData[tableRow.index], tableRow.index)"
+            :data-row-id="resolveRowKey(sortedData[tableRow.index], tableRow.index)"
+            :data-index="tableRow.index"
+            :ref="tableRow.virtual ? measureElement : undefined"
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
           >
             <td
@@ -175,12 +175,12 @@
               ]"
             >
               <slot :name="`cell-${column.key}`"
-                    :row="sortedData[virtualRow.index]"
-                    :value="sortedData[virtualRow.index][column.key]"
+                    :row="sortedData[tableRow.index]"
+                    :value="sortedData[tableRow.index][column.key]"
                     :expanded="actionsExpanded">
                 {{ column.formatter
-                   ? column.formatter(sortedData[virtualRow.index][column.key], sortedData[virtualRow.index])
-                   : sortedData[virtualRow.index][column.key] }}
+                   ? column.formatter(sortedData[tableRow.index][column.key], sortedData[tableRow.index])
+                   : sortedData[tableRow.index][column.key] }}
               </slot>
             </td>
           </tr>
@@ -581,13 +581,34 @@ const rowVirtualizer = useVirtualizer(computed(() => ({
 })))
 
 const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
+const hasVirtualRows = computed(() => isDesktopViewport.value && virtualItems.value.length > 0)
+const renderedTableRows = computed(() => {
+  if (!isDesktopViewport.value || !sortedData.value?.length) return []
+  if (hasVirtualRows.value) {
+    return virtualItems.value.map((item) => ({
+      index: item.index,
+      virtual: true
+    }))
+  }
+
+  // Defensive fallback: some nested flex/table layouts can report zero viewport
+  // height during the first render, causing the virtualizer to return no rows
+  // while the server has already returned data. Rendering the current page keeps
+  // usage records visible instead of showing a large empty table body.
+  return sortedData.value.map((_, index) => ({
+    index,
+    virtual: false
+  }))
+})
 
 const virtualPaddingTop = computed(() => {
+  if (!hasVirtualRows.value) return 0
   const items = virtualItems.value
   return items.length > 0 ? items[0].start : 0
 })
 
 const virtualPaddingBottom = computed(() => {
+  if (!hasVirtualRows.value) return 0
   const items = virtualItems.value
   if (items.length === 0) return 0
   return rowVirtualizer.value.getTotalSize() - items[items.length - 1].end

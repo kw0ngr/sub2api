@@ -810,6 +810,57 @@
                     {{ t('admin.dashboard.noDataAvailable') }}
                   </div>
                 </div>
+
+                <div
+                  v-if="showGatewayRadarCard"
+                  class="card dashboard-analytics-card dashboard-gateway-radar-card relative overflow-hidden p-4"
+                >
+                  <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        网关运行雷达
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        账户、延迟、吞吐、缓存和消费集中度的快速体检。
+                      </p>
+                    </div>
+                    <span
+                      class="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold"
+                      :class="gatewayRadarStatusClass"
+                    >
+                      {{ gatewayRadarStatusLabel }}
+                    </span>
+                  </div>
+
+                  <div class="space-y-2.5">
+                    <button
+                      v-for="item in gatewayRadarItems"
+                      :key="item.key"
+                      type="button"
+                      class="dashboard-radar-row w-full rounded-2xl border border-gray-100 px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/50 dark:border-gray-700 dark:hover:border-blue-400/30 dark:hover:bg-blue-500/10"
+                      @click="goToAdminPath(item.path)"
+                    >
+                      <div class="mb-1.5 flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ item.label }}</p>
+                          <p class="mt-0.5 truncate text-sm font-semibold text-gray-900 dark:text-white" :title="item.detail">
+                            {{ item.value }}
+                          </p>
+                        </div>
+                        <p class="shrink-0 text-right text-xs text-gray-500 dark:text-gray-400">
+                          {{ item.detail }}
+                        </p>
+                      </div>
+                      <div class="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        <div
+                          class="h-full rounded-full"
+                          :class="gatewayRadarToneClass(item.tone)"
+                          :style="{ width: `${item.width}%` }"
+                        />
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1581,6 +1632,16 @@ type GatewayBriefAlert = {
   tone: 'blue' | 'emerald' | 'amber' | 'red'
 }
 
+type GatewayRadarItem = {
+  key: string
+  label: string
+  value: string
+  detail: string
+  path: string
+  width: number
+  tone: 'blue' | 'emerald' | 'amber' | 'red' | 'cyan'
+}
+
 const gatewayAccountIssueCount = computed(() => {
   const current = stats.value
   if (!current) return 0
@@ -1703,6 +1764,93 @@ const gatewayBriefAlerts = computed<GatewayBriefAlert[]>(() => {
   }
 
   return alerts.slice(0, 3)
+})
+
+const clampPercent = (value: number): number => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(4, Math.min(100, Math.round(value)))
+}
+
+const showGatewayRadarCard = computed(() => Boolean(stats.value))
+
+const gatewayRadarStatusLabel = computed(() => {
+  if (gatewayAccountIssueCount.value > 0) return '需要关注'
+  if (stats.value && stats.value.average_duration_ms > 10_000) return '偏慢'
+  if (topUserCostShare.value >= 0.6) return '偏集中'
+  return '稳定'
+})
+
+const gatewayRadarStatusClass = computed(() => {
+  if (gatewayAccountIssueCount.value > 0 || (stats.value && stats.value.average_duration_ms > 10_000)) {
+    return 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+  }
+  if (topUserCostShare.value >= 0.6) {
+    return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+  }
+  return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+})
+
+const gatewayRadarItems = computed<GatewayRadarItem[]>(() => {
+  const current = stats.value
+  if (!current) return []
+
+  const totalAccounts = current.total_accounts || 0
+  const normalAccounts = current.normal_accounts || 0
+  const accountHealth = totalAccounts > 0 ? (normalAccounts / totalAccounts) * 100 : 0
+  const latencyScore = current.average_duration_ms > 0
+    ? Math.max(0, 100 - (current.average_duration_ms / 12_000) * 100)
+    : 100
+  const throughputScore = Math.min(100, Math.max(current.rpm || 0, current.tpm ? current.tpm / 100_000 : 0))
+  const cacheScore = gatewayCacheShare.value * 100
+  const concentrationScore = Math.max(0, 100 - topUserCostShare.value * 100)
+
+  return [
+    {
+      key: 'accounts',
+      label: '账户可用性',
+      value: `${normalAccounts} / ${totalAccounts}`,
+      detail: gatewayAccountIssueCount.value > 0 ? `${gatewayAccountIssueCount.value} 异常` : '全部正常',
+      path: '/admin/accounts',
+      width: clampPercent(accountHealth),
+      tone: gatewayAccountIssueCount.value > 0 ? 'amber' : 'emerald'
+    },
+    {
+      key: 'latency',
+      label: '平均响应',
+      value: formatDuration(current.average_duration_ms || 0),
+      detail: current.average_duration_ms > 10_000 ? '建议排查' : '可接受',
+      path: '/admin/channels/monitor',
+      width: clampPercent(latencyScore),
+      tone: current.average_duration_ms > 10_000 ? 'amber' : 'blue'
+    },
+    {
+      key: 'throughput',
+      label: '实时吞吐',
+      value: `${formatTokens(current.rpm)} RPM`,
+      detail: `${formatTokens(current.tpm)} TPM`,
+      path: '/admin/usage',
+      width: clampPercent(throughputScore),
+      tone: 'cyan'
+    },
+    {
+      key: 'cache',
+      label: '缓存复用',
+      value: formatPercent(gatewayCacheShare.value),
+      detail: formatTokens(gatewayCacheTokens.value),
+      path: '/admin/usage',
+      width: clampPercent(cacheScore),
+      tone: gatewayCacheShare.value >= 0.45 ? 'emerald' : 'amber'
+    },
+    {
+      key: 'concentration',
+      label: '消费分散度',
+      value: topUser.value ? formatPercent(1 - topUserCostShare.value) : '-',
+      detail: topUser.value ? `Top ${formatPercent(topUserCostShare.value)}` : '暂无排行',
+      path: '/admin/usage',
+      width: clampPercent(concentrationScore),
+      tone: topUserCostShare.value >= 0.6 ? 'amber' : 'blue'
+    }
+  ]
 })
 
 const longTailMemberCount = computed(() => {
@@ -1857,6 +2005,21 @@ const gatewayBriefAlertClass = (tone: GatewayBriefAlert['tone']): string => {
       return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 hover:border-emerald-400/50 dark:text-emerald-300'
     default:
       return 'border-blue-400/30 bg-blue-500/10 text-blue-700 hover:border-blue-400/50 dark:text-blue-300'
+  }
+}
+
+const gatewayRadarToneClass = (tone: GatewayRadarItem['tone']): string => {
+  switch (tone) {
+    case 'red':
+      return 'bg-red-500'
+    case 'amber':
+      return 'bg-amber-500'
+    case 'emerald':
+      return 'bg-emerald-500'
+    case 'cyan':
+      return 'bg-cyan-500'
+    default:
+      return 'bg-blue-500'
   }
 }
 
@@ -2125,7 +2288,8 @@ const showGatewayBriefCard = computed(() => Boolean(stats.value) || hasRankingDa
 const showCompactInsightSection = computed(() => (
   showUsageInsightsCard.value ||
   showGatewayBriefCard.value ||
-  showMemberPulseCard.value
+  showMemberPulseCard.value ||
+  showGatewayRadarCard.value
 ))
 const chartGridClass = computed(() => {
   return showModelDistributionCard.value && showTrendCard.value ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
@@ -2818,8 +2982,18 @@ onMounted(() => {
 }
 
 .dashboard-brief-metric,
-.dashboard-brief-action {
+.dashboard-brief-action,
+.dashboard-radar-row {
   min-width: 0;
+}
+
+.dashboard-gateway-radar-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(59 130 246 / 0.56), rgb(14 165 233 / 0.20), transparent);
 }
 
 .admin-dashboard-anti {
@@ -3018,9 +3192,20 @@ onMounted(() => {
     #fff;
 }
 
+.admin-dashboard-anti .dashboard-gateway-radar-card {
+  background:
+    repeating-linear-gradient(135deg, rgb(0 0 255 / 0.16) 0 10px, transparent 10px 20px),
+    #fff;
+}
+
 .admin-dashboard-anti .dashboard-gateway-brief-card::before {
   height: 8px;
   background: repeating-linear-gradient(90deg, #0000ff 0 16px, #00ff00 16px 32px, #ff0000 32px 48px);
+}
+
+.admin-dashboard-anti .dashboard-gateway-radar-card::before {
+  width: 8px;
+  background: repeating-linear-gradient(180deg, #ff0000 0 16px, #00ff00 16px 32px, #0000ff 32px 48px);
 }
 
 .admin-dashboard-anti .dashboard-brief-action {
