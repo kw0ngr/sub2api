@@ -969,6 +969,59 @@ export async function resetWebSearchUsage(payload: {
   );
 }
 
+// --- Claude Code HTTP Fingerprint Library ---
+
+export interface ClaudeCodeFingerprintProfile {
+  id: string;
+  name: string;
+  description?: string;
+  source: string;
+  account_id?: number;
+  account_name?: string;
+  user_agent: string;
+  stainless_lang?: string;
+  stainless_package_version?: string;
+  stainless_os?: string;
+  stainless_arch?: string;
+  stainless_runtime?: string;
+  stainless_runtime_version?: string;
+  created_at: number;
+  updated_at: number;
+  last_seen_at: number;
+  seen_count: number;
+}
+
+export interface ClaudeCodeFingerprintLibrary {
+  profiles: ClaudeCodeFingerprintProfile[];
+  active_id: string;
+}
+
+export async function getClaudeCodeFingerprints(): Promise<ClaudeCodeFingerprintLibrary> {
+  const { data } = await apiClient.get<ClaudeCodeFingerprintLibrary>(
+    "/admin/settings/claude-code-fingerprints",
+  );
+  return data;
+}
+
+export async function setActiveClaudeCodeFingerprint(
+  id: string,
+): Promise<ClaudeCodeFingerprintLibrary> {
+  const { data } = await apiClient.put<ClaudeCodeFingerprintLibrary>(
+    "/admin/settings/claude-code-fingerprints/active",
+    { id },
+  );
+  return data;
+}
+
+export async function deleteClaudeCodeFingerprint(
+  id: string,
+): Promise<ClaudeCodeFingerprintLibrary> {
+  const { data } = await apiClient.delete<ClaudeCodeFingerprintLibrary>(
+    `/admin/settings/claude-code-fingerprints/${encodeURIComponent(id)}`,
+  );
+  return data;
+}
+
 export const settingsAPI = {
   getSettings,
   updateSettings,
@@ -989,6 +1042,9 @@ export const settingsAPI = {
   updateWebSearchEmulationConfig,
   testWebSearchEmulation,
   resetWebSearchUsage,
+  getClaudeCodeFingerprints,
+  setActiveClaudeCodeFingerprint,
+  deleteClaudeCodeFingerprint,
 };
 
 export default settingsAPI;

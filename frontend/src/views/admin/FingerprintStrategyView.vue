@@ -184,6 +184,82 @@
       </section>
 
       <section class="fingerprint-panel">
+        <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2>已捕获 HTTP 指纹样本库</h2>
+            <p>团队成员用真实 Claude Code 走一次网关后，这里会自动出现可复用样本；小白直接选一个保存即可。</p>
+          </div>
+          <span class="fingerprint-badge">{{ httpFingerprintProfiles.length }} 个样本</span>
+        </div>
+
+        <div class="fingerprint-library-toolbar">
+          <label class="fingerprint-field min-w-0 flex-1">
+            <span>当前使用</span>
+            <select v-model="activeHTTPFingerprintID" class="input">
+              <option value="">自动学习（按上游账号缓存）</option>
+              <option v-for="profile in httpFingerprintProfiles" :key="profile.id" :value="profile.id">
+                {{ profile.name }}
+              </option>
+            </select>
+          </label>
+          <div class="fingerprint-library-actions">
+            <button class="btn btn-secondary" type="button" :disabled="savingHTTPFingerprint" @click="clearActiveHTTPFingerprint">
+              恢复自动
+            </button>
+            <button class="btn btn-primary" type="button" :disabled="savingHTTPFingerprint" @click="saveActiveHTTPFingerprint">
+              {{ savingHTTPFingerprint ? '保存中' : '应用选择' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="httpFingerprintProfiles.length === 0" class="fingerprint-empty">
+          暂无样本。让任意团队成员用真实 Claude Code 通过网关调用一次，系统会自动保存 User-Agent 和 X-Stainless-*。
+        </div>
+        <div v-else class="mt-4 grid gap-3 lg:grid-cols-2">
+          <article
+            v-for="profile in httpFingerprintProfiles"
+            :key="profile.id"
+            class="fingerprint-http-card"
+            :class="{ active: profile.id === activeHTTPFingerprintID }"
+          >
+            <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3>{{ profile.name }}</h3>
+                <p>{{ profile.description || '自动捕获样本' }}</p>
+              </div>
+              <span class="fingerprint-status good" v-if="profile.id === activeHTTPFingerprintID">使用中</span>
+            </div>
+            <dl class="fingerprint-http-meta">
+              <div>
+                <dt>User-Agent</dt>
+                <dd>{{ profile.user_agent }}</dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd>{{ profile.stainless_runtime || '-' }} {{ profile.stainless_runtime_version || '' }}</dd>
+              </div>
+              <div>
+                <dt>OS / Arch</dt>
+                <dd>{{ profile.stainless_os || '-' }} / {{ profile.stainless_arch || '-' }}</dd>
+              </div>
+              <div>
+                <dt>最近捕获</dt>
+                <dd>{{ formatFingerprintTime(profile.last_seen_at) }} · {{ profile.seen_count }} 次</dd>
+              </div>
+            </dl>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button class="btn btn-secondary btn-sm" type="button" @click="selectHTTPFingerprint(profile.id)">
+                选择
+              </button>
+              <button class="btn btn-secondary btn-sm" type="button" @click="deleteHTTPFingerprint(profile.id)">
+                删除
+              </button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="fingerprint-panel">
         <details class="fingerprint-advanced">
           <summary>
             <span>
@@ -280,6 +356,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { TLSFingerprintProfile } from '@/api/admin'
+import type { ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
@@ -291,8 +368,11 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const saving = ref(false)
+const savingHTTPFingerprint = ref(false)
 const showTLSModal = ref(false)
 const profiles = ref<TLSFingerprintProfile[]>([])
+const httpFingerprintProfiles = ref<ClaudeCodeFingerprintProfile[]>([])
+const activeHTTPFingerprintID = ref('')
 
 type PresetID = 'stable' | 'compatible' | 'debug'
 
@@ -517,6 +597,53 @@ async function copyCaptureCommand() {
   }
 }
 
+function applyFingerprintLibrary(library: { profiles?: ClaudeCodeFingerprintProfile[]; active_id?: string }) {
+  httpFingerprintProfiles.value = library.profiles || []
+  activeHTTPFingerprintID.value = library.active_id || ''
+}
+
+function selectHTTPFingerprint(id: string) {
+  activeHTTPFingerprintID.value = id
+}
+
+function clearActiveHTTPFingerprint() {
+  activeHTTPFingerprintID.value = ''
+  void saveActiveHTTPFingerprint()
+}
+
+async function saveActiveHTTPFingerprint() {
+  savingHTTPFingerprint.value = true
+  try {
+    const library = await adminAPI.settings.setActiveClaudeCodeFingerprint(activeHTTPFingerprintID.value)
+    applyFingerprintLibrary(library)
+    appStore.showSuccess(activeHTTPFingerprintID.value ? 'Claude Code 指纹样本已应用' : '已恢复按账号自动学习')
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, '保存指纹样本失败'))
+  } finally {
+    savingHTTPFingerprint.value = false
+  }
+}
+
+async function deleteHTTPFingerprint(id: string) {
+  savingHTTPFingerprint.value = true
+  try {
+    const library = await adminAPI.settings.deleteClaudeCodeFingerprint(id)
+    applyFingerprintLibrary(library)
+    appStore.showSuccess('指纹样本已删除')
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, '删除指纹样本失败'))
+  } finally {
+    savingHTTPFingerprint.value = false
+  }
+}
+
+function formatFingerprintTime(timestamp: number) {
+  if (!timestamp) {
+    return '-'
+  }
+  return new Date(timestamp * 1000).toLocaleString()
+}
+
 function applyPreset(preset: PresetID) {
   if (preset === 'stable') {
     form.enable_fingerprint_unification = true
@@ -542,9 +669,10 @@ function applyRecommendedPreset() {
 async function loadData() {
   loading.value = true
   try {
-    const [settings, tlsProfiles] = await Promise.all([
+    const [settings, tlsProfiles, fingerprintLibrary] = await Promise.all([
       adminAPI.settings.getSettings(),
-      adminAPI.tlsFingerprintProfiles.list()
+      adminAPI.tlsFingerprintProfiles.list(),
+      adminAPI.settings.getClaudeCodeFingerprints()
     ])
     form.min_claude_code_version = settings.min_claude_code_version || ''
     form.max_claude_code_version = settings.max_claude_code_version || ''
@@ -552,6 +680,7 @@ async function loadData() {
     form.enable_metadata_passthrough = settings.enable_metadata_passthrough === true
     form.enable_cch_signing = settings.enable_cch_signing !== false
     profiles.value = tlsProfiles
+    applyFingerprintLibrary(fingerprintLibrary)
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, '加载指纹策略失败'))
   } finally {
@@ -1035,6 +1164,94 @@ onMounted(loadData)
   color: rgb(125 211 252);
 }
 
+.fingerprint-library-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 1rem;
+}
+
+.fingerprint-library-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.fingerprint-http-card {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(14 165 233 / 0.1), transparent 30%),
+    rgb(248 250 252 / 0.76);
+  padding: 1rem;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.fingerprint-http-card:hover,
+.fingerprint-http-card.active {
+  border-color: rgb(14 165 233 / 0.68);
+  box-shadow: 0 16px 34px rgb(14 165 233 / 0.12);
+  transform: translateY(-1px);
+}
+
+:global(.dark) .fingerprint-http-card {
+  border-color: rgb(51 65 85);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(14 165 233 / 0.13), transparent 34%),
+    rgb(15 23 42 / 0.5);
+}
+
+:global(.dark) .fingerprint-http-card:hover,
+:global(.dark) .fingerprint-http-card.active {
+  border-color: rgb(56 189 248 / 0.64);
+}
+
+.fingerprint-http-card h3 {
+  color: rgb(15 23 42);
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+:global(.dark) .fingerprint-http-card h3 {
+  color: white;
+}
+
+.fingerprint-http-meta {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.fingerprint-http-meta div {
+  min-width: 0;
+}
+
+.fingerprint-http-meta dt {
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fingerprint-http-meta dd {
+  margin-top: 0.18rem;
+  overflow-wrap: anywhere;
+  color: rgb(30 41 59);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+:global(.dark) .fingerprint-http-meta dt {
+  color: rgb(148 163 184);
+}
+
+:global(.dark) .fingerprint-http-meta dd {
+  color: rgb(226 232 240);
+}
+
 .fingerprint-strategy-card,
 .fingerprint-profile-card {
   padding: 1rem;
@@ -1209,6 +1426,15 @@ onMounted(loadData)
 
   .fingerprint-command {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fingerprint-library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fingerprint-library-actions {
     flex-direction: column;
   }
 }

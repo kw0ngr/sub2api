@@ -6117,17 +6117,31 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		clientUserAgent := getHeaderRaw(clientHeaders, "User-Agent")
 		cliVersion := resolveClaudeCodeCLIVersion(clientUserAgent)
 		deviceID := ""
+		if enableFP && s.settingService != nil {
+			if err := s.settingService.ObserveClaudeCodeFingerprint(ctx, account.ID, account.Name, clientHeaders); err != nil {
+				logger.LegacyPrintf("service.gateway", "Warning: failed to observe Claude Code fingerprint for account %d: %v", account.ID, err)
+			}
+		}
 		if enableFP && s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 			if err != nil {
 				logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
 			} else if fp != nil {
 				fingerprint = fp
-				if strings.TrimSpace(fp.ClientID) == "" {
-					fp.ClientID = generateClientID()
+				if strings.TrimSpace(fingerprint.ClientID) == "" {
+					fingerprint.ClientID = generateClientID()
 				}
-				deviceID = strings.TrimSpace(fp.ClientID)
-				cliVersion = resolveClaudeCodeCLIVersion(fp.UserAgent)
+				deviceID = strings.TrimSpace(fingerprint.ClientID)
+				cliVersion = resolveClaudeCodeCLIVersion(fingerprint.UserAgent)
+			}
+		}
+		if enableFP && s.settingService != nil {
+			if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, fingerprint); ok {
+				fingerprint = activeFingerprint
+				if deviceID == "" {
+					deviceID = strings.TrimSpace(fingerprint.ClientID)
+				}
+				cliVersion = resolveClaudeCodeCLIVersion(fingerprint.UserAgent)
 			}
 		}
 		if deviceID == "" {
@@ -9184,11 +9198,21 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	var ctFingerprint *Fingerprint
 	if account.IsOAuth() && ctEnableFP && s.identityService != nil {
+		if s.settingService != nil {
+			if err := s.settingService.ObserveClaudeCodeFingerprint(ctx, account.ID, account.Name, clientHeaders); err != nil {
+				logger.LegacyPrintf("service.gateway", "Warning: failed to observe Claude Code fingerprint for count_tokens account %d: %v", account.ID, err)
+			}
+		}
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil && fp != nil {
 			ctFingerprint = fp
 		} else if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for count_tokens account %d: %v", account.ID, err)
+		}
+	}
+	if account.IsOAuth() && ctEnableFP && s.settingService != nil {
+		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, ctFingerprint); ok {
+			ctFingerprint = activeFingerprint
 		}
 	}
 

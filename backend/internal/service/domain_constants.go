@@ -249,6 +249,10 @@ const (
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 true）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
+	// SettingKeyClaudeCodeFingerprintProfiles 自动捕获的 Claude Code HTTP 指纹样本库
+	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
+	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习
+	SettingKeyActiveClaudeCodeFingerprintProfileID = "active_claude_code_fingerprint_profile_id"
 
 	// Balance Low Notification
 	SettingKeyBalanceLowNotifyEnabled     = "balance_low_notify_enabled"      // 全局开关

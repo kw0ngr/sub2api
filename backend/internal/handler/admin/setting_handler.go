@@ -206,6 +206,56 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	})
 }
 
+// GetClaudeCodeFingerprintLibrary 获取自动捕获的 Claude Code HTTP 指纹样本库
+// GET /api/v1/admin/settings/claude-code-fingerprints
+func (h *SettingHandler) GetClaudeCodeFingerprintLibrary(c *gin.Context) {
+	library, err := h.settingService.GetClaudeCodeFingerprintLibrary(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, library)
+}
+
+type UpdateActiveClaudeCodeFingerprintRequest struct {
+	ID string `json:"id"`
+}
+
+// UpdateActiveClaudeCodeFingerprint 设置全局选中的 Claude Code HTTP 指纹样本
+// PUT /api/v1/admin/settings/claude-code-fingerprints/active
+func (h *SettingHandler) UpdateActiveClaudeCodeFingerprint(c *gin.Context) {
+	var req UpdateActiveClaudeCodeFingerprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.settingService.SetActiveClaudeCodeFingerprintProfile(c.Request.Context(), req.ID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	library, err := h.settingService.GetClaudeCodeFingerprintLibrary(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, library)
+}
+
+// DeleteClaudeCodeFingerprint 删除一个自动捕获的 Claude Code HTTP 指纹样本
+// DELETE /api/v1/admin/settings/claude-code-fingerprints/:id
+func (h *SettingHandler) DeleteClaudeCodeFingerprint(c *gin.Context) {
+	if err := h.settingService.DeleteClaudeCodeFingerprintProfile(c.Request.Context(), c.Param("id")); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	library, err := h.settingService.GetClaudeCodeFingerprintLibrary(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, library)
+}
+
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
 	// 注册设置
