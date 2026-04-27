@@ -279,6 +279,7 @@ export async function getDashboardHourlyActivity(params?: {
 export async function getDashboardSelfInsights(params?: {
   start_date?: string
   end_date?: string
+  api_key_id?: number
   limit?: number
 }): Promise<SelfUsageInsightsResponse> {
   const { data } = await apiClient.get<SelfUsageInsightsResponse>(

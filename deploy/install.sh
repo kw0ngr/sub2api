@@ -26,6 +26,8 @@ INSTALL_DIR="/opt/sub2api"
 SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
 CONFIG_DIR="/etc/sub2api"
+RELEASE_WAIT_SECONDS="${SUB2API_RELEASE_WAIT_SECONDS:-900}"
+RELEASE_WAIT_INTERVAL_SECONDS="${SUB2API_RELEASE_WAIT_INTERVAL_SECONDS:-15}"
 
 # Server configuration (will be set by user)
 SERVER_HOST="0.0.0.0"
@@ -120,6 +122,10 @@ declare -A MSG_ZH=(
     ["fork_no_releases"]="Fork 仓库尚未发布任何 GitHub Releases"
     ["fork_only_release_source"]="当前安装脚本仅从该 Fork 仓库下载发布包"
     ["fork_publish_release_hint"]="请先在 GitHub 上创建如 vX.Y.Z 的 tag，并等待 release workflow 发布资产后重试"
+    ["release_asset_waiting"]="检测到目标版本发布包尚未就绪，可能仍在 GitHub Actions 构建，等待后重试"
+    ["release_asset_ready"]="目标版本发布包已就绪"
+    ["release_asset_timeout"]="等待发布包超时"
+    ["main_version_detected"]="检测到主分支版本"
 
     # Uninstall
     ["uninstall_confirm"]="这将从系统中移除 Sub2API。"
@@ -248,6 +254,10 @@ declare -A MSG_EN=(
     ["fork_no_releases"]="No GitHub Releases have been published for this fork yet"
     ["fork_only_release_source"]="This installer only downloads release artifacts from this fork"
     ["fork_publish_release_hint"]="Create a tag such as vX.Y.Z on GitHub and wait for the release workflow to publish assets before retrying"
+    ["release_asset_waiting"]="Target release artifact is not ready yet; GitHub Actions may still be building it, waiting before retry"
+    ["release_asset_ready"]="Target release artifact is ready"
+    ["release_asset_timeout"]="Timed out waiting for release artifact"
+    ["main_version_detected"]="Detected main branch version"
 
     # Uninstall
     ["uninstall_confirm"]="This will remove Sub2API from your system."
@@ -493,11 +503,99 @@ get_latest_version_from_redirect() {
     esac
 }
 
+normalize_release_version() {
+    local version="$1"
+    version="${version//$'\r'/}"
+    version="${version//$'\n'/}"
+    version="${version//[[:space:]]/}"
+    if [ -z "$version" ]; then
+        return 0
+    fi
+    if [[ "$version" =~ ^v ]]; then
+        echo "$version"
+    else
+        echo "v$version"
+    fi
+}
+
+get_main_branch_version() {
+    local raw_version
+    raw_version=$(curl -fsSL --connect-timeout 10 --max-time 30 "https://raw.githubusercontent.com/${GITHUB_REPO}/main/backend/cmd/server/VERSION" 2>/dev/null || true)
+    normalize_release_version "$raw_version"
+}
+
+semver_gt() {
+    local left="${1#v}"
+    local right="${2#v}"
+    local l_major=0 l_minor=0 l_patch=0
+    local r_major=0 r_minor=0 r_patch=0
+
+    IFS='.' read -r l_major l_minor l_patch <<< "$left"
+    IFS='.' read -r r_major r_minor r_patch <<< "$right"
+
+    l_major=${l_major:-0}; l_minor=${l_minor:-0}; l_patch=${l_patch:-0}
+    r_major=${r_major:-0}; r_minor=${r_minor:-0}; r_patch=${r_patch:-0}
+
+    if ((10#$l_major > 10#$r_major)); then return 0; fi
+    if ((10#$l_major < 10#$r_major)); then return 1; fi
+    if ((10#$l_minor > 10#$r_minor)); then return 0; fi
+    if ((10#$l_minor < 10#$r_minor)); then return 1; fi
+    ((10#$l_patch > 10#$r_patch))
+}
+
 release_tag_exists() {
     local version="$1"
     local http_code
     http_code=$(curl -sL -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "https://github.com/${GITHUB_REPO}/releases/tag/${version}" 2>/dev/null || true)
     [ "$http_code" = "200" ]
+}
+
+github_tag_exists() {
+    local version="$1"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/git/ref/tags/${version}" 2>/dev/null || true)
+    [ "$http_code" = "200" ]
+}
+
+release_or_tag_exists() {
+    local version="$1"
+    release_tag_exists "$version" || github_tag_exists "$version"
+}
+
+release_asset_ready() {
+    local version="$1"
+    local archive_name="$2"
+    local download_url="https://github.com/${GITHUB_REPO}/releases/download/${version}/${archive_name}"
+    local http_code
+    http_code=$(curl -fsSLI -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$download_url" 2>/dev/null || true)
+    [ "$http_code" = "200" ] || [ "$http_code" = "302" ]
+}
+
+wait_for_release_asset() {
+    local version="$1"
+    local archive_name="$2"
+    local waited=0
+    local interval="$RELEASE_WAIT_INTERVAL_SECONDS"
+    local max_wait="$RELEASE_WAIT_SECONDS"
+
+    if release_asset_ready "$version" "$archive_name"; then
+        print_success "$(msg 'release_asset_ready'): ${version}/${archive_name}"
+        return 0
+    fi
+
+    while [ "$waited" -lt "$max_wait" ]; do
+        print_warning "$(msg 'release_asset_waiting'): ${version}/${archive_name} (${waited}s/${max_wait}s)"
+        sleep "$interval"
+        waited=$((waited + interval))
+        if release_asset_ready "$version" "$archive_name"; then
+            print_success "$(msg 'release_asset_ready'): ${version}/${archive_name}"
+            return 0
+        fi
+    done
+
+    print_error "$(msg 'release_asset_timeout'): ${version}/${archive_name}"
+    print_info "$(msg 'fork_publish_release_hint')"
+    exit 1
 }
 
 sha256_file() {
@@ -537,11 +635,27 @@ ensure_releases_available() {
 get_latest_version() {
     print_info "$(msg 'fetching_version')"
     local releases_json
+    local release_version
+    local main_version
     releases_json=$(get_releases_json)
 
-    LATEST_VERSION=$(echo "$releases_json" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$LATEST_VERSION" ]; then
-        LATEST_VERSION=$(get_latest_version_from_redirect)
+    release_version=$(echo "$releases_json" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$release_version" ]; then
+        release_version=$(get_latest_version_from_redirect)
+    fi
+    release_version=$(normalize_release_version "$release_version")
+
+    main_version=$(get_main_branch_version)
+    if [ -n "$main_version" ]; then
+        print_info "$(msg 'main_version_detected'): $main_version"
+    fi
+
+    LATEST_VERSION="$release_version"
+    if [ -n "$main_version" ] && { [ -z "$release_version" ] || semver_gt "$main_version" "$release_version"; }; then
+        # main/VERSION is ahead of the latest published release. This usually
+        # means the tag was just pushed and the release workflow is still
+        # producing artifacts. Use main's version and wait for assets below.
+        LATEST_VERSION="$main_version"
     fi
 
     if [ -z "$LATEST_VERSION" ]; then
@@ -600,8 +714,9 @@ validate_version() {
 
     print_info "$(msg 'validating_version') $version" >&2
 
-    # Check the public release page first to avoid unauthenticated GitHub API rate limits.
-    if ! release_tag_exists "$version"; then
+    # Accept an existing release, or a tag whose release workflow is still
+    # building. download_and_extract will wait for platform assets to appear.
+    if ! release_or_tag_exists "$version"; then
         print_error "$(msg 'version_not_found'): $version" >&2
         echo "" >&2
         list_versions >&2
@@ -629,6 +744,7 @@ download_and_extract() {
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/${archive_name}"
     local checksum_url="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/checksums.txt"
 
+    wait_for_release_asset "$LATEST_VERSION" "$archive_name"
     print_info "$(msg 'downloading') ${archive_name}..."
 
     # Create temp directory
@@ -882,6 +998,18 @@ upgrade() {
     CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
     print_info "$(msg 'current_version'): $CURRENT_VERSION"
 
+    # Resolve and wait for the target release before stopping the running
+    # service. This keeps the old version online while GitHub Actions is still
+    # building the new release artifacts.
+    get_latest_version
+    if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ] || [ "$CURRENT_VERSION" = "${LATEST_VERSION#v}" ]; then
+        print_warning "$(msg 'same_version')"
+        return 0
+    fi
+    local version_num=${LATEST_VERSION#v}
+    local archive_name="sub2api_${version_num}_${OS}_${ARCH}.tar.gz"
+    wait_for_release_asset "$LATEST_VERSION" "$archive_name"
+
     # Stop service
     if systemctl is-active --quiet sub2api; then
         print_info "$(msg 'stopping_service')"
@@ -893,7 +1021,6 @@ upgrade() {
     print_info "$(msg 'backup_created'): $INSTALL_DIR/sub2api.backup"
 
     # Download and install new version
-    get_latest_version
     download_and_extract
 
     # Set permissions
@@ -934,6 +1061,14 @@ install_version() {
         exit 0
     fi
 
+    # Set LATEST_VERSION to the target version and wait before stopping the
+    # running service. A freshly pushed tag may exist before release assets are
+    # uploaded by GitHub Actions.
+    LATEST_VERSION="$target_version"
+    local target_version_num=${LATEST_VERSION#v}
+    local target_archive_name="sub2api_${target_version_num}_${OS}_${ARCH}.tar.gz"
+    wait_for_release_asset "$LATEST_VERSION" "$target_archive_name"
+
     # Stop service if running
     if systemctl is-active --quiet sub2api; then
         print_info "$(msg 'stopping_service')"
@@ -951,9 +1086,6 @@ install_version() {
         cp "$INSTALL_DIR/sub2api" "$INSTALL_DIR/$backup_name"
         print_info "$(msg 'backup_created'): $INSTALL_DIR/$backup_name"
     fi
-
-    # Set LATEST_VERSION to the target version for download_and_extract
-    LATEST_VERSION="$target_version"
 
     # Download and install
     download_and_extract

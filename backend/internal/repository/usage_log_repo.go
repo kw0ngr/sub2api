@@ -2425,12 +2425,16 @@ func usageInsightModelExpression(alias string) string {
 	return fmt.Sprintf("COALESCE(NULLIF(TRIM(%[1]srequested_model), ''), NULLIF(TRIM(%[1]smodel), ''), 'unknown')", prefix)
 }
 
-func buildUsageInsightScopeFilter(startTime, endTime time.Time, userID int64, excludeAdmins bool) (string, []any) {
+func buildUsageInsightScopeFilter(startTime, endTime time.Time, userID, apiKeyID int64, excludeAdmins bool) (string, []any) {
 	args := []any{startTime, endTime}
 	filter := "ul.created_at >= $1 AND ul.created_at < $2"
 	if userID > 0 {
 		filter += fmt.Sprintf(" AND ul.user_id = $%d", len(args)+1)
 		args = append(args, userID)
+	}
+	if apiKeyID > 0 {
+		filter += fmt.Sprintf(" AND ul.api_key_id = $%d", len(args)+1)
+		args = append(args, apiKeyID)
 	}
 	if excludeAdmins {
 		filter += " AND COALESCE(us.role, 'user') <> 'admin'"
@@ -2444,7 +2448,7 @@ func (r *usageLogRepository) GetTeamUsageInsights(ctx context.Context, startTime
 	limit = normalizeUsageInsightLimit(limit)
 	result := &usagestats.TeamUsageInsights{}
 
-	totalMembers, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, 0, true)
+	totalMembers, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, 0, 0, true)
 	if err != nil {
 		return nil, err
 	}
@@ -2454,7 +2458,7 @@ func (r *usageLogRepository) GetTeamUsageInsights(ctx context.Context, startTime
 	result.CacheTokens = cacheTokens
 	result.CacheShare = usageInsightShare(cacheTokens, totalTokens)
 
-	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, 0, true, totalTokens)
+	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, 0, 0, true, totalTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -2462,15 +2466,15 @@ func (r *usageLogRepository) GetTeamUsageInsights(ctx context.Context, startTime
 	if err != nil {
 		return nil, err
 	}
-	result.MemberModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, limit, 8, 0, true)
+	result.MemberModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, limit, 8, 0, 0, true)
 	if err != nil {
 		return nil, err
 	}
-	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, 0, true)
+	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, 0, 0, true)
 	if err != nil {
 		return nil, err
 	}
-	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, 0, true)
+	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, 0, 0, true)
 	if err != nil {
 		return nil, err
 	}
@@ -2478,11 +2482,11 @@ func (r *usageLogRepository) GetTeamUsageInsights(ctx context.Context, startTime
 }
 
 // GetUserSelfUsageInsights returns self-service analytics scoped to one user.
-func (r *usageLogRepository) GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
+func (r *usageLogRepository) GetUserSelfUsageInsights(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
 	limit = normalizeUsageInsightLimit(limit)
 	result := &usagestats.SelfUsageInsights{}
 
-	_, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, userID, false)
+	_, totalRequests, totalTokens, cacheTokens, err := r.getUsageInsightTotals(ctx, startTime, endTime, userID, apiKeyID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2491,27 +2495,27 @@ func (r *usageLogRepository) GetUserSelfUsageInsights(ctx context.Context, userI
 	result.CacheTokens = cacheTokens
 	result.CacheShare = usageInsightShare(cacheTokens, totalTokens)
 
-	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, userID, false, totalTokens)
+	result.ClientDistribution, err = r.getUsageInsightClientDistribution(ctx, startTime, endTime, limit, userID, apiKeyID, false, totalTokens)
 	if err != nil {
 		return nil, err
 	}
-	result.ModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, 1, limit, userID, false)
+	result.ModelMatrix, err = r.getUsageInsightMemberModelMatrix(ctx, startTime, endTime, 1, limit, userID, apiKeyID, false)
 	if err != nil {
 		return nil, err
 	}
-	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, userID, false)
+	result.CacheEfficiency, err = r.getUsageInsightCacheEfficiency(ctx, startTime, endTime, limit, userID, apiKeyID, false)
 	if err != nil {
 		return nil, err
 	}
-	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, userID, false)
+	result.Sessions, err = r.getUsageInsightSessions(ctx, startTime, endTime, limit, userID, apiKeyID, false)
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (r *usageLogRepository) getUsageInsightTotals(ctx context.Context, startTime, endTime time.Time, userID int64, excludeAdmins bool) (members, requests, tokens, cacheTokens int64, err error) {
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+func (r *usageLogRepository) getUsageInsightTotals(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID int64, excludeAdmins bool) (members, requests, tokens, cacheTokens int64, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, apiKeyID, excludeAdmins)
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(DISTINCT ul.user_id) as members,
@@ -2528,8 +2532,8 @@ func (r *usageLogRepository) getUsageInsightTotals(ctx context.Context, startTim
 	return members, requests, tokens, cacheTokens, nil
 }
 
-func (r *usageLogRepository) getUsageInsightClientDistribution(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool, totalTokens int64) (results []usagestats.ClientUsageStat, err error) {
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+func (r *usageLogRepository) getUsageInsightClientDistribution(ctx context.Context, startTime, endTime time.Time, limit int, userID, apiKeyID int64, excludeAdmins bool, totalTokens int64) (results []usagestats.ClientUsageStat, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, apiKeyID, excludeAdmins)
 	args = append(args, normalizeUsageInsightLimit(limit))
 	limitRef := fmt.Sprintf("$%d", len(args))
 	clientExpr := usageInsightClientLabelExpression("ul")
@@ -2603,7 +2607,7 @@ func (r *usageLogRepository) getUsageInsightClientDistribution(ctx context.Conte
 }
 
 func (r *usageLogRepository) getUsageInsightMemberProfiles(ctx context.Context, startTime, endTime time.Time, limit int, excludeAdmins bool, totalTokens int64) (results []usagestats.MemberUsageProfile, err error) {
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, 0, excludeAdmins)
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, 0, 0, excludeAdmins)
 	args = append(args, normalizeUsageInsightLimit(limit))
 	limitRef := fmt.Sprintf("$%d", len(args))
 	clientExpr := usageInsightClientLabelExpression("ul")
@@ -2741,10 +2745,10 @@ func (r *usageLogRepository) getUsageInsightMemberProfiles(ctx context.Context, 
 	return results, nil
 }
 
-func (r *usageLogRepository) getUsageInsightMemberModelMatrix(ctx context.Context, startTime, endTime time.Time, memberLimit, modelLimit int, userID int64, excludeAdmins bool) (results []usagestats.MemberModelMatrixRow, err error) {
+func (r *usageLogRepository) getUsageInsightMemberModelMatrix(ctx context.Context, startTime, endTime time.Time, memberLimit, modelLimit int, userID, apiKeyID int64, excludeAdmins bool) (results []usagestats.MemberModelMatrixRow, err error) {
 	memberLimit = normalizeUsageInsightLimit(memberLimit)
 	modelLimit = normalizeUsageInsightLimit(modelLimit)
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, apiKeyID, excludeAdmins)
 	args = append(args, memberLimit)
 	memberLimitRef := fmt.Sprintf("$%d", len(args))
 	args = append(args, modelLimit)
@@ -2859,8 +2863,8 @@ func (r *usageLogRepository) getUsageInsightMemberModelMatrix(ctx context.Contex
 	return results, nil
 }
 
-func (r *usageLogRepository) getUsageInsightCacheEfficiency(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool) (results []usagestats.CacheEfficiencyItem, err error) {
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+func (r *usageLogRepository) getUsageInsightCacheEfficiency(ctx context.Context, startTime, endTime time.Time, limit int, userID, apiKeyID int64, excludeAdmins bool) (results []usagestats.CacheEfficiencyItem, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, apiKeyID, excludeAdmins)
 	args = append(args, normalizeUsageInsightLimit(limit))
 	limitRef := fmt.Sprintf("$%d", len(args))
 	modelExpr := usageInsightModelExpression("ul")
@@ -2976,8 +2980,8 @@ func (r *usageLogRepository) scanUsageInsightCacheEfficiency(ctx context.Context
 	return results, nil
 }
 
-func (r *usageLogRepository) getUsageInsightSessions(ctx context.Context, startTime, endTime time.Time, limit int, userID int64, excludeAdmins bool) (results []usagestats.RequestSessionSummary, err error) {
-	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, excludeAdmins)
+func (r *usageLogRepository) getUsageInsightSessions(ctx context.Context, startTime, endTime time.Time, limit int, userID, apiKeyID int64, excludeAdmins bool) (results []usagestats.RequestSessionSummary, err error) {
+	filter, args := buildUsageInsightScopeFilter(startTime, endTime, userID, apiKeyID, excludeAdmins)
 	args = append(args, normalizeUsageInsightLimit(limit))
 	limitRef := fmt.Sprintf("$%d", len(args))
 	clientExpr := usageInsightClientLabelExpression("ul")

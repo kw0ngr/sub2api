@@ -432,7 +432,26 @@ func (h *UsageHandler) DashboardSelfInsights(c *gin.Context) {
 		limit = 50
 	}
 
-	insights, err := h.usageService.GetUserSelfUsageInsights(c.Request.Context(), subject.UserID, startTime, endTime, limit)
+	var apiKeyID int64
+	if apiKeyIDStr := strings.TrimSpace(c.Query("api_key_id")); apiKeyIDStr != "" {
+		id, err := strconv.ParseInt(apiKeyIDStr, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid api_key_id")
+			return
+		}
+		apiKey, err := h.apiKeyService.GetByID(c.Request.Context(), id)
+		if err != nil {
+			response.NotFound(c, "API key not found")
+			return
+		}
+		if apiKey.UserID != subject.UserID {
+			response.Forbidden(c, "Not authorized to access this API key's usage insights")
+			return
+		}
+		apiKeyID = id
+	}
+
+	insights, err := h.usageService.GetUserSelfUsageInsights(c.Request.Context(), subject.UserID, apiKeyID, startTime, endTime, limit)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

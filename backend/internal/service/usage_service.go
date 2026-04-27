@@ -65,7 +65,7 @@ type projectStatsReader interface {
 }
 
 type selfUsageInsightsReader interface {
-	GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error)
+	GetUserSelfUsageInsights(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error)
 }
 
 // NewUsageService 创建使用统计服务实例
@@ -336,12 +336,12 @@ func (s *UsageService) GetUserProjectStats(ctx context.Context, userID int64, st
 	return stats, nil
 }
 
-func (s *UsageService) GetUserSelfUsageInsights(ctx context.Context, userID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
+func (s *UsageService) GetUserSelfUsageInsights(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time, limit int) (*usagestats.SelfUsageInsights, error) {
 	repo, ok := s.usageRepo.(selfUsageInsightsReader)
 	if !ok {
 		return &usagestats.SelfUsageInsights{}, nil
 	}
-	insights, err := repo.GetUserSelfUsageInsights(ctx, userID, startTime, endTime, limit)
+	insights, err := repo.GetUserSelfUsageInsights(ctx, userID, apiKeyID, startTime, endTime, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get user self usage insights: %w", err)
 	}

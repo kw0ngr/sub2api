@@ -1144,6 +1144,7 @@ const loadSelfInsights = async () => {
     const response = await usageAPI.getDashboardSelfInsights({
       start_date,
       end_date,
+      api_key_id: getSelectedApiKeyId(),
       limit: 8
     })
     selfInsights.value = response.insights || null
