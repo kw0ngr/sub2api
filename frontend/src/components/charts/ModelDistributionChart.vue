@@ -189,8 +189,8 @@
             <tr class="text-gray-500 dark:text-gray-400">
               <th class="pb-2 text-left">{{ t('admin.dashboard.spendingRankingUser') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.spendingRankingRequests') }}</th>
-              <th class="pb-2 text-right">{{ t('admin.dashboard.spendingRankingTokens') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.spendingRankingSpend') }}</th>
+              <th class="pb-2 text-right">{{ t('admin.dashboard.spendingRankingTokens') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -219,11 +219,11 @@
               <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
                 {{ formatNumber(item.requests) }}
               </td>
-              <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-                {{ formatTokens(item.tokens) }}
-              </td>
               <td class="py-1.5 text-right text-green-600 dark:text-green-400">
                 ${{ formatCost(item.actual_cost) }}
+              </td>
+              <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
+                {{ formatTokens(item.tokens) }}
               </td>
             </tr>
           </tbody>
@@ -376,12 +376,12 @@ const rankingChartData = computed(() => {
   if (!props.rankingItems?.length) return null
 
   const labels = props.rankingItems.map((item, index) => `#${index + 1} ${getRankingUserLabel(item)}`)
-  const data = props.rankingItems.map((item) => item.tokens)
+  const data = props.rankingItems.map((item) => item.actual_cost)
   const backgroundColor = chartColors.slice(0, props.rankingItems.length)
 
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
-    data.push(otherRankingItem.value.tokens)
+    data.push(otherRankingItem.value.actual_cost)
     backgroundColor.push('#94a3b8')
   }
 
@@ -463,7 +463,7 @@ const rankingDoughnutOptions = computed(() => ({
           const value = context.raw as number
           const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0'
-          return `${context.label}: ${formatTokens(value)} (${percentage}%)`
+          return `${context.label}: $${formatCost(value)} (${percentage}%)`
         }
       }
     }

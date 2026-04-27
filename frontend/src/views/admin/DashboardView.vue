@@ -323,7 +323,7 @@
                         </div>
                         <div class="shrink-0 rounded-full border border-blue-400/30 px-3 py-1.5 text-right">
                           <p class="text-sm font-bold text-blue-600 dark:text-blue-300">
-                            {{ formatPercent(topUserTokenShare) }}
+                            {{ formatPercent(topUserCostShare) }}
                           </p>
                           <p class="text-[11px] text-gray-500 dark:text-gray-400">
                             {{ t('admin.dashboard.topMemberShare') }}
@@ -332,8 +332,8 @@
                       </div>
                       <div class="mt-3 grid grid-cols-2 gap-3 text-xs">
                         <div>
-                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.tokens') }}</p>
-                          <p class="font-semibold text-gray-900 dark:text-white">{{ formatTokens(topUser.tokens) }}</p>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.spendingRankingSpend') }}</p>
+                          <p class="font-semibold text-gray-900 dark:text-white">{{ formatCurrency(topUser.actual_cost) }}</p>
                         </div>
                         <div>
                           <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.requests') }}</p>
@@ -358,10 +358,10 @@
                   </div>
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.totalTeamTokens') }}
+                      {{ t('admin.dashboard.totalTeamSpend') }}
                     </p>
                     <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatTokens(rankingTotalTokens) }}
+                      {{ formatCurrency(rankingTotalActualCost) }}
                     </p>
                   </div>
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
@@ -395,14 +395,14 @@
                         </span>
                       </div>
                       <span class="shrink-0 text-gray-500 dark:text-gray-400">
-                        {{ formatPercent(userTokenShare(item.tokens)) }} / {{ formatTokens(item.tokens) }}
+                        {{ formatPercent(userCostShare(item.actual_cost)) }} / {{ formatCurrency(item.actual_cost) }}
                       </span>
                     </div>
                     <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                       <div
                         class="h-full rounded-full"
                         :class="userBarClass(index, item.isOther)"
-                        :style="{ width: `${userBarWidth(item.tokens)}%` }"
+                        :style="{ width: `${userCostBarWidth(item.actual_cost)}%` }"
                       />
                     </div>
                   </div>
@@ -413,7 +413,7 @@
                     <tr class="text-gray-500 dark:text-gray-400">
                       <th class="pb-2 text-left">{{ t('admin.dashboard.member') }}</th>
                       <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
-                      <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
+                      <th class="pb-2 text-right">{{ t('admin.dashboard.spendingRankingSpend') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -434,7 +434,7 @@
                         {{ formatNumber(item.requests) }}
                       </td>
                       <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-                        {{ formatTokens(item.tokens) }}
+                        {{ formatCurrency(item.actual_cost) }}
                       </td>
                     </tr>
                   </tbody>
@@ -504,6 +504,39 @@
                   </div>
                 </div>
 
+                <div
+                  v-if="hasRankingSpendData"
+                  class="dashboard-cost-summary rounded-2xl border border-gray-100 p-3 dark:border-gray-700"
+                >
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.nonAdminSpendSummary') }}
+                      </p>
+                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                        {{ formatCurrency(rankingTotalActualCost) }}
+                      </p>
+                    </div>
+                    <span class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                      {{ formatNumber(activeUsageUserCount) }} {{ t('admin.dashboard.member') }}
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerRequest') }}</p>
+                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerRequest) }}</p>
+                    </div>
+                    <div>
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerMember') }}</p>
+                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerMember) }}</p>
+                    </div>
+                    <div>
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.topMemberShare') }}</p>
+                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatPercent(topUserCostShare) }}</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -531,8 +564,8 @@
                       {{ topUserDisplayName }}
                     </p>
                     <p class="text-xs text-cyan-600 dark:text-cyan-400">
-                      {{ formatPercent(topUserTokenShare) }} /
-                      {{ formatTokens(topUser?.tokens || 0) }}
+                      {{ formatPercent(topUserCostShare) }} /
+                      {{ formatCurrency(topUser?.actual_cost || 0) }}
                     </p>
                   </div>
                   <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
@@ -586,26 +619,26 @@
                 <div class="grid grid-cols-2 gap-2">
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.topThreeShare') }}
+                      {{ t('admin.dashboard.topThreeSpendShare') }}
                     </p>
                     <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatPercent(topThreeTokenShare) }}
+                      {{ formatPercent(topThreeCostShare) }}
                     </p>
                   </div>
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.avgTokensPerRequest') }}
+                      {{ t('admin.dashboard.avgSpendPerRequest') }}
                     </p>
                     <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatTokens(avgTokensPerRequest) }}
+                      {{ formatCurrency(avgSpendPerRequest) }}
                     </p>
                   </div>
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.avgTokensPerMember') }}
+                      {{ t('admin.dashboard.avgSpendPerMember') }}
                     </p>
                     <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatTokens(avgTokensPerMember) }}
+                      {{ formatCurrency(avgSpendPerMember) }}
                     </p>
                   </div>
                   <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
@@ -647,14 +680,17 @@
                             {{ userDisplayName(item) }}
                           </p>
                           <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                            {{ formatPercent(userTokenShare(item.tokens)) }}
+                            {{ formatPercent(userCostShare(item.actual_cost)) }}
                           </p>
                         </div>
+                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {{ formatCurrency(item.actual_cost) }} · {{ formatNumber(item.requests) }} {{ t('admin.dashboard.requests') }}
+                        </p>
                         <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                           <div
                             class="h-full rounded-full"
                             :class="userBarClass(index)"
-                            :style="{ width: `${userBarWidth(item.tokens)}%` }"
+                            :style="{ width: `${userCostBarWidth(item.actual_cost)}%` }"
                           />
                         </div>
                       </div>
@@ -1318,6 +1354,8 @@ const formatCost = (value: number | null | undefined): string => {
   return safeValue.toFixed(4)
 }
 
+const formatCurrency = (value: number | null | undefined): string => `$${formatCost(value)}`
+
 const formatDuration = (ms: number): string => {
   if (ms >= 1000) {
     return `${(ms / 1000).toFixed(2)}s`
@@ -1383,6 +1421,10 @@ const rankedUserTokens = computed(() => {
   return rankingItems.value.reduce((sum, item) => sum + item.tokens, 0)
 })
 
+const rankedUserCost = computed(() => {
+  return rankingItems.value.reduce((sum, item) => sum + item.actual_cost, 0)
+})
+
 const activeUsageUserCount = computed(() => {
   return rankingTotalUsers.value || rankingItems.value.length
 })
@@ -1393,36 +1435,36 @@ const topUserDisplayName = computed(() => {
   return topUser.value ? userDisplayName(topUser.value) : '-'
 })
 
-const userTokenShare = (tokens: number): number => {
-  if (rankingTotalTokens.value <= 0) return 0
-  return tokens / rankingTotalTokens.value
+const userCostShare = (cost: number): number => {
+  if (rankingTotalActualCost.value <= 0) return 0
+  return cost / rankingTotalActualCost.value
 }
 
-const userBarWidth = (tokens: number): number => {
-  if (rankingTotalTokens.value <= 0) return 0
-  return Math.max(4, Math.round(userTokenShare(tokens) * 100))
+const userCostBarWidth = (cost: number): number => {
+  if (rankingTotalActualCost.value <= 0) return 0
+  return Math.max(4, Math.round(userCostShare(cost) * 100))
 }
 
-const topUserTokenShare = computed(() => {
-  return topUser.value ? userTokenShare(topUser.value.tokens) : 0
+const topUserCostShare = computed(() => {
+  return topUser.value ? userCostShare(topUser.value.actual_cost) : 0
 })
 
 const memberPulseItems = computed(() => rankingItems.value.slice(0, 5))
 
-const topThreeTokenShare = computed(() => {
-  if (rankingTotalTokens.value <= 0) return 0
-  const topThreeTokens = rankingItems.value.slice(0, 3).reduce((sum, item) => sum + item.tokens, 0)
-  return topThreeTokens / rankingTotalTokens.value
+const topThreeCostShare = computed(() => {
+  if (rankingTotalActualCost.value <= 0) return 0
+  const topThreeCost = rankingItems.value.slice(0, 3).reduce((sum, item) => sum + item.actual_cost, 0)
+  return topThreeCost / rankingTotalActualCost.value
 })
 
-const avgTokensPerRequest = computed(() => {
+const avgSpendPerRequest = computed(() => {
   if (rankingTotalRequests.value <= 0) return 0
-  return Math.round(rankingTotalTokens.value / rankingTotalRequests.value)
+  return rankingTotalActualCost.value / rankingTotalRequests.value
 })
 
-const avgTokensPerMember = computed(() => {
+const avgSpendPerMember = computed(() => {
   if (activeUsageUserCount.value <= 0) return 0
-  return Math.round(rankingTotalTokens.value / activeUsageUserCount.value)
+  return rankingTotalActualCost.value / activeUsageUserCount.value
 })
 
 const longTailMemberCount = computed(() => {
@@ -1442,7 +1484,7 @@ const memberPulseAvatarClass = (index: number): string => {
 
 const memberPulseAdviceTone = computed<'amber' | 'emerald' | 'cyan' | 'blue'>(() => {
   if (activeUsageUserCount.value <= 1) return 'blue'
-  if (topUserTokenShare.value >= 0.6) return 'amber'
+  if (topUserCostShare.value >= 0.6) return 'amber'
   if ((usageInsights.value?.cache_share || 0) >= 0.7) return 'emerald'
   return 'cyan'
 })
@@ -1639,10 +1681,7 @@ const otherUserContribution = computed<UserContributionItem | null>(() => {
     rankingTotalRequests.value - rankingItems.value.reduce((sum, item) => sum + item.requests, 0),
     0
   )
-  const otherActualCost = Math.max(
-    rankingTotalActualCost.value - rankingItems.value.reduce((sum, item) => sum + item.actual_cost, 0),
-    0
-  )
+  const otherActualCost = Math.max(rankingTotalActualCost.value - rankedUserCost.value, 0)
   if (otherTokens <= 0 && otherRequests <= 0 && otherActualCost <= 0.000001) return null
   return {
     user_id: 0,
@@ -1793,8 +1832,13 @@ const hasRankingData = computed(() => {
   ) || rankingItems.value.some((item) => hasUsageValue(item.requests, item.tokens, item.actual_cost))
 })
 
+const hasRankingSpendData = computed(() => {
+  return hasUsageValue(rankingTotalActualCost.value) ||
+    rankingItems.value.some((item) => hasUsageValue(item.actual_cost))
+})
+
 const hasMemberPulseData = computed(() => {
-  return memberPulseItems.value.some((item) => hasUsageValue(item.requests, item.tokens, item.actual_cost))
+  return memberPulseItems.value.some((item) => hasUsageValue(item.requests, item.actual_cost))
 })
 
 const hasUsageInsightsData = computed(() => {
@@ -2456,6 +2500,7 @@ onMounted(() => {
 
 .dashboard-masonry-item {
   width: 100%;
+  align-self: start;
 }
 
 .dashboard-masonry-item-wide {
@@ -2483,6 +2528,12 @@ onMounted(() => {
 
 .dashboard-team-profile-section {
   min-width: 0;
+}
+
+.dashboard-cost-summary {
+  background:
+    radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.10), transparent 36%),
+    linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.66), rgb(var(--dashboard-surface-soft) / 0.48));
 }
 
 .admin-dashboard-anti {
@@ -2666,6 +2717,13 @@ onMounted(() => {
 .admin-dashboard-anti .dashboard-analytics-card {
   background:
     linear-gradient(180deg, #fff, #fff 64%, #ffeb3b 64%, #ffeb3b 100%);
+}
+
+.admin-dashboard-anti .dashboard-cost-summary {
+  background:
+    repeating-linear-gradient(135deg, rgb(0 0 0 / 0.18) 0 8px, transparent 8px 16px),
+    #00ffff;
+  box-shadow: 8px 8px 0 #ff0000;
 }
 
 .admin-dashboard-anti .dashboard-masonry {

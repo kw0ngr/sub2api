@@ -2325,7 +2325,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 				COALESCE(SUM(tokens) OVER (), 0) as total_tokens,
 				COUNT(*) OVER () as total_users
 			FROM user_spend
-			ORDER BY tokens DESC, actual_cost DESC, user_id ASC
+			ORDER BY actual_cost DESC, tokens DESC, user_id ASC
 			LIMIT $3
 		)
 		SELECT
@@ -2339,7 +2339,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			total_tokens,
 			total_users
 		FROM ranked
-		ORDER BY tokens DESC, actual_cost DESC, user_id ASC
+		ORDER BY actual_cost DESC, tokens DESC, user_id ASC
 	`
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit)
