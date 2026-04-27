@@ -117,6 +117,72 @@
         </div>
       </section>
 
+      <section class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div class="fingerprint-panel">
+          <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2>推荐配置清单</h2>
+              <p>不追求玄学参数，核心是“少漂移、先学习、再固定”。</p>
+            </div>
+            <span class="fingerprint-badge">小白照抄</span>
+          </div>
+
+          <div class="fingerprint-check-list">
+            <div v-for="item in recommendedSetup" :key="item.title" class="fingerprint-check-item">
+              <span class="fingerprint-check">{{ item.mark }}</span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.description }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fingerprint-panel">
+          <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2>抓取真实 Claude Code 指纹</h2>
+              <p>HTTP 指纹会自动学习；TLS 指纹需要用采集器导入模板。</p>
+            </div>
+            <span class="fingerprint-badge">真实优先</span>
+          </div>
+
+          <div class="fingerprint-capture-flow">
+            <div v-for="step in captureFlow" :key="step.step" class="fingerprint-capture-step">
+              <span class="fingerprint-step-number">{{ step.step }}</span>
+              <div>
+                <strong>{{ step.title }}</strong>
+                <p>{{ step.description }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="fingerprint-command">
+            <div>
+              <span>Claude Code 预热命令</span>
+              <code>{{ captureCommand }}</code>
+            </div>
+            <button class="btn btn-secondary" type="button" @click="copyCaptureCommand">
+              复制
+            </button>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-3">
+            <a
+              class="fingerprint-link-button"
+              href="https://tls.sub2api.org"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              打开 TLS 采集器
+            </a>
+            <button class="btn btn-secondary" type="button" @click="showTLSModal = true">
+              粘贴/管理 TLS 模板
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section class="fingerprint-panel">
         <details class="fingerprint-advanced">
           <summary>
@@ -391,6 +457,65 @@ const strategies = computed(() => [
     ]
   }
 ])
+
+const recommendedSetup = computed(() => [
+  {
+    mark: '1',
+    title: '全局使用稳定模式',
+    description: activePreset.value === 'stable'
+      ? '当前已是推荐状态：统一指纹开启、metadata 由网关处理、CCH 签名开启。'
+      : '点击“一键推荐”恢复稳定模式。自定义状态可以用，但建议只在排查时短期开启。'
+  },
+  {
+    mark: '2',
+    title: 'OAuth 账号启用 TLS 指纹',
+    description: profiles.value.length
+      ? '已有 TLS 模板。给重要 Claude Code 上游账号绑定固定模板，不要频繁随机切换。'
+      : '没有模板也能用内置默认；如果仍遇到客户端限制，再用采集器导入真实模板。'
+  },
+  {
+    mark: '3',
+    title: '先让真实 Claude Code 跑一次',
+    description: '网关会从真实请求学习 User-Agent 和 X-Stainless-* 头，之后同一上游账号复用这组指纹。'
+  },
+  {
+    mark: '4',
+    title: '版本限制默认留空',
+    description: '不要随手设置最低/最高版本。只有确认某个 Claude Code 版本有兼容问题时再限制。'
+  }
+])
+
+const captureFlow = [
+  {
+    step: '01',
+    title: 'HTTP 指纹自动学习',
+    description: '用真实 Claude Code 通过网关请求一次，系统会按上游账号缓存 UA、X-Stainless、runtime 等字段。'
+  },
+  {
+    step: '02',
+    title: 'TLS 指纹用采集器导入',
+    description: '在同一台机器或同一网络环境访问采集器，把得到的 YAML 粘贴到 TLS 模板，再绑定到 OAuth 账号。'
+  },
+  {
+    step: '03',
+    title: '固定模板，不要乱换',
+    description: '稳定比“看起来很新”更重要。重要账号建议绑定固定模板，避免频繁变化造成识别漂移。'
+  }
+]
+
+const captureCommand = computed(() => {
+  const origin = typeof window === 'undefined' ? 'https://你的网关域名' : window.location.origin
+  return `ANTHROPIC_BASE_URL="${origin}" ANTHROPIC_AUTH_TOKEN="sk-你的网关密钥" claude -p "ping"`
+})
+
+async function copyCaptureCommand() {
+  try {
+    await navigator.clipboard.writeText(captureCommand.value)
+    appStore.showSuccess('采集命令已复制')
+  } catch {
+    appStore.showError('复制失败，请手动复制命令')
+  }
+}
 
 function applyPreset(preset: PresetID) {
   if (preset === 'stable') {
@@ -787,6 +912,129 @@ onMounted(loadData)
   box-shadow: 0 0 0 4px rgb(59 130 246 / 0.12);
 }
 
+.fingerprint-check-list,
+.fingerprint-capture-flow {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.fingerprint-check-item,
+.fingerprint-capture-step,
+.fingerprint-command {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgb(248 250 252 / 0.86), rgb(255 255 255 / 0.72));
+  padding: 1rem;
+}
+
+:global(.dark) .fingerprint-check-item,
+:global(.dark) .fingerprint-capture-step,
+:global(.dark) .fingerprint-command {
+  border-color: rgb(51 65 85);
+  background:
+    linear-gradient(135deg, rgb(30 41 59 / 0.72), rgb(15 23 42 / 0.5));
+}
+
+.fingerprint-check,
+.fingerprint-step-number {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: rgb(14 165 233);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 10px 24px rgb(14 165 233 / 0.18);
+}
+
+.fingerprint-check-item strong,
+.fingerprint-capture-step strong {
+  display: block;
+  color: rgb(15 23 42);
+  font-weight: 850;
+}
+
+:global(.dark) .fingerprint-check-item strong,
+:global(.dark) .fingerprint-capture-step strong {
+  color: white;
+}
+
+.fingerprint-check-item p,
+.fingerprint-capture-step p {
+  margin-top: 0.25rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.fingerprint-command {
+  margin-top: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fingerprint-command span {
+  display: block;
+  color: rgb(100 116 139);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.fingerprint-command code {
+  display: block;
+  margin-top: 0.35rem;
+  color: rgb(15 23 42);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+:global(.dark) .fingerprint-command span {
+  color: rgb(148 163 184);
+}
+
+:global(.dark) .fingerprint-command code {
+  color: rgb(226 232 240);
+}
+
+.fingerprint-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(14 165 233 / 0.4);
+  border-radius: 0.9rem;
+  background: rgb(14 165 233 / 0.1);
+  color: rgb(2 132 199);
+  padding: 0.62rem 0.95rem;
+  font-size: 0.88rem;
+  font-weight: 850;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.fingerprint-link-button:hover {
+  border-color: rgb(14 165 233);
+  background: rgb(14 165 233);
+  color: white;
+  transform: translateY(-1px);
+}
+
+:global(.dark) .fingerprint-link-button {
+  border-color: rgb(56 189 248 / 0.42);
+  background: rgb(8 47 73 / 0.35);
+  color: rgb(125 211 252);
+}
+
 .fingerprint-strategy-card,
 .fingerprint-profile-card {
   padding: 1rem;
@@ -957,6 +1205,11 @@ onMounted(loadData)
 
   .fingerprint-guide-result {
     min-width: 0;
+  }
+
+  .fingerprint-command {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

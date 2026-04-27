@@ -6109,7 +6109,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：对齐 Claude Code 请求身份（指纹 + system cloaking + metadata.user_id）。
 	var fingerprint *Fingerprint
-	enableFP, enableMPT, enableCCH := true, false, false
+	enableFP, enableMPT, enableCCH := true, false, true
 	if s.settingService != nil {
 		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
@@ -9177,7 +9177,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// OAuth 账号：应用统一指纹和重写 userID（受设置开关控制）
-	ctEnableFP, ctEnableCCH := true, false
+	ctEnableFP, ctEnableCCH := true, true
 	if s.settingService != nil {
 		ctEnableFP, _, ctEnableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}

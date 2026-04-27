@@ -858,17 +858,20 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 				fingerprintUnification: true,
 				metadataPassthrough:    false,
-				cchSigning:             false,
+				cchSigning:             true,
 				expiresAt:              time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false, false}, nil
+			return gwfResult{true, false, true}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 			fp = v == "true"
 		}
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
-		cch := values[SettingKeyEnableCCHSigning] == "true"
+		cch := true
+		if v, ok := values[SettingKeyEnableCCHSigning]; ok && v != "" {
+			cch = v == "true"
+		}
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification: fp,
 			metadataPassthrough:    mp,
@@ -880,7 +883,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 	if r, ok := val.(gwfResult); ok {
 		return r.fp, r.mp, r.cch
 	}
-	return true, false, false // fail-open defaults
+	return true, false, true // fail-open defaults
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -1325,14 +1328,18 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"
 
-	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, cch_signing=false)
+	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, cch_signing=true)
 	if v, ok := settings[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 		result.EnableFingerprintUnification = v == "true"
 	} else {
 		result.EnableFingerprintUnification = true // default: enabled (current behavior)
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
-	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
+	if v, ok := settings[SettingKeyEnableCCHSigning]; ok && v != "" {
+		result.EnableCCHSigning = v == "true"
+	} else {
+		result.EnableCCHSigning = true
+	}
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

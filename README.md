@@ -552,6 +552,9 @@ export ANTHROPIC_BASE_URL="http://localhost:8080/antigravity"
 export ANTHROPIC_AUTH_TOKEN="sk-xxx"
 ```
 
+For Claude Code OAuth fingerprint stability, see the Chinese quick guide:
+[`docs/CLAUDE_CODE_FINGERPRINT_GUIDE.md`](docs/CLAUDE_CODE_FINGERPRINT_GUIDE.md).
+
 ### Hybrid Scheduling Mode
 
 Antigravity accounts support optional **hybrid scheduling**. When enabled, the general endpoints `/v1/messages` and `/v1beta/` will also route requests to Antigravity accounts.
