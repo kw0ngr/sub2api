@@ -458,6 +458,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/fingerprints',
+    name: 'AdminFingerprintStrategy',
+    component: () => import('@/views/admin/FingerprintStrategyView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Fingerprint Strategy',
+      titleKey: 'admin.fingerprintStrategy.title',
+      descriptionKey: 'admin.fingerprintStrategy.description'
+    }
+  },
+  {
     path: '/admin/redeem',
     name: 'AdminRedeem',
     component: () => import('@/views/admin/RedeemView.vue'),

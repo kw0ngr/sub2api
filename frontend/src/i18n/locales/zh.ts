@@ -354,6 +354,7 @@ export default {
     subscriptions: '订阅管理',
     accounts: '账号管理',
     proxies: 'IP管理',
+    clientFingerprints: '指纹策略',
     redeemCodes: '兑换码',
     ops: '运维监控',
     promoCodes: '优惠码',
@@ -1256,6 +1257,10 @@ export default {
 
   // Admin
   admin: {
+    fingerprintStrategy: {
+      title: '客户端 / 工具指纹策略',
+      description: '集中管理 Claude Code、Codex CLI、Cline 等客户端的转发指纹、版本门禁与 TLS 策略'
+    },
     // Dashboard
     dashboard: {
       title: '管理控制台',
@@ -3646,7 +3651,7 @@ export default {
       maxResultsTooltipExample: '例如填写 100，表示最多保存最近 100 次测试结果；第 101 次结果写入后，最早的一条会被清理。',
       maxResultsTooltipRange: '推荐填写范围：一般可填 20 到 200。只关注近期可用性时可填 20-50；需要回看较长时间的波动趋势时可填 100-200。',
       autoRecover: '自动恢复',
-      autoRecoverHelp: '测试成功后自动恢复异常状态的账号'
+      autoRecoverHelp: '测试成功会自动清除临时冷却/摘流状态；开启后还会将 error 账号恢复为 active。'
     },
 
     // Proxies Management

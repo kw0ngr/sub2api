@@ -613,6 +613,21 @@ const PriceTagIcon = {
     )
 }
 
+const FingerprintIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M12 3.75a5.25 5.25 0 00-5.25 5.25v1.5m10.5-1.5A5.25 5.25 0 0012 3.75m0 3v3.75m-3 1.5v1.5a3 3 0 006 0v-1.5m-8.25 3.75c.75 2.25 2.73 3.75 5.25 3.75s4.5-1.5 5.25-3.75M9 9.75v3.75a3 3 0 106 0V9.75'
+        })
+      ]
+    )
+}
+
 const ChevronDownIcon = {
   render: () =>
     h(
@@ -717,6 +732,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
+    { path: '/admin/fingerprints', label: t('nav.clientFingerprints'), icon: FingerprintIcon },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
     {

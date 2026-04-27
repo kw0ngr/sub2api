@@ -516,7 +516,7 @@ const newPlan = reactive({
   cron_expression: '' as string,
   max_results: '100' as string,
   enabled: true,
-  auto_recover: false
+  auto_recover: true
 })
 
 const resetNewPlan = () => {
@@ -524,7 +524,7 @@ const resetNewPlan = () => {
   newPlan.cron_expression = ''
   newPlan.max_results = '100'
   newPlan.enabled = true
-  newPlan.auto_recover = false
+  newPlan.auto_recover = true
 }
 
 // Load plans when dialog opens

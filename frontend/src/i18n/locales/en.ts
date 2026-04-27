@@ -354,6 +354,7 @@ export default {
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     proxies: 'Proxies',
+    clientFingerprints: 'Fingerprint Strategy',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',
     promoCodes: 'Promo Codes',
@@ -1252,6 +1253,10 @@ export default {
 
   // Admin
   admin: {
+    fingerprintStrategy: {
+      title: 'Client / Tool Fingerprint Strategy',
+      description: 'Centralize forwarding fingerprints, version gates, and TLS strategy for Claude Code, Codex CLI, Cline, and similar tools.'
+    },
     // Dashboard
     dashboard: {
       title: 'Admin Dashboard',
@@ -3553,7 +3558,7 @@ export default {
       maxResultsTooltipExample: 'For example, 100 means keeping at most the latest 100 test results. When the 101st result is saved, the oldest one is removed.',
       maxResultsTooltipRange: 'Recommended range: usually 20 to 200. Use 20-50 when you only care about recent health status, or 100-200 if you want a longer trend history.',
       autoRecover: 'Auto Recover',
-      autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test'
+      autoRecoverHelp: 'Successful tests always clear transient cooldown state; this also recovers accounts from error status.'
     },
 
     // Proxies

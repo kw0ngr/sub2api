@@ -66,8 +66,11 @@ defineExpose({ replayTour })
   --anti-paper: #ffffff;
   --anti-yellow: #ffeb3b;
   --anti-red: #ff0000;
-  --anti-blue: #0000ff;
+  --anti-blue: #1b00ff;
   --anti-green: #00ff00;
+  --anti-cyan: #00e5ff;
+  --anti-muted: #475569;
+  --anti-link: #1428ff;
   color: var(--anti-ink);
   background:
     radial-gradient(circle at 12% 18%, rgb(255 0 0 / 0.22) 0 8rem, transparent 8.2rem),
@@ -145,11 +148,126 @@ defineExpose({ replayTour })
   background-color: var(--anti-paper) !important;
 }
 
-.app-shell.app-shell-anti a:not(.dropdown-item) {
-  color: var(--anti-blue) !important;
+.app-shell.app-shell-anti a:not(.dropdown-item):not(.sidebar-link) {
+  color: var(--anti-link) !important;
   text-decoration: underline;
   text-decoration-thickness: 3px;
   text-underline-offset: 3px;
+}
+
+.app-shell.app-shell-anti .sidebar {
+  background:
+    linear-gradient(90deg, transparent calc(100% - 8px), var(--anti-ink) calc(100% - 8px)),
+    var(--anti-paper) !important;
+}
+
+.app-shell.app-shell-anti .sidebar-header {
+  border-bottom: 4px solid var(--anti-ink) !important;
+  background: linear-gradient(90deg, #ffffff 0%, #fff9b8 100%) !important;
+}
+
+.app-shell.app-shell-anti .sidebar-logo {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 50% !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .sidebar-brand-title {
+  color: var(--anti-ink) !important;
+  text-shadow: 2px 2px 0 var(--anti-cyan);
+}
+
+.app-shell.app-shell-anti .sidebar-brand button {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0 !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 3px 3px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  text-transform: uppercase;
+}
+
+.app-shell.app-shell-anti .sidebar-nav {
+  background:
+    repeating-linear-gradient(135deg, rgb(255 235 59 / 0.10) 0 10px, transparent 10px 22px),
+    transparent !important;
+}
+
+.app-shell.app-shell-anti .sidebar-section-title {
+  color: var(--anti-muted) !important;
+  letter-spacing: 0.08em;
+}
+
+.app-shell.app-shell-anti .sidebar-section-title-text {
+  background: var(--anti-paper);
+  color: var(--anti-muted) !important;
+}
+
+.app-shell.app-shell-anti .sidebar-link {
+  position: relative;
+  border: 3px solid transparent !important;
+  border-radius: 0.2rem !important;
+  color: var(--anti-ink) !important;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+  text-decoration: none !important;
+  text-transform: uppercase;
+}
+
+.app-shell.app-shell-anti .sidebar-link :is(svg, .sidebar-svg-icon) {
+  color: var(--anti-blue) !important;
+  filter: drop-shadow(2px 2px 0 rgb(255 235 59 / 0.92));
+}
+
+.app-shell.app-shell-anti .sidebar-link:hover {
+  border-color: var(--anti-ink) !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  transform: rotate(-0.9deg) translate(-1px, -1px);
+}
+
+.app-shell.app-shell-anti .sidebar-link-active {
+  border-color: var(--anti-ink) !important;
+  background:
+    linear-gradient(90deg, rgb(0 255 0 / 0.18), rgb(255 255 255 / 0.92) 55%),
+    var(--anti-paper) !important;
+  box-shadow: 5px 5px 0 var(--anti-red) !important;
+  color: var(--anti-ink) !important;
+  text-decoration: none !important;
+}
+
+.app-shell.app-shell-anti .sidebar-link-active :is(svg, .sidebar-svg-icon) {
+  color: var(--anti-red) !important;
+  filter: drop-shadow(2px 2px 0 var(--anti-yellow));
+}
+
+.app-shell.app-shell-anti .sidebar-link-active::after {
+  content: '!';
+  position: absolute;
+  right: 0.55rem;
+  top: 50%;
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  place-items: center;
+  border: 2px solid var(--anti-ink);
+  background: var(--anti-yellow);
+  color: var(--anti-ink);
+  font-size: 0.72rem;
+  line-height: 1;
+  transform: translateY(-50%) rotate(8deg);
+}
+
+.app-shell.app-shell-anti .sidebar-link-collapsed.sidebar-link-active::after {
+  right: 0.25rem;
+  top: 0.22rem;
+  transform: rotate(8deg);
+}
+
+.app-shell.app-shell-anti .sidebar > .mt-auto {
+  border-top: 4px solid var(--anti-ink) !important;
+  background: linear-gradient(90deg, #ffffff 0%, #efffff 100%) !important;
 }
 
 .app-shell.app-shell-anti table {
