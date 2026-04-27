@@ -449,272 +449,367 @@
             </div>
 
             <div
-              v-if="showUsageInsightsCard"
-              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
-              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
+              v-if="showCompactInsightSection"
+              class="dashboard-masonry-item dashboard-masonry-item-wide dashboard-insight-columns"
             >
-              <div
-                v-if="chartsLoading"
-                class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
-              >
-                <LoadingSpinner size="md" />
-              </div>
-              <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-                {{ t('admin.dashboard.usageInsights') }}
-              </h3>
-              <div v-if="usageInsights && hasUsageInsightsData" class="space-y-4">
-                <div>
-                  <div class="mb-2 flex items-center justify-between">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.tokenComposition') }}
-                    </p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ formatTokens(usageInsights.total_tokens) }}
-                    </p>
+              <div class="dashboard-insight-stack">
+                <div
+                  v-if="showUsageInsightsCard"
+                  class="card dashboard-analytics-card relative overflow-hidden p-4"
+                >
+                  <div
+                    v-if="chartsLoading"
+                    class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+                  >
+                    <LoadingSpinner size="md" />
                   </div>
-                  <div class="flex h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                  <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t('admin.dashboard.usageInsights') }}
+                  </h3>
+                  <div v-if="usageInsights && hasUsageInsightsData" class="space-y-4">
+                    <div>
+                      <div class="mb-2 flex items-center justify-between">
+                        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.tokenComposition') }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ formatTokens(usageInsights.total_tokens) }}
+                        </p>
+                      </div>
+                      <div class="flex h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                        <div
+                          v-for="segment in tokenCompositionSegments"
+                          :key="segment.key"
+                          class="h-full"
+                          :class="segment.class"
+                          :style="{ width: `${segment.width}%` }"
+                          :title="`${segment.label}: ${formatTokens(segment.tokens)} (${formatPercent(segment.share)})`"
+                        />
+                      </div>
+                      <div class="mt-3 grid grid-cols-2 gap-2">
+                        <div
+                          v-for="segment in tokenCompositionSegments"
+                          :key="`legend-${segment.key}`"
+                          class="rounded-lg border border-gray-100 p-2 dark:border-gray-700"
+                        >
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                              <span class="h-2 w-2 rounded-full" :class="segment.class" />
+                              {{ segment.label }}
+                            </span>
+                            <span class="text-xs font-semibold text-gray-900 dark:text-white">
+                              {{ formatPercent(segment.share) }}
+                            </span>
+                          </div>
+                          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {{ formatTokens(segment.tokens) }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div
-                      v-for="segment in tokenCompositionSegments"
-                      :key="segment.key"
-                      class="h-full"
-                      :class="segment.class"
-                      :style="{ width: `${segment.width}%` }"
-                      :title="`${segment.label}: ${formatTokens(segment.tokens)} (${formatPercent(segment.share)})`"
-                    />
-                  </div>
-                  <div class="mt-3 grid grid-cols-2 gap-2">
-                    <div
-                      v-for="segment in tokenCompositionSegments"
-                      :key="`legend-${segment.key}`"
-                      class="rounded-lg border border-gray-100 p-2 dark:border-gray-700"
+                      v-if="hasRankingSpendData"
+                      class="dashboard-cost-summary rounded-2xl border border-gray-100 p-3 dark:border-gray-700"
                     >
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                          <span class="h-2 w-2 rounded-full" :class="segment.class" />
-                          {{ segment.label }}
-                        </span>
-                        <span class="text-xs font-semibold text-gray-900 dark:text-white">
-                          {{ formatPercent(segment.share) }}
+                      <div class="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {{ t('admin.dashboard.nonAdminSpendSummary') }}
+                          </p>
+                          <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                            {{ formatCurrency(rankingTotalActualCost) }}
+                          </p>
+                        </div>
+                        <span class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                          {{ formatNumber(activeUsageUserCount) }} {{ t('admin.dashboard.member') }}
                         </span>
                       </div>
-                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {{ formatTokens(segment.tokens) }}
-                      </p>
+                      <div class="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerRequest') }}</p>
+                          <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerRequest) }}</p>
+                        </div>
+                        <div>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerMember') }}</p>
+                          <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerMember) }}</p>
+                        </div>
+                        <div>
+                          <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.topMemberShare') }}</p>
+                          <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatPercent(topUserCostShare) }}</p>
+                        </div>
+                      </div>
                     </div>
+
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.topModel') }}
+                        </p>
+                        <p
+                          class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                          :title="usageInsights.top_model"
+                        >
+                          {{ usageInsights.top_model || '-' }}
+                        </p>
+                        <p class="text-xs text-blue-600 dark:text-blue-400">
+                          {{ formatPercent(usageInsights.top_model_share) }} /
+                          {{ formatTokens(usageInsights.top_model_tokens) }}
+                        </p>
+                      </div>
+                      <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.topMember') }}
+                        </p>
+                        <p
+                          class="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                          :title="topUserDisplayName"
+                        >
+                          {{ topUserDisplayName }}
+                        </p>
+                        <p class="text-xs text-cyan-600 dark:text-cyan-400">
+                          {{ formatPercent(topUserCostShare) }} /
+                          {{ formatCurrency(topUser?.actual_cost || 0) }}
+                        </p>
+                      </div>
+                      <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.variety') }}
+                        </p>
+                        <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                          {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
+                          {{ activeUsageUserCount }} {{ t('admin.dashboard.member') }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    v-else-if="!chartsLoading"
+                    class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                  >
+                    {{ t('admin.dashboard.noDataAvailable') }}
                   </div>
                 </div>
 
                 <div
-                  v-if="hasRankingSpendData"
-                  class="dashboard-cost-summary rounded-2xl border border-gray-100 p-3 dark:border-gray-700"
+                  v-if="showGatewayBriefCard"
+                  class="card dashboard-analytics-card dashboard-gateway-brief-card relative overflow-hidden p-4"
                 >
-                  <div class="mb-3 flex items-center justify-between gap-3">
+                  <div class="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        {{ t('admin.dashboard.nonAdminSpendSummary') }}
-                      </p>
-                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                        {{ formatCurrency(rankingTotalActualCost) }}
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        {{ t('admin.dashboard.gatewayBrief') }}
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.gatewayBriefHint') }}
                       </p>
                     </div>
-                    <span class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
-                      {{ formatNumber(activeUsageUserCount) }} {{ t('admin.dashboard.member') }}
+                    <span
+                      class="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold"
+                      :class="gatewayBriefStatusClass"
+                    >
+                      {{ gatewayBriefStatusLabel }}
                     </span>
                   </div>
-                  <div class="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerRequest') }}</p>
-                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerRequest) }}</p>
-                    </div>
-                    <div>
-                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgSpendPerMember') }}</p>
-                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatCurrency(avgSpendPerMember) }}</p>
-                    </div>
-                    <div>
-                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.topMemberShare') }}</p>
-                      <p class="mt-1 font-semibold text-gray-900 dark:text-white">{{ formatPercent(topUserCostShare) }}</p>
-                    </div>
-                  </div>
-                </div>
 
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.topModel') }}
-                    </p>
-                    <p
-                      class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                      :title="usageInsights.top_model"
+                  <div class="grid grid-cols-2 gap-2">
+                    <div
+                      v-for="metric in gatewayBriefMetrics"
+                      :key="metric.key"
+                      class="dashboard-brief-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700"
                     >
-                      {{ usageInsights.top_model || '-' }}
-                    </p>
-                    <p class="text-xs text-blue-600 dark:text-blue-400">
-                      {{ formatPercent(usageInsights.top_model_share) }} /
-                      {{ formatTokens(usageInsights.top_model_tokens) }}
-                    </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
+                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ metric.value }}</p>
+                      <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" :title="metric.detail">
+                        {{ metric.detail }}
+                      </p>
+                    </div>
                   </div>
-                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.topMember') }}
-                    </p>
-                    <p
-                      class="truncate text-sm font-semibold text-gray-900 dark:text-white"
-                      :title="topUserDisplayName"
+
+                  <div class="mt-4 space-y-2">
+                    <button
+                      v-for="alert in gatewayBriefAlerts"
+                      :key="alert.title"
+                      type="button"
+                      class="w-full rounded-2xl border px-3 py-2 text-left text-xs"
+                      :class="gatewayBriefAlertClass(alert.tone)"
+                      @click="goToAdminPath(alert.path)"
                     >
-                      {{ topUserDisplayName }}
-                    </p>
-                    <p class="text-xs text-cyan-600 dark:text-cyan-400">
-                      {{ formatPercent(topUserCostShare) }} /
-                      {{ formatCurrency(topUser?.actual_cost || 0) }}
-                    </p>
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="font-semibold">{{ alert.title }}</p>
+                          <p class="mt-1 leading-5 opacity-80">{{ alert.description }}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full bg-white/55 px-2 py-0.5 text-[10px] font-semibold dark:bg-black/20">
+                          {{ alert.actionLabel }}
+                        </span>
+                      </div>
+                    </button>
                   </div>
-                  <div class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.variety') }}
-                    </p>
-                    <p class="text-sm font-semibold text-gray-900 dark:text-white">
-                      {{ usageInsights.model_count }} {{ t('admin.dashboard.model') }} /
-                      {{ activeUsageUserCount }} {{ t('admin.dashboard.member') }}
-                    </p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ formatNumber(usageInsights.requests) }} {{ t('admin.dashboard.requests') }}
-                    </p>
+
+                  <div class="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                      @click="goToAdminPath('/admin/accounts')"
+                    >
+                      {{ t('admin.dashboard.gatewayBriefAccounts') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                      @click="goToAdminPath('/admin/channels/monitor')"
+                    >
+                      {{ t('admin.dashboard.gatewayBriefMonitor') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                      @click="goToAdminPath('/admin/usage')"
+                    >
+                      {{ t('admin.dashboard.gatewayBriefUsage') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                      @click="goToAdminPath('/admin/fingerprints')"
+                    >
+                      {{ t('admin.dashboard.gatewayBriefFingerprints') }}
+                    </button>
                   </div>
                 </div>
               </div>
-              <div
-                v-else-if="!chartsLoading"
-                class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-              >
-                {{ t('admin.dashboard.noDataAvailable') }}
-              </div>
-            </div>
 
-            <div
-              v-if="showMemberPulseCard"
-              class="card dashboard-analytics-card dashboard-masonry-item relative overflow-hidden p-4"
-              :class="{ 'dashboard-masonry-item-wide': compactInsightCardCount === 1 }"
-            >
-              <div
-                v-if="rankingLoading"
-                class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
-              >
-                <LoadingSpinner size="md" />
-              </div>
-              <div class="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ t('admin.dashboard.memberPulse') }}
-                  </h3>
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.memberPulseHint') }}
-                  </p>
-                </div>
-                <span class="shrink-0 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
-                  {{ t('admin.dashboard.nonAdminOnly') }}
-                </span>
-              </div>
-
-              <div v-if="memberPulseItems.length" class="space-y-4">
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.topThreeSpendShare') }}
-                    </p>
-                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatPercent(topThreeCostShare) }}
-                    </p>
-                  </div>
-                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.avgSpendPerRequest') }}
-                    </p>
-                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatCurrency(avgSpendPerRequest) }}
-                    </p>
-                  </div>
-                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.avgSpendPerMember') }}
-                    </p>
-                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatCurrency(avgSpendPerMember) }}
-                    </p>
-                  </div>
-                  <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.longTailMembers') }}
-                    </p>
-                    <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
-                      {{ formatNumber(longTailMemberCount) }}
-                    </p>
-                  </div>
-                </div>
-
-                <div class="rounded-2xl border border-gray-100 p-3 dark:border-gray-700">
-                  <div class="mb-3 flex items-center justify-between">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {{ t('admin.dashboard.nonAdminLeaderboard') }}
-                    </p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      Top {{ memberPulseItems.length }}
-                    </p>
-                  </div>
-                  <button
-                    v-for="(item, index) in memberPulseItems"
-                    :key="`pulse-${item.user_id}`"
-                    type="button"
-                    class="w-full rounded-xl px-2 py-2 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                    @click="goToUserUsage(item)"
+              <div class="dashboard-insight-stack">
+                <div
+                  v-if="showMemberPulseCard"
+                  class="card dashboard-analytics-card relative overflow-hidden p-4"
+                >
+                  <div
+                    v-if="rankingLoading"
+                    class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
                   >
-                    <div class="flex items-center gap-3">
-                      <span
-                        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                        :class="memberPulseAvatarClass(index)"
-                      >
-                        {{ index + 1 }}
-                      </span>
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-center justify-between gap-2">
-                          <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="userDisplayName(item)">
-                            {{ userDisplayName(item) }}
-                          </p>
-                          <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                            {{ formatPercent(userCostShare(item.actual_cost)) }}
-                          </p>
-                        </div>
-                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {{ formatCurrency(item.actual_cost) }} · {{ formatNumber(item.requests) }} {{ t('admin.dashboard.requests') }}
+                    <LoadingSpinner size="md" />
+                  </div>
+                  <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        {{ t('admin.dashboard.memberPulse') }}
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.memberPulseHint') }}
+                      </p>
+                    </div>
+                    <span class="shrink-0 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-600 dark:text-cyan-300">
+                      {{ t('admin.dashboard.nonAdminOnly') }}
+                    </span>
+                  </div>
+
+                  <div v-if="memberPulseItems.length" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.topThreeSpendShare') }}
                         </p>
-                        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                          <div
-                            class="h-full rounded-full"
-                            :class="userBarClass(index)"
-                            :style="{ width: `${userCostBarWidth(item.actual_cost)}%` }"
-                          />
-                        </div>
+                        <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                          {{ formatPercent(topThreeCostShare) }}
+                        </p>
+                      </div>
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.avgSpendPerRequest') }}
+                        </p>
+                        <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                          {{ formatCurrency(avgSpendPerRequest) }}
+                        </p>
+                      </div>
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.avgSpendPerMember') }}
+                        </p>
+                        <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                          {{ formatCurrency(avgSpendPerMember) }}
+                        </p>
+                      </div>
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.longTailMembers') }}
+                        </p>
+                        <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                          {{ formatNumber(longTailMemberCount) }}
+                        </p>
                       </div>
                     </div>
-                  </button>
-                </div>
 
-                <div
-                  class="rounded-2xl border px-4 py-3 text-xs"
-                  :class="memberPulseAdviceClass"
-                >
-                  <p class="font-semibold">
-                    {{ memberPulseAdviceTitle }}
-                  </p>
-                  <p class="mt-1 opacity-80">
-                    {{ memberPulseAdviceBody }}
-                  </p>
+                    <div class="rounded-2xl border border-gray-100 p-3 dark:border-gray-700">
+                      <div class="mb-3 flex items-center justify-between">
+                        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          {{ t('admin.dashboard.nonAdminLeaderboard') }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          Top {{ memberPulseItems.length }}
+                        </p>
+                      </div>
+                      <button
+                        v-for="(item, index) in memberPulseItems"
+                        :key="`pulse-${item.user_id}`"
+                        type="button"
+                        class="w-full rounded-xl px-2 py-2 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        @click="goToUserUsage(item)"
+                      >
+                        <div class="flex items-center gap-3">
+                          <span
+                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                            :class="memberPulseAvatarClass(index)"
+                          >
+                            {{ index + 1 }}
+                          </span>
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center justify-between gap-2">
+                              <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="userDisplayName(item)">
+                                {{ userDisplayName(item) }}
+                              </p>
+                              <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                                {{ formatPercent(userCostShare(item.actual_cost)) }}
+                              </p>
+                            </div>
+                            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                              {{ formatCurrency(item.actual_cost) }} · {{ formatNumber(item.requests) }} {{ t('admin.dashboard.requests') }}
+                            </p>
+                            <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                              <div
+                                class="h-full rounded-full"
+                                :class="userBarClass(index)"
+                                :style="{ width: `${userCostBarWidth(item.actual_cost)}%` }"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+
+                    <div
+                      class="rounded-2xl border px-4 py-3 text-xs"
+                      :class="memberPulseAdviceClass"
+                    >
+                      <p class="font-semibold">
+                        {{ memberPulseAdviceTitle }}
+                      </p>
+                      <p class="mt-1 opacity-80">
+                        {{ memberPulseAdviceBody }}
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    v-else-if="!rankingLoading"
+                    class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                  >
+                    {{ t('admin.dashboard.noDataAvailable') }}
+                  </div>
                 </div>
-              </div>
-              <div
-                v-else-if="!rankingLoading"
-                class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-              >
-                {{ t('admin.dashboard.noDataAvailable') }}
               </div>
             </div>
 
@@ -1386,6 +1481,10 @@ const goToMemberUsage = (userID: number) => {
   })
 }
 
+const goToAdminPath = (path: string) => {
+  void router.push({ path })
+}
+
 const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
 
 const shareBarWidth = (share: number | null | undefined): number => {
@@ -1465,6 +1564,145 @@ const avgSpendPerRequest = computed(() => {
 const avgSpendPerMember = computed(() => {
   if (activeUsageUserCount.value <= 0) return 0
   return rankingTotalActualCost.value / activeUsageUserCount.value
+})
+
+type GatewayBriefMetric = {
+  key: string
+  label: string
+  value: string
+  detail: string
+}
+
+type GatewayBriefAlert = {
+  title: string
+  description: string
+  actionLabel: string
+  path: string
+  tone: 'blue' | 'emerald' | 'amber' | 'red'
+}
+
+const gatewayAccountIssueCount = computed(() => {
+  const current = stats.value
+  if (!current) return 0
+  return (current.error_accounts || 0) + (current.ratelimit_accounts || 0) + (current.overload_accounts || 0)
+})
+
+const gatewayCacheShare = computed(() => {
+  return usageInsights.value?.cache_share || teamInsights.value?.cache_share || 0
+})
+
+const gatewayCacheTokens = computed(() => {
+  return usageInsights.value?.cache_tokens || teamInsights.value?.cache_tokens || 0
+})
+
+const gatewayRequestCount = computed(() => {
+  return rankingTotalRequests.value || usageInsights.value?.requests || stats.value?.today_requests || 0
+})
+
+const gatewayBriefStatusLabel = computed(() => {
+  if (gatewayAccountIssueCount.value > 0) return t('admin.dashboard.gatewayBriefNeedsAttention')
+  if (topUserCostShare.value >= 0.6) return t('admin.dashboard.gatewayBriefWatch')
+  return t('admin.dashboard.gatewayBriefHealthy')
+})
+
+const gatewayBriefStatusClass = computed(() => {
+  if (gatewayAccountIssueCount.value > 0) {
+    return 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+  }
+  if (topUserCostShare.value >= 0.6) {
+    return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+  }
+  return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+})
+
+const gatewayBriefMetrics = computed<GatewayBriefMetric[]>(() => {
+  const current = stats.value
+  const accountTotal = current?.total_accounts || 0
+  const normalAccounts = current?.normal_accounts || 0
+  const requestCount = gatewayRequestCount.value
+  return [
+    {
+      key: 'spend',
+      label: t('admin.dashboard.gatewayBriefSpend'),
+      value: formatCurrency(rankingTotalActualCost.value || current?.today_actual_cost || 0),
+      detail: `${formatCurrency(avgSpendPerRequest.value)} / ${t('admin.dashboard.requestsShort')}`
+    },
+    {
+      key: 'health',
+      label: t('admin.dashboard.gatewayBriefHealth'),
+      value: gatewayAccountIssueCount.value > 0
+        ? `${gatewayAccountIssueCount.value} ${t('common.error')}`
+        : t('admin.dashboard.gatewayBriefHealthOk'),
+      detail: `${normalAccounts} / ${accountTotal} ${t('common.active')}`
+    },
+    {
+      key: 'cache',
+      label: t('admin.dashboard.gatewayBriefCache'),
+      value: formatPercent(gatewayCacheShare.value),
+      detail: formatTokens(gatewayCacheTokens.value)
+    },
+    {
+      key: 'traffic',
+      label: t('admin.dashboard.gatewayBriefTraffic'),
+      value: formatNumber(requestCount),
+      detail: `${formatNumber(activeUsageUserCount.value)} ${t('admin.dashboard.member')}`
+    }
+  ]
+})
+
+const gatewayBriefAlerts = computed<GatewayBriefAlert[]>(() => {
+  const alerts: GatewayBriefAlert[] = []
+  const current = stats.value
+
+  if (gatewayAccountIssueCount.value > 0 && current) {
+    alerts.push({
+      title: t('admin.dashboard.gatewayAlertAccountIssues'),
+      description: t('admin.dashboard.gatewayAlertAccountIssuesDesc', {
+        count: gatewayAccountIssueCount.value,
+        total: current.total_accounts || 0
+      }),
+      actionLabel: t('admin.dashboard.gatewayBriefAccounts'),
+      path: '/admin/accounts',
+      tone: 'amber'
+    })
+  }
+
+  if (topUserCostShare.value >= 0.6 && topUser.value) {
+    alerts.push({
+      title: t('admin.dashboard.gatewayAlertSpendConcentration'),
+      description: t('admin.dashboard.gatewayAlertSpendConcentrationDesc', {
+        member: topUserDisplayName.value,
+        share: formatPercent(topUserCostShare.value)
+      }),
+      actionLabel: t('admin.dashboard.gatewayBriefUsage'),
+      path: '/admin/usage',
+      tone: 'blue'
+    })
+  }
+
+  if (gatewayCacheShare.value > 0 && gatewayCacheShare.value < 0.25) {
+    alerts.push({
+      title: t('admin.dashboard.gatewayAlertLowCache'),
+      description: t('admin.dashboard.gatewayAlertLowCacheDesc', {
+        share: formatPercent(gatewayCacheShare.value)
+      }),
+      actionLabel: t('admin.dashboard.gatewayBriefUsage'),
+      path: '/admin/usage',
+      tone: 'amber'
+    })
+  }
+
+  if (!alerts.length) {
+    alerts.push({
+      title: t('admin.dashboard.gatewayAlertHealthy'),
+      description: t('admin.dashboard.gatewayAlertHealthyDesc'),
+      actionLabel: t('admin.dashboard.gatewayBriefMonitor'),
+      path: '/admin/channels/monitor',
+      tone: 'emerald'
+    })
+  }
+
+  return alerts.slice(0, 3)
 })
 
 const longTailMemberCount = computed(() => {
@@ -1606,6 +1844,19 @@ const teamSignalToneClass = (tone: TeamSignalTip['tone']): string => {
       return 'border-violet-400/30 bg-violet-500/10 text-violet-700 dark:text-violet-300'
     default:
       return 'border-blue-400/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+  }
+}
+
+const gatewayBriefAlertClass = (tone: GatewayBriefAlert['tone']): string => {
+  switch (tone) {
+    case 'red':
+      return 'border-red-400/30 bg-red-500/10 text-red-700 hover:border-red-400/50 dark:text-red-300'
+    case 'amber':
+      return 'border-amber-400/30 bg-amber-500/10 text-amber-700 hover:border-amber-400/50 dark:text-amber-300'
+    case 'emerald':
+      return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 hover:border-emerald-400/50 dark:text-emerald-300'
+    default:
+      return 'border-blue-400/30 bg-blue-500/10 text-blue-700 hover:border-blue-400/50 dark:text-blue-300'
   }
 }
 
@@ -1870,18 +2121,21 @@ const showUserContributionCard = computed(() => rankingLoading.value || rankingE
 const showUsageInsightsCard = computed(() => chartsLoading.value || hasUsageInsightsData.value)
 const showMemberPulseCard = computed(() => rankingLoading.value || hasMemberPulseData.value)
 const showTeamUsageProfileCard = computed(() => chartsLoading.value || hasTeamInsightsData.value)
+const showGatewayBriefCard = computed(() => Boolean(stats.value) || hasRankingData.value || hasUsageInsightsData.value)
+const showCompactInsightSection = computed(() => (
+  showUsageInsightsCard.value ||
+  showGatewayBriefCard.value ||
+  showMemberPulseCard.value
+))
 const chartGridClass = computed(() => {
   return showModelDistributionCard.value && showTrendCard.value ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
 })
 const insightCardCount = computed(() => [
   showUserContributionCard.value,
   showUsageInsightsCard.value,
+  showGatewayBriefCard.value,
   showMemberPulseCard.value,
   showTeamUsageProfileCard.value
-].filter(Boolean).length)
-const compactInsightCardCount = computed(() => [
-  showUsageInsightsCard.value,
-  showMemberPulseCard.value
 ].filter(Boolean).length)
 const showInsightCards = computed(() => {
   return insightCardCount.value > 0
@@ -2507,6 +2761,20 @@ onMounted(() => {
   grid-column: 1 / -1;
 }
 
+.dashboard-insight-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.dashboard-insight-stack {
+  display: grid;
+  min-width: 0;
+  gap: 1.5rem;
+  align-content: start;
+}
+
 .dashboard-team-signal-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2534,6 +2802,24 @@ onMounted(() => {
   background:
     radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.10), transparent 36%),
     linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.66), rgb(var(--dashboard-surface-soft) / 0.48));
+}
+
+.dashboard-gateway-brief-card {
+  min-height: 100%;
+}
+
+.dashboard-gateway-brief-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgb(14 165 233 / 0.58), rgb(16 185 129 / 0.18), transparent);
+}
+
+.dashboard-brief-metric,
+.dashboard-brief-action {
+  min-width: 0;
 }
 
 .admin-dashboard-anti {
@@ -2726,6 +3012,25 @@ onMounted(() => {
   box-shadow: 8px 8px 0 #ff0000;
 }
 
+.admin-dashboard-anti .dashboard-gateway-brief-card {
+  background:
+    repeating-linear-gradient(90deg, rgb(255 0 0 / 0.18) 0 12px, transparent 12px 24px),
+    #fff;
+}
+
+.admin-dashboard-anti .dashboard-gateway-brief-card::before {
+  height: 8px;
+  background: repeating-linear-gradient(90deg, #0000ff 0 16px, #00ff00 16px 32px, #ff0000 32px 48px);
+}
+
+.admin-dashboard-anti .dashboard-brief-action {
+  border: 4px solid #050505;
+  border-radius: 0;
+  background: #ffeb3b;
+  box-shadow: 4px 4px 0 #050505;
+  color: #050505 !important;
+}
+
 .admin-dashboard-anti .dashboard-masonry {
   gap: 2rem;
 }
@@ -2814,6 +3119,10 @@ onMounted(() => {
 
   .dashboard-masonry--single {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-insight-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .dashboard-team-signal-grid {

@@ -352,6 +352,8 @@ describe('admin DashboardView', () => {
     expect(wrapper.text()).toContain('admin.dashboard.topMember')
     expect(wrapper.text()).toContain('admin.dashboard.memberPulse')
     expect(wrapper.text()).toContain('admin.dashboard.nonAdminOnly')
+    expect(wrapper.text()).toContain('admin.dashboard.gatewayBrief')
+    expect(wrapper.text()).toContain('admin.dashboard.gatewayBriefAccounts')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).not.toContain('admin.dashboard.projectDistribution')
     expect(wrapper.text()).toContain('admin.dashboard.tokenComposition')
@@ -367,7 +369,7 @@ describe('admin DashboardView', () => {
     expect(wrapper.find('[data-testid="admin-hourly-activity-cell-0-9"]').attributes('title')).toContain('15')
   })
 
-  it('keeps the tall member contribution card out of the two-column compact row', async () => {
+  it('keeps the tall member contribution card out of the nested compact insight row', async () => {
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
@@ -388,10 +390,11 @@ describe('admin DashboardView', () => {
     const insightItems = wrapper.findAll('.dashboard-masonry .dashboard-masonry-item')
     expect(insightItems[0].text()).toContain('admin.dashboard.userDistribution')
     expect(insightItems[0].classes()).toContain('dashboard-masonry-item-wide')
+    expect(insightItems[1].classes()).toContain('dashboard-insight-columns')
+    expect(insightItems[1].classes()).toContain('dashboard-masonry-item-wide')
     expect(insightItems[1].text()).toContain('admin.dashboard.usageInsights')
-    expect(insightItems[1].classes()).not.toContain('dashboard-masonry-item-wide')
-    expect(insightItems[2].text()).toContain('admin.dashboard.memberPulse')
-    expect(insightItems[2].classes()).not.toContain('dashboard-masonry-item-wide')
+    expect(insightItems[1].text()).toContain('admin.dashboard.gatewayBrief')
+    expect(insightItems[1].text()).toContain('admin.dashboard.memberPulse')
   })
 
   it('keeps the dashboard visual polish hooks on the existing layout', async () => {
