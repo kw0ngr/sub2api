@@ -119,6 +119,7 @@ const mountUsageView = () => mount(UsageView, {
 })
 
 const usageLog = (overrides: Record<string, unknown> = {}) => ({
+  id: 1,
   request_id: 'req-user-1',
   actual_cost: 0.092883,
   total_cost: 0.092883,
@@ -233,6 +234,8 @@ describe('user UsageView tooltip', () => {
     expect(wrapper.findAll('[data-testid="usage-row"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('claude-sonnet-4-6')
     expect(wrapper.text()).toContain('personal-key')
+    expect(wrapper.text()).toContain('近期调用')
+    expect(wrapper.text()).toContain('调用质量')
     expect(wrapper.find('[data-testid="usage-pagination"]').exists()).toBe(true)
   })
 
@@ -404,6 +407,8 @@ describe('user UsageView tooltip', () => {
     expect(text).not.toContain('模型使用矩阵')
     expect(text).not.toContain('缓存效率')
     expect(text).not.toContain('个人使用洞察')
+    expect(text).not.toContain('近期调用')
+    expect(text).not.toContain('调用质量')
   })
 
   it('renders self-service insight cards when data exists', async () => {
@@ -487,6 +492,7 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('模型使用矩阵')
     expect(text).toContain('缓存效率')
     expect(text).toContain('个人使用洞察')
+    expect(text).toContain('调用质量')
     expect(text).toContain('主要模型')
     expect(text).toContain('主要工具')
     expect(text).toContain('缓存仍可优化')

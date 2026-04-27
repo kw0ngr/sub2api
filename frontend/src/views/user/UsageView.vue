@@ -188,6 +188,77 @@
             </div>
             </div>
 
+            <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4 xl:col-span-1">
+            <div
+              v-if="loading"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
+            >
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+            <div class="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">调用质量</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  从当前页请求估算延迟、首 Token 和单次成本。
+                </p>
+              </div>
+              <span
+                class="self-insight-pill rounded-full border px-2 py-1 text-[11px] font-medium"
+                :class="selfQualityStatusClass"
+              >
+                {{ selfQualityStatusLabel }}
+              </span>
+            </div>
+            <div v-if="selfQualityMetrics.length" class="space-y-3">
+              <div class="grid grid-cols-2 gap-2">
+                <div
+                  v-for="metric in selfQualityMetrics"
+                  :key="metric.label"
+                  class="self-insight-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+                >
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
+                  <p class="mt-1 text-base font-bold text-gray-900 dark:text-white">{{ metric.value }}</p>
+                  <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" :title="metric.detail">
+                    {{ metric.detail }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="topCostModel" class="self-quality-row rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">当前页最高成本模型</p>
+                    <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white" :title="topCostModel.model">
+                      {{ topCostModel.model }}
+                    </p>
+                  </div>
+                  <p class="shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                    {{ formatCurrency(topCostModel.cost) }}
+                  </p>
+                </div>
+                <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                  <div
+                    class="h-full rounded-full bg-emerald-500"
+                    :style="{ width: `${topCostModelShareWidth}%` }"
+                  />
+                </div>
+              </div>
+
+              <div
+                v-if="selfSlowCallCount > 0"
+                class="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+              >
+                <p class="font-semibold">发现慢请求</p>
+                <p class="mt-1 opacity-80">
+                  当前页有 {{ selfSlowCallCount }} 次请求超过 10s，建议查看 Trace 或切换上游。
+                </p>
+              </div>
+            </div>
+            <div v-else-if="!loading" class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无质量数据
+            </div>
+            </div>
+
             <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
             <div
               v-if="selfInsightsLoading"
@@ -987,6 +1058,13 @@ const formatTokens = (value: number): string => {
   return value.toLocaleString()
 }
 
+const formatCurrency = (value: number | null | undefined): string => {
+  const safeValue = Number.isFinite(value) ? Number(value) : 0
+  if (safeValue >= 1) return `$${safeValue.toFixed(2)}`
+  if (safeValue >= 0.01) return `$${safeValue.toFixed(3)}`
+  return `$${safeValue.toFixed(5)}`
+}
+
 const formatPercent = (value: number | null | undefined): string => `${((value || 0) * 100).toFixed(1)}%`
 
 const clientShareWidth = (share: number | null | undefined): number => {
@@ -1023,8 +1101,82 @@ const topSelfModel = computed(() => selfModelItems.value[0] || null)
 const topSelfClient = computed(() => selfClientItems.value[0] || null)
 const hasSelfProfileData = computed(() => (selfInsights.value?.total_tokens || 0) > 0)
 const recentUsageLogs = computed(() => usageLogs.value.slice(0, 6))
+const visibleUsageTotalCost = computed(() => usageLogs.value.reduce((sum, log) => sum + (log.actual_cost || 0), 0))
+const visibleUsageTotalTokens = computed(() => usageLogs.value.reduce((sum, log) => sum + usageLogTotalTokens(log), 0))
+const visibleAvgDurationMs = computed(() => {
+  if (!usageLogs.value.length) return usageStats.value?.average_duration_ms || 0
+  return usageLogs.value.reduce((sum, log) => sum + (log.duration_ms || 0), 0) / usageLogs.value.length
+})
+const visibleAvgFirstTokenMs = computed(() => {
+  const values = usageLogs.value
+    .map((log) => log.first_token_ms)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (!values.length) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+})
+const selfSlowCallCount = computed(() => usageLogs.value.filter((log) => (log.duration_ms || 0) > 10_000).length)
+const visibleModelCount = computed(() => new Set(usageLogs.value.map((log) => log.model).filter(Boolean)).size)
+const topCostModel = computed(() => {
+  const costs = new Map<string, number>()
+  for (const log of usageLogs.value) {
+    const model = log.model || 'Unknown'
+    costs.set(model, (costs.get(model) || 0) + (log.actual_cost || 0))
+  }
+  const [model, cost] = Array.from(costs.entries()).sort((a, b) => b[1] - a[1])[0] || []
+  return model ? { model, cost } : null
+})
+const topCostModelShareWidth = computed(() => {
+  if (!topCostModel.value || visibleUsageTotalCost.value <= 0) return 0
+  return Math.max(4, Math.round((topCostModel.value.cost / visibleUsageTotalCost.value) * 100))
+})
+const selfAvgCostPerRequest = computed(() => {
+  const totalRequests = usageStats.value?.total_requests || usageLogs.value.length
+  const totalCost = usageStats.value?.total_actual_cost || visibleUsageTotalCost.value
+  if (!totalRequests) return 0
+  return totalCost / totalRequests
+})
+const selfQualityStatusLabel = computed(() => {
+  if (selfSlowCallCount.value > 0 || visibleAvgDurationMs.value > 10_000) return '需关注'
+  if (visibleAvgDurationMs.value > 5000) return '偏慢'
+  return '良好'
+})
+const selfQualityStatusClass = computed(() => {
+  if (selfSlowCallCount.value > 0 || visibleAvgDurationMs.value > 10_000) {
+    return 'border-amber-400/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+  }
+  if (visibleAvgDurationMs.value > 5000) {
+    return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+  }
+  return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+})
+const selfQualityMetrics = computed(() => {
+  if (!usageLogs.value.length && !(usageStats.value?.total_requests || 0)) return []
+  return [
+    {
+      label: '单次成本',
+      value: formatCurrency(selfAvgCostPerRequest.value),
+      detail: `${formatCurrency(visibleUsageTotalCost.value)} / 当前页`
+    },
+    {
+      label: '平均耗时',
+      value: formatDuration(visibleAvgDurationMs.value),
+      detail: selfSlowCallCount.value > 0 ? `${selfSlowCallCount.value} 慢请求` : '当前页'
+    },
+    {
+      label: '首 Token',
+      value: visibleAvgFirstTokenMs.value > 0 ? formatDuration(visibleAvgFirstTokenMs.value) : '-',
+      detail: '可见流式记录均值'
+    },
+    {
+      label: '模型数',
+      value: visibleModelCount.value.toLocaleString(),
+      detail: `${formatTokens(visibleUsageTotalTokens.value)} Token`
+    }
+  ]
+})
 const showSelfProfileCard = computed(() => selfInsightsLoading.value || hasSelfProfileData.value)
 const showSelfRecentCallsCard = computed(() => loading.value || recentUsageLogs.value.length > 0)
+const showSelfQualityCard = computed(() => loading.value || selfQualityMetrics.value.length > 0)
 const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClientItems.value.length > 0)
 const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
 const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
@@ -1033,6 +1185,7 @@ const showSelfInsightArea = computed(
   () =>
     showSelfProfileCard.value ||
     showSelfRecentCallsCard.value ||
+    showSelfQualityCard.value ||
     showSelfClientCard.value ||
     showSelfSessionCard.value ||
     showSelfModelCard.value ||
@@ -1595,6 +1748,7 @@ onMounted(() => {
 .self-insight-focus,
 .self-session-row,
 .self-recent-row,
+.self-quality-row,
 .self-model-row,
 .self-cache-row {
   background: rgb(255 255 255 / 0.72);
@@ -1608,6 +1762,7 @@ onMounted(() => {
 .dark .self-insight-focus,
 .dark .self-session-row,
 .dark .self-recent-row,
+.dark .self-quality-row,
 .dark .self-model-row,
 .dark .self-cache-row {
   background: rgb(15 23 42 / 0.58);
@@ -1628,6 +1783,7 @@ onMounted(() => {
 
 .self-session-row:hover,
 .self-recent-row:hover,
+.self-quality-row:hover,
 .self-model-row:hover,
 .self-cache-row:hover {
   border-color: rgb(96 165 250 / 0.42);
@@ -1637,6 +1793,7 @@ onMounted(() => {
 
 .dark .self-session-row:hover,
 .dark .self-recent-row:hover,
+.dark .self-quality-row:hover,
 .dark .self-model-row:hover,
 .dark .self-cache-row:hover {
   border-color: rgb(96 165 250 / 0.34);

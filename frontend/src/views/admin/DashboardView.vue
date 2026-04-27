@@ -818,10 +818,10 @@
                   <div class="mb-4 flex items-start justify-between gap-3">
                     <div>
                       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-                        网关运行雷达
+                        {{ t('admin.dashboard.gatewayRadar') }}
                       </h3>
                       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        账户、延迟、吞吐、缓存和消费集中度的快速体检。
+                        {{ t('admin.dashboard.gatewayRadarHint') }}
                       </p>
                     </div>
                     <span
@@ -1774,10 +1774,10 @@ const clampPercent = (value: number): number => {
 const showGatewayRadarCard = computed(() => Boolean(stats.value))
 
 const gatewayRadarStatusLabel = computed(() => {
-  if (gatewayAccountIssueCount.value > 0) return '需要关注'
-  if (stats.value && stats.value.average_duration_ms > 10_000) return '偏慢'
-  if (topUserCostShare.value >= 0.6) return '偏集中'
-  return '稳定'
+  if (gatewayAccountIssueCount.value > 0) return t('admin.dashboard.gatewayRadarNeedsAttention')
+  if (stats.value && stats.value.average_duration_ms > 10_000) return t('admin.dashboard.gatewayRadarSlow')
+  if (topUserCostShare.value >= 0.6) return t('admin.dashboard.gatewayRadarConcentrated')
+  return t('admin.dashboard.gatewayRadarStable')
 })
 
 const gatewayRadarStatusClass = computed(() => {
@@ -1807,25 +1807,29 @@ const gatewayRadarItems = computed<GatewayRadarItem[]>(() => {
   return [
     {
       key: 'accounts',
-      label: '账户可用性',
+      label: t('admin.dashboard.gatewayRadarAccounts'),
       value: `${normalAccounts} / ${totalAccounts}`,
-      detail: gatewayAccountIssueCount.value > 0 ? `${gatewayAccountIssueCount.value} 异常` : '全部正常',
+      detail: gatewayAccountIssueCount.value > 0
+        ? t('admin.dashboard.gatewayRadarIssues', { count: gatewayAccountIssueCount.value })
+        : t('admin.dashboard.gatewayRadarAllNormal'),
       path: '/admin/accounts',
       width: clampPercent(accountHealth),
       tone: gatewayAccountIssueCount.value > 0 ? 'amber' : 'emerald'
     },
     {
       key: 'latency',
-      label: '平均响应',
+      label: t('admin.dashboard.gatewayRadarLatency'),
       value: formatDuration(current.average_duration_ms || 0),
-      detail: current.average_duration_ms > 10_000 ? '建议排查' : '可接受',
+      detail: current.average_duration_ms > 10_000
+        ? t('admin.dashboard.gatewayRadarCheck')
+        : t('admin.dashboard.gatewayRadarAcceptable'),
       path: '/admin/channels/monitor',
       width: clampPercent(latencyScore),
       tone: current.average_duration_ms > 10_000 ? 'amber' : 'blue'
     },
     {
       key: 'throughput',
-      label: '实时吞吐',
+      label: t('admin.dashboard.gatewayRadarThroughput'),
       value: `${formatTokens(current.rpm)} RPM`,
       detail: `${formatTokens(current.tpm)} TPM`,
       path: '/admin/usage',
@@ -1834,7 +1838,7 @@ const gatewayRadarItems = computed<GatewayRadarItem[]>(() => {
     },
     {
       key: 'cache',
-      label: '缓存复用',
+      label: t('admin.dashboard.gatewayRadarCache'),
       value: formatPercent(gatewayCacheShare.value),
       detail: formatTokens(gatewayCacheTokens.value),
       path: '/admin/usage',
@@ -1843,9 +1847,11 @@ const gatewayRadarItems = computed<GatewayRadarItem[]>(() => {
     },
     {
       key: 'concentration',
-      label: '消费分散度',
+      label: t('admin.dashboard.gatewayRadarDistribution'),
       value: topUser.value ? formatPercent(1 - topUserCostShare.value) : '-',
-      detail: topUser.value ? `Top ${formatPercent(topUserCostShare.value)}` : '暂无排行',
+      detail: topUser.value
+        ? `Top ${formatPercent(topUserCostShare.value)}`
+        : t('admin.dashboard.gatewayRadarNoRanking'),
       path: '/admin/usage',
       width: clampPercent(concentrationScore),
       tone: topUserCostShare.value >= 0.6 ? 'amber' : 'blue'
