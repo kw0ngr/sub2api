@@ -170,6 +170,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 检查是否为 Claude Code 客户端，设置到 context 中（复用已解析请求，避免二次反序列化）。
 	SetClaudeCodeClientContext(c, body, parsedReq)
+	h.observeClaudeCodeFingerprintCandidate(c, apiKey, reqLog)
 	isClaudeCodeClient := service.IsClaudeCodeClient(c.Request.Context())
 
 	// 版本检查：仅对 Claude Code 客户端，拒绝低于最低版本的请求
@@ -1372,6 +1373,49 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 	return true
 }
 
+func (h *GatewayHandler) observeClaudeCodeFingerprintCandidate(c *gin.Context, apiKey *service.APIKey, reqLog *zap.Logger) {
+	if h == nil || h.settingService == nil || c == nil || c.Request == nil {
+		return
+	}
+	if !service.IsClaudeCodeClient(c.Request.Context()) {
+		return
+	}
+
+	sourceName := claudeCodeFingerprintCandidateName(apiKey)
+	if err := h.settingService.ObserveClaudeCodeFingerprint(c.Request.Context(), 0, sourceName, c.Request.Header); err != nil {
+		if reqLog != nil {
+			reqLog.Warn("gateway.claude_code_fingerprint_observe_failed", zap.Error(err))
+			return
+		}
+		logger.LegacyPrintf("handler.gateway", "Warning: failed to observe Claude Code fingerprint candidate: %v", err)
+	}
+}
+
+func claudeCodeFingerprintCandidateName(apiKey *service.APIKey) string {
+	if apiKey == nil {
+		return ""
+	}
+
+	parts := make([]string, 0, 3)
+	if apiKey.User != nil {
+		if email := strings.TrimSpace(apiKey.User.Email); email != "" {
+			parts = append(parts, email)
+		} else if username := strings.TrimSpace(apiKey.User.Username); username != "" {
+			parts = append(parts, username)
+		}
+	}
+	if name := strings.TrimSpace(apiKey.Name); name != "" {
+		parts = append(parts, "key:"+name)
+	}
+	if apiKey.Group != nil {
+		if groupName := strings.TrimSpace(apiKey.Group.Name); groupName != "" {
+			parts = append(parts, "group:"+groupName)
+		}
+	}
+
+	return strings.Join(parts, " / ")
+}
+
 // errorResponse 返回Claude API格式的错误响应
 func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
 	c.JSON(status, gin.H{
@@ -1432,6 +1476,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	}
 	// count_tokens 走 messages 严格校验时，复用已解析请求，避免二次反序列化。
 	SetClaudeCodeClientContext(c, body, parsedReq)
+	h.observeClaudeCodeFingerprintCandidate(c, apiKey, reqLog)
 	reqLog = reqLog.With(zap.String("model", parsedReq.Model), zap.Bool("stream", parsedReq.Stream))
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))

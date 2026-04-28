@@ -6117,11 +6117,6 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		clientUserAgent := getHeaderRaw(clientHeaders, "User-Agent")
 		cliVersion := resolveClaudeCodeCLIVersion(clientUserAgent)
 		deviceID := ""
-		if enableFP && s.settingService != nil {
-			if err := s.settingService.ObserveClaudeCodeFingerprint(ctx, account.ID, account.Name, clientHeaders); err != nil {
-				logger.LegacyPrintf("service.gateway", "Warning: failed to observe Claude Code fingerprint for account %d: %v", account.ID, err)
-			}
-		}
 		if enableFP && s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 			if err != nil {
@@ -9198,11 +9193,6 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	var ctFingerprint *Fingerprint
 	if account.IsOAuth() && ctEnableFP && s.identityService != nil {
-		if s.settingService != nil {
-			if err := s.settingService.ObserveClaudeCodeFingerprint(ctx, account.ID, account.Name, clientHeaders); err != nil {
-				logger.LegacyPrintf("service.gateway", "Warning: failed to observe Claude Code fingerprint for count_tokens account %d: %v", account.ID, err)
-			}
-		}
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil && fp != nil {
 			ctFingerprint = fp
