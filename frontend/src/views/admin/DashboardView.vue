@@ -2950,17 +2950,20 @@ onMounted(() => {
 }
 
 .dashboard-insight-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(1rem, 1.8vw, 1.5rem);
-  align-items: stretch;
+  display: block;
+  columns: 1;
+  column-gap: clamp(1rem, 1.8vw, 1.5rem);
 }
 
 .dashboard-insight-stack {
-  display: grid;
-  min-width: 0;
-  gap: clamp(1rem, 1.8vw, 1.5rem);
-  align-content: start;
+  display: contents;
+}
+
+.dashboard-insight-columns .dashboard-analytics-card {
+  width: 100%;
+  margin: 0 0 clamp(1rem, 1.8vw, 1.5rem);
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .dashboard-team-signal-grid {
@@ -2993,7 +2996,7 @@ onMounted(() => {
 }
 
 .dashboard-gateway-brief-card {
-  min-height: 100%;
+  min-height: 0;
 }
 
 .dashboard-gateway-brief-card::before {
@@ -3244,6 +3247,10 @@ onMounted(() => {
   gap: 2rem;
 }
 
+.admin-dashboard-anti .dashboard-insight-columns .dashboard-analytics-card {
+  margin-bottom: 2rem;
+}
+
 .admin-dashboard-anti .dashboard-masonry-item:nth-child(odd) {
   transform: rotate(-0.75deg);
 }
@@ -3339,7 +3346,7 @@ onMounted(() => {
   }
 
   .dashboard-insight-columns {
-    grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
+    columns: 2 28rem;
   }
 
   .dashboard-team-signal-grid {
@@ -3363,7 +3370,7 @@ onMounted(() => {
 
 @media (min-width: 1536px) {
   .dashboard-insight-columns {
-    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    columns: 2 31rem;
   }
 }
 

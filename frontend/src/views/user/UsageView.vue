@@ -131,12 +131,12 @@
             </div>
 
             <div
-              v-if="showSelfWorkbench"
-              class="user-usage-workbench"
-              :class="{ 'user-usage-workbench-solo': !showSelfRecentCallsCard || !showSelfRailCards }"
+              v-if="showSelfUsageColumns"
+              class="user-usage-columns"
+              :class="{ 'user-usage-columns-solo': !showSelfPrimaryColumn || !showSelfSecondaryColumn }"
             >
-              <div v-if="showSelfRecentCallsCard" class="user-usage-primary">
-            <div class="card self-insight-card self-recent-card relative overflow-hidden p-4">
+              <div v-if="showSelfPrimaryColumn" class="user-usage-column user-usage-primary">
+            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -193,11 +193,46 @@
               暂无近期调用
             </div>
             </div>
+
+            <div v-if="showSelfModelCard" class="card self-insight-card p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
+            </div>
+            <div v-if="selfModelItems.length" class="space-y-2">
+              <div
+                v-for="model in selfModelItems"
+                :key="model.model"
+                class="self-model-row rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="model.model">
+                    {{ model.model }}
+                  </p>
+                  <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                    {{ formatPercent(model.share_of_member) }}
+                  </p>
+                </div>
+                <div class="self-progress-track mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                  <div
+                    class="self-progress-fill self-progress-fill-blue h-full rounded-full bg-blue-500"
+                    :style="{ width: `${clientShareWidth(model.share_of_member)}%` }"
+                  />
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ formatTokens(model.total_tokens) }} · 缓存 {{ formatPercent(model.cache_share) }}
+                </p>
+              </div>
+            </div>
+            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无模型数据
+            </div>
+            </div>
               </div>
 
               <aside
-                v-if="showSelfRailCards"
-                class="user-usage-rail"
+                v-if="showSelfSecondaryColumn"
+                class="user-usage-column user-usage-secondary"
               >
 
             <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4">
@@ -385,50 +420,6 @@
             </div>
             </div>
 
-              </aside>
-            </div>
-
-            <div
-              v-if="showSelfCompactCards"
-              class="user-usage-compact-grid"
-              :class="{ 'user-usage-compact-grid-solo': !showSelfModelCard || !showSelfCacheCard }"
-            >
-
-            <div v-if="showSelfModelCard" class="card self-insight-card p-4">
-            <div class="mb-4 flex items-center justify-between">
-              <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
-              <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
-            </div>
-            <div v-if="selfModelItems.length" class="space-y-2">
-              <div
-                v-for="model in selfModelItems"
-                :key="model.model"
-                class="self-model-row rounded-xl border border-gray-100 p-3 dark:border-gray-700"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <p class="truncate text-sm font-semibold text-gray-900 dark:text-white" :title="model.model">
-                    {{ model.model }}
-                  </p>
-                  <p class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                    {{ formatPercent(model.share_of_member) }}
-                  </p>
-                </div>
-                <div class="self-progress-track mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                  <div
-                    class="self-progress-fill self-progress-fill-blue h-full rounded-full bg-blue-500"
-                    :style="{ width: `${clientShareWidth(model.share_of_member)}%` }"
-                  />
-                </div>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ formatTokens(model.total_tokens) }} · 缓存 {{ formatPercent(model.cache_share) }}
-                </p>
-              </div>
-            </div>
-            <div v-else class="flex h-28 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-              暂无模型数据
-            </div>
-            </div>
-
             <div v-if="showSelfCacheCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
@@ -460,6 +451,8 @@
               暂无缓存数据
             </div>
             </div>
+
+              </aside>
             </div>
           </div>
         </div>
@@ -1203,15 +1196,16 @@ const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClien
 const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
 const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
 const showSelfCacheCard = computed(() => selfInsightsLoading.value || selfCacheItems.value.length > 0)
-const showSelfRailCards = computed(
+const showSelfPrimaryColumn = computed(() => showSelfRecentCallsCard.value || showSelfModelCard.value)
+const showSelfSecondaryColumn = computed(
   () =>
     showSelfQualityCard.value ||
     showSelfProfileCard.value ||
     showSelfClientCard.value ||
-    showSelfSessionCard.value
+    showSelfSessionCard.value ||
+    showSelfCacheCard.value
 )
-const showSelfWorkbench = computed(() => showSelfRecentCallsCard.value || showSelfRailCards.value)
-const showSelfCompactCards = computed(() => showSelfModelCard.value || showSelfCacheCard.value)
+const showSelfUsageColumns = computed(() => showSelfPrimaryColumn.value || showSelfSecondaryColumn.value)
 const showSelfInsightArea = computed(
   () =>
     showSelfProfileCard.value ||
@@ -1647,30 +1641,21 @@ onMounted(() => {
   align-items: start;
 }
 
-.user-usage-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--usage-panel-gap);
-  align-items: start;
+.user-usage-columns {
+  display: block;
+  columns: 1;
+  column-gap: var(--usage-panel-gap);
 }
 
-.user-usage-primary,
-.user-usage-rail {
-  min-width: 0;
+.user-usage-column {
+  display: contents;
 }
 
-.user-usage-rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(0.65rem, 1vw, 0.9rem);
-  align-content: start;
-}
-
-.user-usage-compact-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--usage-panel-gap);
-  align-items: start;
+.user-usage-columns .self-insight-card {
+  width: 100%;
+  margin: 0 0 var(--usage-panel-gap);
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .user-usage-filter-panel {
@@ -1959,15 +1944,15 @@ onMounted(() => {
   padding: 0.68rem 0.78rem;
 }
 
-.user-usage-rail .self-insight-card {
+.user-usage-secondary .self-insight-card {
   padding: clamp(0.78rem, 1vw, 0.95rem);
 }
 
-.user-usage-rail .self-insight-title {
+.user-usage-secondary .self-insight-title {
   font-size: 0.82rem;
 }
 
-.user-usage-rail .self-insight-metric {
+.user-usage-secondary .self-insight-metric {
   padding: 0.72rem;
 }
 
@@ -2022,35 +2007,24 @@ onMounted(() => {
   }
 }
 
-@media (min-width: 900px) {
-  .user-usage-compact-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (min-width: 1280px) {
   .user-usage-stat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .user-usage-workbench {
-    grid-template-columns: minmax(0, 1.45fr) minmax(20rem, 0.85fr);
+  .user-usage-columns {
+    columns: 2 28rem;
   }
 }
 
 @media (min-width: 1536px) {
-  .user-usage-workbench {
-    grid-template-columns: minmax(0, 1.55fr) minmax(21rem, 0.9fr);
-  }
-
-  .user-usage-rail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .user-usage-columns {
+    columns: 2 31rem;
   }
 }
 
-.user-usage-workbench.user-usage-workbench-solo,
-.user-usage-compact-grid.user-usage-compact-grid-solo {
-  grid-template-columns: minmax(0, 1fr);
+.user-usage-columns.user-usage-columns-solo {
+  columns: 1;
 }
 
 @media (max-width: 640px) {
