@@ -8,7 +8,7 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="dashboard-stat-grid grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="dashboard-stat-grid">
           <!-- Total API Keys -->
           <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
@@ -96,7 +96,7 @@
         </div>
 
         <!-- Row 2: Token Stats -->
-        <div class="dashboard-stat-grid grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="dashboard-stat-grid">
           <!-- Today Tokens -->
           <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
@@ -250,7 +250,7 @@
           </div>
 
           <!-- Charts Grid -->
-          <div v-if="showChartCards" class="grid grid-cols-1 gap-6" :class="chartGridClass">
+          <div v-if="showChartCards" class="dashboard-chart-grid" :class="chartGridClass">
             <ModelDistributionChart
               v-if="showModelDistributionCard"
               class="dashboard-analytics-card"
@@ -2298,7 +2298,9 @@ const showCompactInsightSection = computed(() => (
   showGatewayRadarCard.value
 ))
 const chartGridClass = computed(() => {
-  return showModelDistributionCard.value && showTrendCard.value ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
+  return showModelDistributionCard.value && showTrendCard.value
+    ? 'dashboard-chart-grid--split'
+    : 'dashboard-chart-grid--single'
 })
 const insightCardCount = computed(() => [
   showUserContributionCard.value,
@@ -2547,6 +2549,9 @@ onMounted(() => {
 }
 
 .dashboard-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.25rem), 1fr));
+  gap: clamp(0.75rem, 1.3vw, 1rem);
   align-items: stretch;
 }
 
@@ -2556,6 +2561,7 @@ onMounted(() => {
   isolation: isolate;
   overflow: hidden;
   min-height: 6.75rem;
+  padding: clamp(0.85rem, 1.2vw, 1rem);
   background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.98), rgb(var(--dashboard-surface-soft) / 0.86));
   box-shadow:
     0 1px 2px rgb(var(--dashboard-ink-shadow) / 0.04),
@@ -2761,6 +2767,7 @@ onMounted(() => {
 }
 
 .dashboard-analytics-card {
+  min-width: 0;
   border-radius: 1.25rem;
   border-color: rgb(var(--dashboard-border) / 0.76);
   background: linear-gradient(180deg, rgb(var(--dashboard-surface) / 0.98), rgb(var(--dashboard-surface-soft) / 0.82));
@@ -2837,6 +2844,17 @@ onMounted(() => {
 .dashboard-analytics-card button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgb(var(--dashboard-ring) / 0.14);
+}
+
+.dashboard-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1rem, 1.8vw, 1.5rem);
+  align-items: stretch;
+}
+
+.dashboard-chart-grid > * {
+  min-width: 0;
 }
 
 .dashboard-analytics-card button.w-full:hover {
@@ -2918,7 +2936,7 @@ onMounted(() => {
 .dashboard-masonry {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1.5rem;
+  gap: clamp(1rem, 1.8vw, 1.5rem);
   align-items: start;
 }
 
@@ -2934,14 +2952,14 @@ onMounted(() => {
 .dashboard-insight-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1.5rem;
-  align-items: start;
+  gap: clamp(1rem, 1.8vw, 1.5rem);
+  align-items: stretch;
 }
 
 .dashboard-insight-stack {
   display: grid;
   min-width: 0;
-  gap: 1.5rem;
+  gap: clamp(1rem, 1.8vw, 1.5rem);
   align-content: start;
 }
 
@@ -2959,7 +2977,7 @@ onMounted(() => {
 
 .dashboard-team-profile-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 1rem;
   align-items: start;
 }
@@ -3304,6 +3322,14 @@ onMounted(() => {
 }
 
 @media (min-width: 1024px) {
+  .dashboard-chart-grid--split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-chart-grid--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .dashboard-masonry {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3313,7 +3339,7 @@ onMounted(() => {
   }
 
   .dashboard-insight-columns {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
   }
 
   .dashboard-team-signal-grid {
@@ -3321,13 +3347,44 @@ onMounted(() => {
   }
 
   .dashboard-team-profile-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.5rem), 1fr));
   }
 }
 
 @media (min-width: 1280px) {
-  .dashboard-team-profile-grid {
+  .dashboard-stat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .dashboard-team-profile-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .dashboard-insight-columns {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard-polish {
+    gap: 1rem;
+  }
+
+  .dashboard-stat-card > .flex {
+    align-items: flex-start;
+  }
+
+  .dashboard-stat-card > .flex > div:first-child {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .admin-dashboard-anti .dashboard-stat-grid,
+  .admin-dashboard-anti .dashboard-masonry-item,
+  .admin-dashboard-anti .dashboard-filter-panel {
+    transform: none !important;
   }
 }
 

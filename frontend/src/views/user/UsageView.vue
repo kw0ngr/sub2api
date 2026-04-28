@@ -2,7 +2,7 @@
   <AppLayout>
     <TablePageLayout class="user-usage-layout">
       <template #actions>
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="user-usage-stat-grid">
           <!-- Total Requests -->
           <div class="card p-4">
           <div class="flex items-center gap-3">
@@ -86,8 +86,8 @@
         </div>
 
         <div v-if="showSelfInsightArea" class="user-usage-insights mt-4">
-          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            <div v-if="selfInsightTips.length" class="card self-insight-summary xl:col-span-3">
+          <div class="user-usage-insight-grid">
+            <div v-if="selfInsightTips.length" class="card self-insight-summary">
               <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
@@ -130,7 +130,7 @@
               </div>
             </div>
 
-            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4 xl:col-span-2">
+            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -188,7 +188,7 @@
             </div>
             </div>
 
-            <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4 xl:col-span-1">
+            <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -259,7 +259,7 @@
             </div>
             </div>
 
-            <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4 xl:col-span-1">
+            <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -1586,12 +1586,35 @@ onMounted(() => {
   }
 }
 
+.user-usage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: clamp(0.75rem, 1.4vw, 1rem);
+  align-items: stretch;
+}
+
+.user-usage-stat-grid :deep(.card),
+.user-usage-stat-grid > .card {
+  min-width: 0;
+  min-height: 6.5rem;
+  padding: clamp(0.85rem, 1.2vw, 1rem);
+}
+
 .user-usage-insights {
   position: relative;
 }
 
+.user-usage-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(0.85rem, 1.4vw, 1rem);
+  align-items: start;
+}
+
 .self-insight-card {
   position: relative;
+  min-width: 0;
+  padding: clamp(0.9rem, 1.2vw, 1rem);
   border-color: rgb(226 232 240 / 0.92);
   background:
     linear-gradient(180deg, rgb(255 255 255 / 0.96), rgb(248 250 252 / 0.92)),
@@ -1604,12 +1627,13 @@ onMounted(() => {
 }
 
 .self-insight-summary {
+  min-width: 0;
   overflow: hidden;
   border-color: rgb(191 219 254 / 0.72);
   background:
     radial-gradient(circle at 6% 20%, rgb(59 130 246 / 0.12), transparent 28%),
     linear-gradient(135deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.92));
-  padding: 1rem;
+  padding: clamp(0.95rem, 1.3vw, 1.1rem);
   box-shadow: 0 18px 42px rgb(15 23 42 / 0.07);
 }
 
@@ -1815,5 +1839,72 @@ onMounted(() => {
 
 .self-progress-fill-blue {
   color: rgb(59 130 246 / 0.35);
+}
+
+@media (min-width: 480px) and (max-width: 767px) {
+  .user-usage-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .user-usage-insight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .self-insight-summary,
+  .self-recent-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1280px) {
+  .user-usage-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .user-usage-insight-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  }
+
+  .self-insight-summary {
+    grid-column: 1 / -1;
+  }
+
+  .self-recent-card {
+    grid-column: span 2;
+  }
+
+  .self-quality-card,
+  .self-insight-card-feature {
+    grid-column: span 1;
+  }
+}
+
+@media (min-width: 1536px) {
+  .user-usage-insight-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
+  }
+
+  .self-insight-summary,
+  .self-recent-card {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .user-usage-stat-grid > .card {
+    min-height: 0;
+  }
+
+  .self-insight-card,
+  .self-insight-summary {
+    border-radius: 1rem;
+  }
+
+  .self-recent-row .flex.items-start.justify-between,
+  .self-session-row .flex.items-start.justify-between {
+    gap: 0.75rem;
+  }
 }
 </style>
