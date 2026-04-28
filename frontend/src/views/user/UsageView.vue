@@ -86,7 +86,7 @@
         </div>
 
         <div v-if="showSelfInsightArea" class="user-usage-insights mt-4">
-          <div class="user-usage-insight-grid">
+          <div class="user-usage-insight-board">
             <div v-if="selfInsightTips.length" class="card self-insight-summary">
               <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
@@ -130,7 +130,13 @@
               </div>
             </div>
 
-            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4">
+            <div
+              v-if="showSelfWorkbench"
+              class="user-usage-workbench"
+              :class="{ 'user-usage-workbench-solo': !showSelfRecentCallsCard || !showSelfRailCards }"
+            >
+              <div v-if="showSelfRecentCallsCard" class="user-usage-primary">
+            <div class="card self-insight-card self-recent-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -148,7 +154,7 @@
                 {{ pagination.total.toLocaleString() }} 条
               </span>
             </div>
-            <div v-if="recentUsageLogs.length" class="space-y-2">
+            <div v-if="recentUsageLogs.length" class="self-recent-list">
               <button
                 v-for="log in recentUsageLogs"
                 :key="`recent-${log.id}`"
@@ -187,6 +193,12 @@
               暂无近期调用
             </div>
             </div>
+              </div>
+
+              <aside
+                v-if="showSelfRailCards"
+                class="user-usage-rail"
+              >
 
             <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4">
             <div
@@ -373,6 +385,15 @@
             </div>
             </div>
 
+              </aside>
+            </div>
+
+            <div
+              v-if="showSelfCompactCards"
+              class="user-usage-compact-grid"
+              :class="{ 'user-usage-compact-grid-solo': !showSelfModelCard || !showSelfCacheCard }"
+            >
+
             <div v-if="showSelfModelCard" class="card self-insight-card p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
@@ -439,14 +460,15 @@
               暂无缓存数据
             </div>
             </div>
+            </div>
           </div>
         </div>
       </template>
 
       <template #filters>
-        <div class="card">
-          <div class="px-6 py-4">
-          <div class="flex flex-wrap items-end gap-4">
+        <div class="card user-usage-filter-panel">
+          <div class="user-usage-filter-inner">
+          <div class="user-usage-filter-row">
             <!-- API Key Filter -->
             <div class="min-w-[180px]">
               <label class="input-label">{{ t('usage.apiKeyFilter') }}</label>
@@ -1181,6 +1203,15 @@ const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClien
 const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
 const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
 const showSelfCacheCard = computed(() => selfInsightsLoading.value || selfCacheItems.value.length > 0)
+const showSelfRailCards = computed(
+  () =>
+    showSelfQualityCard.value ||
+    showSelfProfileCard.value ||
+    showSelfClientCard.value ||
+    showSelfSessionCard.value
+)
+const showSelfWorkbench = computed(() => showSelfRecentCallsCard.value || showSelfRailCards.value)
+const showSelfCompactCards = computed(() => showSelfModelCard.value || showSelfCacheCard.value)
 const showSelfInsightArea = computed(
   () =>
     showSelfProfileCard.value ||
@@ -1575,14 +1606,19 @@ onMounted(() => {
 
 <style scoped>
 .user-usage-layout {
+  --usage-panel-gap: clamp(0.85rem, 1.45vw, 1.25rem);
   height: auto;
   min-height: calc(100vh - 64px - 4rem);
+  gap: var(--usage-panel-gap);
 }
 
 @media (min-width: 1024px) {
-  .user-usage-layout :deep(.layout-section-scrollable),
+  .user-usage-layout :deep(.layout-section-scrollable) {
+    min-height: clamp(24rem, 52vh, 42rem);
+  }
+
   .user-usage-layout :deep(.table-scroll-container) {
-    min-height: 24rem;
+    min-height: clamp(24rem, 52vh, 42rem);
   }
 }
 
@@ -1604,11 +1640,124 @@ onMounted(() => {
   position: relative;
 }
 
-.user-usage-insight-grid {
+.user-usage-insight-board {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(0.85rem, 1.4vw, 1rem);
+  gap: var(--usage-panel-gap);
   align-items: start;
+}
+
+.user-usage-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--usage-panel-gap);
+  align-items: start;
+}
+
+.user-usage-primary,
+.user-usage-rail {
+  min-width: 0;
+}
+
+.user-usage-rail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(0.65rem, 1vw, 0.9rem);
+  align-content: start;
+}
+
+.user-usage-compact-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--usage-panel-gap);
+  align-items: start;
+}
+
+.user-usage-filter-panel {
+  margin-top: 0.1rem;
+  overflow: visible;
+  border-color: rgb(226 232 240 / 0.95);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.96)),
+    radial-gradient(circle at 100% 0%, rgb(20 184 166 / 0.08), transparent 32%);
+  box-shadow: 0 14px 34px rgb(15 23 42 / 0.06);
+}
+
+.dark .user-usage-filter-panel {
+  border-color: rgb(51 65 85 / 0.86);
+  background:
+    linear-gradient(180deg, rgb(15 23 42 / 0.96), rgb(15 23 42 / 0.90)),
+    radial-gradient(circle at 100% 0%, rgb(20 184 166 / 0.10), transparent 34%);
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.24);
+}
+
+.user-usage-filter-inner {
+  padding: clamp(0.9rem, 1.35vw, 1.15rem);
+}
+
+.user-usage-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: clamp(0.75rem, 1.2vw, 1rem);
+}
+
+.user-usage-layout :deep(.table-scroll-container) {
+  border-radius: 1.25rem;
+  border-color: rgb(226 232 240 / 0.95);
+  box-shadow: 0 18px 42px rgb(15 23 42 / 0.06);
+}
+
+.dark .user-usage-layout :deep(.table-scroll-container) {
+  border-color: rgb(51 65 85 / 0.86);
+  box-shadow: 0 22px 50px rgb(0 0 0 / 0.26);
+}
+
+.user-usage-layout :deep(.table-wrapper) {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.98));
+}
+
+.dark .user-usage-layout :deep(.table-wrapper) {
+  background:
+    linear-gradient(180deg, rgb(15 23 42 / 0.96), rgb(2 6 23 / 0.94));
+}
+
+.user-usage-layout :deep(.table-scroll-container thead),
+.user-usage-layout :deep(.table-header) {
+  background: rgb(248 250 252 / 0.94);
+}
+
+.dark .user-usage-layout :deep(.table-scroll-container thead),
+.dark .user-usage-layout :deep(.table-header) {
+  background: rgb(15 23 42 / 0.96);
+}
+
+.user-usage-layout :deep(.table-scroll-container th) {
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
+.user-usage-layout :deep(.table-scroll-container td) {
+  padding-top: 0.78rem;
+  padding-bottom: 0.78rem;
+  vertical-align: middle;
+}
+
+.user-usage-layout :deep(tbody .sticky-col) {
+  background: rgb(255 255 255 / 0.96);
+}
+
+.dark .user-usage-layout :deep(tbody .sticky-col) {
+  background: rgb(15 23 42 / 0.96);
+}
+
+.user-usage-layout :deep(.is-scrollable .sticky-col-left::after),
+.user-usage-layout :deep(.is-scrollable .sticky-col-right::before) {
+  width: 6px;
+  opacity: 0.42;
 }
 
 .self-insight-card {
@@ -1796,6 +1945,32 @@ onMounted(() => {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.72);
 }
 
+.self-recent-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.self-recent-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.self-recent-list .self-recent-row {
+  padding: 0.68rem 0.78rem;
+}
+
+.user-usage-rail .self-insight-card {
+  padding: clamp(0.78rem, 1vw, 0.95rem);
+}
+
+.user-usage-rail .self-insight-title {
+  font-size: 0.82rem;
+}
+
+.user-usage-rail .self-insight-metric {
+  padding: 0.72rem;
+}
+
 .self-recent-dot {
   height: 0.55rem;
   width: 0.55rem;
@@ -1848,13 +2023,8 @@ onMounted(() => {
 }
 
 @media (min-width: 900px) {
-  .user-usage-insight-grid {
+  .user-usage-compact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .self-insight-summary,
-  .self-recent-card {
-    grid-column: 1 / -1;
   }
 }
 
@@ -1863,33 +2033,24 @@ onMounted(() => {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .user-usage-insight-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
-  }
-
-  .self-insight-summary {
-    grid-column: 1 / -1;
-  }
-
-  .self-recent-card {
-    grid-column: span 2;
-  }
-
-  .self-quality-card,
-  .self-insight-card-feature {
-    grid-column: span 1;
+  .user-usage-workbench {
+    grid-template-columns: minmax(0, 1.45fr) minmax(20rem, 0.85fr);
   }
 }
 
 @media (min-width: 1536px) {
-  .user-usage-insight-grid {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
+  .user-usage-workbench {
+    grid-template-columns: minmax(0, 1.55fr) minmax(21rem, 0.9fr);
   }
 
-  .self-insight-summary,
-  .self-recent-card {
-    grid-column: span 2;
+  .user-usage-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.user-usage-workbench.user-usage-workbench-solo,
+.user-usage-compact-grid.user-usage-compact-grid-solo {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @media (max-width: 640px) {
@@ -1905,6 +2066,12 @@ onMounted(() => {
   .self-recent-row .flex.items-start.justify-between,
   .self-session-row .flex.items-start.justify-between {
     gap: 0.75rem;
+  }
+
+  .user-usage-filter-row > .ml-auto {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 </style>
