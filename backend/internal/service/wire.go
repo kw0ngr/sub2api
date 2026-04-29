@@ -381,12 +381,28 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
+func ProvideAPIKeyService(
+	apiKeyRepo APIKeyRepository,
+	userRepo UserRepository,
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache APIKeyCache,
+	cfg *config.Config,
+	billingCacheService *BillingCacheService,
+) *APIKeyService {
+	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
+	svc.SetRateLimitCacheInvalidator(billingCacheService)
+	return svc
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
 	NewUserService,
-	NewAPIKeyService,
+	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	NewGroupService,
 	NewAccountService,

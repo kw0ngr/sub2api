@@ -592,6 +592,16 @@ func TestAPIContracts(t *testing.T) {
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
 					"web_search_emulation_enabled": false,
+					"openai_fast_policy_settings": {
+						"rules": [
+							{
+								"service_tier": "priority",
+								"action": "filter",
+								"scope": "all",
+								"fallback_action": "pass"
+							}
+						]
+					},
 					"custom_menu_items": [],
 					"custom_endpoints": [],
 					"payment_enabled": false,
