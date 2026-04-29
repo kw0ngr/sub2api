@@ -1642,11 +1642,9 @@ onMounted(() => {
 }
 
 .user-usage-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--usage-panel-gap);
-  align-items: stretch;
-  grid-auto-flow: dense;
+  display: block;
+  columns: 1;
+  column-gap: var(--usage-panel-gap);
 }
 
 .user-usage-column {
@@ -1654,8 +1652,12 @@ onMounted(() => {
 }
 
 .user-usage-columns .self-insight-card {
+  display: inline-flex;
   width: 100%;
-  margin: 0;
+  margin: 0 0 var(--usage-panel-gap);
+  break-inside: avoid;
+  page-break-inside: avoid;
+  vertical-align: top;
 }
 
 .user-usage-filter-panel {
@@ -2043,35 +2045,30 @@ onMounted(() => {
   }
 
   .user-usage-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    columns: 2 28rem;
   }
 
-  .self-insight-card-compact {
-    height: clamp(14rem, 18vw, 17rem);
+  .self-recent-card .self-scroll-region {
+    max-height: clamp(24rem, 34vw, 34rem);
   }
 
-  .self-insight-card-standard {
-    height: clamp(24rem, 31vw, 30rem);
+  .self-insight-card-standard .self-scroll-region {
+    max-height: clamp(18rem, 27vw, 27rem);
   }
 
-  .self-insight-card-tall {
-    height: clamp(34rem, 44vw, 42rem);
-    grid-row: span 2;
-  }
-
-  .user-usage-columns .self-insight-card:only-child {
-    grid-column: 1 / -1;
+  .self-insight-card-compact .self-scroll-region {
+    max-height: clamp(10rem, 16vw, 15rem);
   }
 }
 
 @media (min-width: 1536px) {
   .user-usage-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    columns: 2 31rem;
   }
 }
 
 .user-usage-columns.user-usage-columns-solo {
-  grid-template-columns: minmax(0, 1fr);
+  columns: 1;
 }
 
 @media (max-width: 640px) {
