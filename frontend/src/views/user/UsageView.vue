@@ -136,7 +136,7 @@
               :class="{ 'user-usage-columns-solo': !showSelfPrimaryColumn || !showSelfSecondaryColumn }"
             >
               <div v-if="showSelfPrimaryColumn" class="user-usage-column user-usage-primary">
-            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-recent-card relative overflow-hidden p-4">
+            <div v-if="showSelfRecentCallsCard" class="card self-insight-card self-insight-card-tall self-recent-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -154,7 +154,7 @@
                 {{ pagination.total.toLocaleString() }} 条
               </span>
             </div>
-            <div v-if="recentUsageLogs.length" class="self-recent-list">
+            <div v-if="recentUsageLogs.length" class="self-recent-list self-scroll-region">
               <button
                 v-for="log in recentUsageLogs"
                 :key="`recent-${log.id}`"
@@ -194,12 +194,12 @@
             </div>
             </div>
 
-            <div v-if="showSelfModelCard" class="card self-insight-card p-4">
+            <div v-if="showSelfModelCard" class="card self-insight-card self-insight-card-standard p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">模型使用矩阵</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">Top {{ selfModelItems.length }}</span>
             </div>
-            <div v-if="selfModelItems.length" class="space-y-2">
+            <div v-if="selfModelItems.length" class="self-scroll-region space-y-2">
               <div
                 v-for="model in selfModelItems"
                 :key="model.model"
@@ -235,7 +235,7 @@
                 class="user-usage-column user-usage-secondary"
               >
 
-            <div v-if="showSelfQualityCard" class="card self-insight-card self-quality-card relative overflow-hidden p-4">
+            <div v-if="showSelfQualityCard" class="card self-insight-card self-insight-card-standard self-quality-card relative overflow-hidden p-4">
             <div
               v-if="loading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -256,7 +256,7 @@
                 {{ selfQualityStatusLabel }}
               </span>
             </div>
-            <div v-if="selfQualityMetrics.length" class="space-y-3">
+            <div v-if="selfQualityMetrics.length" class="self-scroll-region space-y-3">
               <div class="grid grid-cols-2 gap-2">
                 <div
                   v-for="metric in selfQualityMetrics"
@@ -306,7 +306,7 @@
             </div>
             </div>
 
-            <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-feature relative overflow-hidden p-4">
+            <div v-if="showSelfProfileCard" class="card self-insight-card self-insight-card-compact self-insight-card-feature relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -324,7 +324,7 @@
                 缓存 {{ formatPercent(selfInsights?.cache_share || 0) }}
               </span>
             </div>
-            <div v-if="selfInsights && selfInsights.total_tokens > 0" class="space-y-3">
+            <div v-if="selfInsights && selfInsights.total_tokens > 0" class="self-scroll-region space-y-3">
               <div class="grid grid-cols-2 gap-2">
                 <div class="self-insight-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                   <p class="text-xs text-gray-500 dark:text-gray-400">Token</p>
@@ -354,7 +354,7 @@
             </div>
             </div>
 
-            <div v-if="showSelfClientCard" class="card self-insight-card relative overflow-hidden p-4">
+            <div v-if="showSelfClientCard" class="card self-insight-card self-insight-card-compact relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -362,7 +362,7 @@
               <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             </div>
             <h3 class="self-insight-title mb-4 text-sm font-semibold text-gray-900 dark:text-white">客户端 / 工具分布</h3>
-            <div v-if="selfClientItems.length" class="space-y-3">
+            <div v-if="selfClientItems.length" class="self-scroll-region space-y-3">
               <div v-for="client in selfClientItems" :key="client.client" class="space-y-1.5">
                 <div class="flex items-center justify-between gap-3 text-xs">
                   <span class="truncate font-medium text-gray-900 dark:text-white">
@@ -385,7 +385,7 @@
             </div>
             </div>
 
-            <div v-if="showSelfSessionCard" class="card self-insight-card relative overflow-hidden p-4">
+            <div v-if="showSelfSessionCard" class="card self-insight-card self-insight-card-standard relative overflow-hidden p-4">
             <div
               v-if="selfInsightsLoading"
               class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50"
@@ -393,7 +393,7 @@
               <div class="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             </div>
             <h3 class="self-insight-title mb-4 text-sm font-semibold text-gray-900 dark:text-white">请求会话</h3>
-            <div v-if="selfSessionItems.length" class="space-y-2">
+            <div v-if="selfSessionItems.length" class="self-scroll-region space-y-2">
               <div
                 v-for="session in selfSessionItems"
                 :key="session.session_id"
@@ -420,14 +420,14 @@
             </div>
             </div>
 
-            <div v-if="showSelfCacheCard" class="card self-insight-card p-4">
+            <div v-if="showSelfCacheCard" class="card self-insight-card self-insight-card-standard p-4">
             <div class="mb-4 flex items-center justify-between">
               <h3 class="self-insight-title text-sm font-semibold text-gray-900 dark:text-white">缓存效率</h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">
                 读 {{ formatPercent(selfInsights?.cache_share || 0) }}
               </span>
             </div>
-            <div v-if="selfCacheItems.length" class="space-y-2">
+            <div v-if="selfCacheItems.length" class="self-scroll-region space-y-2">
               <div
                 v-for="item in selfCacheItems"
                 :key="`${item.scope}-${item.model || item.label}`"
@@ -1642,9 +1642,11 @@ onMounted(() => {
 }
 
 .user-usage-columns {
-  display: block;
-  columns: 1;
-  column-gap: var(--usage-panel-gap);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--usage-panel-gap);
+  align-items: stretch;
+  grid-auto-flow: dense;
 }
 
 .user-usage-column {
@@ -1653,9 +1655,7 @@ onMounted(() => {
 
 .user-usage-columns .self-insight-card {
   width: 100%;
-  margin: 0 0 var(--usage-panel-gap);
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 0;
 }
 
 .user-usage-filter-panel {
@@ -1747,6 +1747,8 @@ onMounted(() => {
 
 .self-insight-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: clamp(0.9rem, 1.2vw, 1rem);
   border-color: rgb(226 232 240 / 0.92);
@@ -1758,6 +1760,34 @@ onMounted(() => {
     border-color 160ms ease,
     box-shadow 180ms ease,
     transform 180ms ease;
+}
+
+.self-insight-card-compact,
+.self-insight-card-standard,
+.self-insight-card-tall {
+  min-height: 0;
+}
+
+.self-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.self-scroll-region::-webkit-scrollbar {
+  width: 6px;
+}
+
+.self-scroll-region::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(148 163 184 / 0.36);
+}
+
+.dark .self-scroll-region::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105 / 0.62);
 }
 
 .self-insight-summary {
@@ -2013,18 +2043,35 @@ onMounted(() => {
   }
 
   .user-usage-columns {
-    columns: 2 28rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .self-insight-card-compact {
+    height: clamp(14rem, 18vw, 17rem);
+  }
+
+  .self-insight-card-standard {
+    height: clamp(24rem, 31vw, 30rem);
+  }
+
+  .self-insight-card-tall {
+    height: clamp(34rem, 44vw, 42rem);
+    grid-row: span 2;
+  }
+
+  .user-usage-columns .self-insight-card:only-child {
+    grid-column: 1 / -1;
   }
 }
 
 @media (min-width: 1536px) {
   .user-usage-columns {
-    columns: 2 31rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .user-usage-columns.user-usage-columns-solo {
-  columns: 1;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @media (max-width: 640px) {

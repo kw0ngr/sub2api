@@ -455,7 +455,7 @@
               <div class="dashboard-insight-stack">
                 <div
                   v-if="showUsageInsightsCard"
-                  class="card dashboard-analytics-card relative overflow-hidden p-4"
+                  class="card dashboard-analytics-card dashboard-usage-insight-card relative overflow-hidden p-4"
                 >
                   <div
                     v-if="chartsLoading"
@@ -466,7 +466,7 @@
                   <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ t('admin.dashboard.usageInsights') }}
                   </h3>
-                  <div v-if="usageInsights && hasUsageInsightsData" class="space-y-4">
+                  <div v-if="usageInsights && hasUsageInsightsData" class="dashboard-card-scroll-region space-y-4">
                     <div>
                       <div class="mb-2 flex items-center justify-between">
                         <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -615,70 +615,72 @@
                     </span>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-2">
-                    <div
-                      v-for="metric in gatewayBriefMetrics"
-                      :key="metric.key"
-                      class="dashboard-brief-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700"
-                    >
-                      <p class="text-xs text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
-                      <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ metric.value }}</p>
-                      <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" :title="metric.detail">
-                        {{ metric.detail }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="mt-4 space-y-2">
-                    <button
-                      v-for="alert in gatewayBriefAlerts"
-                      :key="alert.title"
-                      type="button"
-                      class="w-full rounded-2xl border px-3 py-2 text-left text-xs"
-                      :class="gatewayBriefAlertClass(alert.tone)"
-                      @click="goToAdminPath(alert.path)"
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="font-semibold">{{ alert.title }}</p>
-                          <p class="mt-1 leading-5 opacity-80">{{ alert.description }}</p>
-                        </div>
-                        <span class="shrink-0 rounded-full bg-white/55 px-2 py-0.5 text-[10px] font-semibold dark:bg-black/20">
-                          {{ alert.actionLabel }}
-                        </span>
+                  <div class="dashboard-card-scroll-region space-y-4">
+                    <div class="grid grid-cols-2 gap-2">
+                      <div
+                        v-for="metric in gatewayBriefMetrics"
+                        :key="metric.key"
+                        class="dashboard-brief-metric rounded-xl border border-gray-100 p-3 dark:border-gray-700"
+                      >
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
+                        <p class="mt-1 text-lg font-bold text-gray-900 dark:text-white">{{ metric.value }}</p>
+                        <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" :title="metric.detail">
+                          {{ metric.detail }}
+                        </p>
                       </div>
-                    </button>
-                  </div>
+                    </div>
 
-                  <div class="mt-4 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
-                      @click="goToAdminPath('/admin/accounts')"
-                    >
-                      {{ t('admin.dashboard.gatewayBriefAccounts') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
-                      @click="goToAdminPath('/admin/channels/monitor')"
-                    >
-                      {{ t('admin.dashboard.gatewayBriefMonitor') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
-                      @click="goToAdminPath('/admin/usage')"
-                    >
-                      {{ t('admin.dashboard.gatewayBriefUsage') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
-                      @click="goToAdminPath('/admin/fingerprints')"
-                    >
-                      {{ t('admin.dashboard.gatewayBriefFingerprints') }}
-                    </button>
+                    <div class="space-y-2">
+                      <button
+                        v-for="alert in gatewayBriefAlerts"
+                        :key="alert.title"
+                        type="button"
+                        class="w-full rounded-2xl border px-3 py-2 text-left text-xs"
+                        :class="gatewayBriefAlertClass(alert.tone)"
+                        @click="goToAdminPath(alert.path)"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <p class="font-semibold">{{ alert.title }}</p>
+                            <p class="mt-1 leading-5 opacity-80">{{ alert.description }}</p>
+                          </div>
+                          <span class="shrink-0 rounded-full bg-white/55 px-2 py-0.5 text-[10px] font-semibold dark:bg-black/20">
+                            {{ alert.actionLabel }}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                        @click="goToAdminPath('/admin/accounts')"
+                      >
+                        {{ t('admin.dashboard.gatewayBriefAccounts') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                        @click="goToAdminPath('/admin/channels/monitor')"
+                      >
+                        {{ t('admin.dashboard.gatewayBriefMonitor') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                        @click="goToAdminPath('/admin/usage')"
+                      >
+                        {{ t('admin.dashboard.gatewayBriefUsage') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="dashboard-brief-action rounded-xl border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-blue-600 dark:border-gray-700 dark:text-gray-200 dark:hover:text-blue-300"
+                        @click="goToAdminPath('/admin/fingerprints')"
+                      >
+                        {{ t('admin.dashboard.gatewayBriefFingerprints') }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -686,7 +688,7 @@
               <div class="dashboard-insight-stack">
                 <div
                   v-if="showMemberPulseCard"
-                  class="card dashboard-analytics-card relative overflow-hidden p-4"
+                  class="card dashboard-analytics-card dashboard-member-pulse-card relative overflow-hidden p-4"
                 >
                   <div
                     v-if="rankingLoading"
@@ -708,7 +710,7 @@
                     </span>
                   </div>
 
-                  <div v-if="memberPulseItems.length" class="space-y-4">
+                  <div v-if="memberPulseItems.length" class="dashboard-card-scroll-region space-y-4">
                     <div class="grid grid-cols-2 gap-2">
                       <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
                         <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -832,7 +834,7 @@
                     </span>
                   </div>
 
-                  <div class="space-y-2.5">
+                  <div class="dashboard-card-scroll-region space-y-2.5">
                     <button
                       v-for="item in gatewayRadarItems"
                       :key="item.key"
@@ -2937,12 +2939,13 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: clamp(1rem, 1.8vw, 1.5rem);
-  align-items: start;
+  align-items: stretch;
+  grid-auto-flow: dense;
 }
 
 .dashboard-masonry-item {
   width: 100%;
-  align-self: start;
+  align-self: stretch;
 }
 
 .dashboard-masonry-item-wide {
@@ -2950,9 +2953,11 @@ onMounted(() => {
 }
 
 .dashboard-insight-columns {
-  display: block;
-  columns: 1;
-  column-gap: clamp(1rem, 1.8vw, 1.5rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1rem, 1.8vw, 1.5rem);
+  align-items: stretch;
+  grid-auto-flow: dense;
 }
 
 .dashboard-insight-stack {
@@ -2961,9 +2966,44 @@ onMounted(() => {
 
 .dashboard-insight-columns .dashboard-analytics-card {
   width: 100%;
-  margin: 0 0 clamp(1rem, 1.8vw, 1.5rem);
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 0;
+}
+
+.dashboard-insight-columns .dashboard-analytics-card,
+.dashboard-team-profile-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-usage-insight-card,
+.dashboard-gateway-brief-card,
+.dashboard-member-pulse-card,
+.dashboard-gateway-radar-card {
+  min-height: 0;
+}
+
+.dashboard-card-scroll-region {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.dashboard-card-scroll-region::-webkit-scrollbar,
+.dashboard-team-profile-section::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dashboard-card-scroll-region::-webkit-scrollbar-thumb,
+.dashboard-team-profile-section::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(148 163 184 / 0.36);
+}
+
+.dark .dashboard-card-scroll-region::-webkit-scrollbar-thumb,
+.dark .dashboard-team-profile-section::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105 / 0.62);
 }
 
 .dashboard-team-signal-grid {
@@ -2987,6 +3027,9 @@ onMounted(() => {
 
 .dashboard-team-profile-section {
   min-width: 0;
+  overflow: auto;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
 }
 
 .dashboard-cost-summary {
@@ -3248,7 +3291,7 @@ onMounted(() => {
 }
 
 .admin-dashboard-anti .dashboard-insight-columns .dashboard-analytics-card {
-  margin-bottom: 2rem;
+  margin-bottom: 0;
 }
 
 .admin-dashboard-anti .dashboard-masonry-item:nth-child(odd) {
@@ -3346,7 +3389,18 @@ onMounted(() => {
   }
 
   .dashboard-insight-columns {
-    columns: 2 28rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-usage-insight-card,
+  .dashboard-gateway-brief-card,
+  .dashboard-member-pulse-card,
+  .dashboard-gateway-radar-card {
+    height: clamp(25rem, 32vw, 32rem);
+  }
+
+  .dashboard-card-scroll-region {
+    flex: 1 1 auto;
   }
 
   .dashboard-team-signal-grid {
@@ -3355,6 +3409,10 @@ onMounted(() => {
 
   .dashboard-team-profile-grid {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.5rem), 1fr));
+  }
+
+  .dashboard-team-profile-section {
+    max-height: clamp(16rem, 24vw, 24rem);
   }
 }
 
@@ -3370,7 +3428,7 @@ onMounted(() => {
 
 @media (min-width: 1536px) {
   .dashboard-insight-columns {
-    columns: 2 31rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
