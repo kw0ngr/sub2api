@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -141,3 +143,38 @@ func TestReadRequestBodyWithPrealloc_RespectsIdentityEncoding(t *testing.T) {
 		t.Fatalf("body mismatch: got %q", got)
 	}
 }
+
+func TestReadLimitedDecompressed_RejectsBodiesOverLimit(t *testing.T) {
+	got, err := readLimitedDecompressed(strings.NewReader("abcdef"), 5)
+	if !errors.Is(err, ErrDecompressedBodyTooLarge) {
+		t.Fatalf("expected ErrDecompressedBodyTooLarge, got body=%q err=%v", got, err)
+	}
+}
+
+func TestReadLimitedDecompressed_AllowsBodiesAtLimit(t *testing.T) {
+	got, err := readLimitedDecompressed(strings.NewReader("abcde"), 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != "abcde" {
+		t.Fatalf("body mismatch: got %q", got)
+	}
+}
+
+func TestReadLimitedDecompressed_PropagatesReaderErrors(t *testing.T) {
+	want := errors.New("boom")
+	_, err := readLimitedDecompressed(errorReader{err: want}, 5)
+	if !errors.Is(err, want) {
+		t.Fatalf("expected wrapped reader error %v, got %v", want, err)
+	}
+}
+
+type errorReader struct {
+	err error
+}
+
+func (r errorReader) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+var _ io.Reader = errorReader{}

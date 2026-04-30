@@ -4,12 +4,12 @@
       <template #actions>
         <div class="user-usage-stat-grid">
           <!-- Total Requests -->
-          <div class="card p-4">
-          <div class="flex items-center gap-3">
-            <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+          <div class="card user-usage-stat-card user-usage-stat-card-blue p-4">
+          <div class="flex items-start gap-3">
+            <div class="user-usage-stat-icon rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
               <Icon name="document" size="md" class="text-blue-600 dark:text-blue-400" />
             </div>
-            <div>
+            <div class="user-usage-stat-body">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('usage.totalRequests') }}
               </p>
@@ -21,15 +21,30 @@
               </p>
             </div>
           </div>
+          <div class="user-usage-stat-detail-grid">
+            <div>
+              <p class="user-usage-stat-detail-label">当前页</p>
+              <p class="user-usage-stat-detail-value">{{ usageLogs.length.toLocaleString() }} 条</p>
+            </div>
+            <div>
+              <p class="user-usage-stat-detail-label">{{ selfQualityMetrics.length ? '调用质量' : '质量状态' }}</p>
+              <p class="user-usage-stat-detail-value" :class="selfSlowCallCount > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'">
+                {{ selfQualityStatusLabel }}
+              </p>
+            </div>
+          </div>
+          <div v-if="selfSlowCallCount > 0" class="user-usage-stat-alert">
+            {{ selfSlowCallCount }} 次请求超过 10s，建议优先查看 Trace。
+          </div>
         </div>
 
         <!-- Total Tokens -->
-        <div class="card p-4">
-          <div class="flex items-center gap-3">
-            <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
+        <div class="card user-usage-stat-card user-usage-stat-card-amber p-4">
+          <div class="flex items-start gap-3">
+            <div class="user-usage-stat-icon rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
               <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" />
             </div>
-            <div>
+            <div class="user-usage-stat-body">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('usage.totalTokens') }}
               </p>
@@ -42,15 +57,32 @@
               </p>
             </div>
           </div>
+          <div class="user-usage-stat-detail-grid">
+            <div>
+              <p class="user-usage-stat-detail-label">{{ topSelfModel ? '我的使用画像' : '主要模型' }}</p>
+              <p class="user-usage-stat-detail-value truncate" :title="topSelfModel?.model || undefined">
+                {{ topSelfModel?.model || '-' }}
+              </p>
+            </div>
+            <div>
+              <p class="user-usage-stat-detail-label">缓存复用</p>
+              <p class="user-usage-stat-detail-value text-emerald-600 dark:text-emerald-300">
+                {{ formatPercent(selfInsights?.cache_share || 0) }}
+              </p>
+            </div>
+          </div>
+          <div v-if="topSelfModel" class="user-usage-stat-meter">
+            <span :style="{ width: `${clientShareWidth(topSelfModel.share_of_member)}%` }" />
+          </div>
         </div>
 
         <!-- Total Cost -->
-        <div class="card p-4">
-          <div class="flex items-center gap-3">
-            <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
+        <div class="card user-usage-stat-card user-usage-stat-card-green p-4">
+          <div class="flex items-start gap-3">
+            <div class="user-usage-stat-icon rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
               <Icon name="dollar" size="md" class="text-green-600 dark:text-green-400" />
             </div>
-            <div class="min-w-0 flex-1">
+            <div class="user-usage-stat-body min-w-0 flex-1">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('usage.totalCost') }}
               </p>
@@ -64,15 +96,29 @@
               </p>
             </div>
           </div>
+          <div class="user-usage-stat-detail-grid">
+            <div>
+              <p class="user-usage-stat-detail-label">单次成本</p>
+              <p class="user-usage-stat-detail-value">{{ formatCurrency(selfAvgCostPerRequest) }}</p>
+            </div>
+            <div>
+              <p class="user-usage-stat-detail-label">当前页</p>
+              <p class="user-usage-stat-detail-value">{{ formatCurrency(visibleUsageTotalCost) }}</p>
+            </div>
+          </div>
+          <div v-if="topCostModel" class="user-usage-stat-footline">
+            <span class="truncate" :title="topCostModel.model">最高成本 {{ topCostModel.model }}</span>
+            <strong>{{ formatCurrency(topCostModel.cost) }}</strong>
+          </div>
         </div>
 
         <!-- Average Duration -->
-        <div class="card p-4">
-          <div class="flex items-center gap-3">
-            <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
+        <div class="card user-usage-stat-card user-usage-stat-card-purple p-4">
+          <div class="flex items-start gap-3">
+            <div class="user-usage-stat-icon rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
               <Icon name="clock" size="md" class="text-purple-600 dark:text-purple-400" />
             </div>
-            <div>
+            <div class="user-usage-stat-body">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('usage.avgDuration') }}
               </p>
@@ -81,6 +127,22 @@
               </p>
               <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.perRequest') }}</p>
             </div>
+          </div>
+          <div class="user-usage-stat-detail-grid">
+            <div>
+              <p class="user-usage-stat-detail-label">首 Token</p>
+              <p class="user-usage-stat-detail-value">
+                {{ visibleAvgFirstTokenMs > 0 ? formatDuration(visibleAvgFirstTokenMs) : '-' }}
+              </p>
+            </div>
+            <div>
+              <p class="user-usage-stat-detail-label">模型数</p>
+              <p class="user-usage-stat-detail-value">{{ visibleModelCount.toLocaleString() }}</p>
+            </div>
+          </div>
+          <div v-if="topSelfClient" class="user-usage-stat-footline">
+            <span class="truncate" :title="topSelfClient.client || 'Unknown'">主要工具 {{ topSelfClient.client || 'Unknown' }}</span>
+            <strong>{{ formatPercent(topSelfClient.token_share) }}</strong>
           </div>
         </div>
         </div>
@@ -1189,9 +1251,9 @@ const selfQualityMetrics = computed(() => {
     }
   ]
 })
-const showSelfProfileCard = computed(() => selfInsightsLoading.value || hasSelfProfileData.value)
+const showSelfProfileCard = computed(() => false)
 const showSelfRecentCallsCard = computed(() => loading.value || recentUsageLogs.value.length > 0)
-const showSelfQualityCard = computed(() => loading.value || selfQualityMetrics.value.length > 0)
+const showSelfQualityCard = computed(() => false)
 const showSelfClientCard = computed(() => selfInsightsLoading.value || selfClientItems.value.length > 0)
 const showSelfSessionCard = computed(() => selfInsightsLoading.value || selfSessionItems.value.length > 0)
 const showSelfModelCard = computed(() => selfInsightsLoading.value || selfModelItems.value.length > 0)
@@ -1618,7 +1680,7 @@ onMounted(() => {
 
 .user-usage-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
   gap: clamp(0.75rem, 1.4vw, 1rem);
   align-items: stretch;
 }
@@ -1626,8 +1688,162 @@ onMounted(() => {
 .user-usage-stat-grid :deep(.card),
 .user-usage-stat-grid > .card {
   min-width: 0;
-  min-height: 6.5rem;
+  min-height: 10.5rem;
   padding: clamp(0.85rem, 1.2vw, 1rem);
+}
+
+.user-usage-stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.85rem;
+  overflow: hidden;
+  border-color: rgb(226 232 240 / 0.94);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(var(--usage-stat-accent) / 0.10), transparent 36%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(248 250 252 / 0.94));
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 18px 40px -30px rgb(15 23 42 / 0.34);
+}
+
+.dark .user-usage-stat-card {
+  border-color: rgb(51 65 85 / 0.86);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(var(--usage-stat-accent) / 0.16), transparent 38%),
+    linear-gradient(180deg, rgb(15 23 42 / 0.96), rgb(15 23 42 / 0.88));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 22px 48px -32px rgb(0 0 0 / 0.72);
+}
+
+.user-usage-stat-card-blue {
+  --usage-stat-accent: 59 130 246;
+}
+
+.user-usage-stat-card-amber {
+  --usage-stat-accent: 245 158 11;
+}
+
+.user-usage-stat-card-green {
+  --usage-stat-accent: 16 185 129;
+}
+
+.user-usage-stat-card-purple {
+  --usage-stat-accent: 139 92 246;
+}
+
+.user-usage-stat-icon {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.52),
+    0 10px 24px rgb(var(--usage-stat-accent) / 0.12);
+}
+
+.user-usage-stat-body {
+  min-width: 0;
+}
+
+.user-usage-stat-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.user-usage-stat-detail-grid > div {
+  min-width: 0;
+  border-radius: 0.8rem;
+  border: 1px solid rgb(226 232 240 / 0.78);
+  background: rgb(255 255 255 / 0.58);
+  padding: 0.55rem 0.65rem;
+}
+
+.dark .user-usage-stat-detail-grid > div {
+  border-color: rgb(51 65 85 / 0.82);
+  background: rgb(15 23 42 / 0.48);
+}
+
+.user-usage-stat-detail-label {
+  color: rgb(100 116 139);
+  font-size: 0.68rem;
+  line-height: 1rem;
+}
+
+.dark .user-usage-stat-detail-label {
+  color: rgb(148 163 184);
+}
+
+.user-usage-stat-detail-value {
+  margin-top: 0.1rem;
+  min-width: 0;
+  color: rgb(15 23 42);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.1rem;
+}
+
+.dark .user-usage-stat-detail-value {
+  color: rgb(248 250 252);
+}
+
+.user-usage-stat-alert {
+  border-radius: 0.9rem;
+  border: 1px solid rgb(245 158 11 / 0.34);
+  background: rgb(245 158 11 / 0.10);
+  padding: 0.5rem 0.65rem;
+  color: rgb(180 83 9);
+  font-size: 0.72rem;
+  line-height: 1.15rem;
+}
+
+.dark .user-usage-stat-alert {
+  color: rgb(252 211 77);
+}
+
+.user-usage-stat-meter {
+  height: 0.4rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(226 232 240 / 0.78);
+}
+
+.dark .user-usage-stat-meter {
+  background: rgb(51 65 85 / 0.82);
+}
+
+.user-usage-stat-meter span {
+  display: block;
+  height: 100%;
+  min-width: 0.45rem;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(var(--usage-stat-accent)), rgb(20 184 166));
+}
+
+.user-usage-stat-footline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid rgb(226 232 240 / 0.72);
+  padding-top: 0.7rem;
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+}
+
+.dark .user-usage-stat-footline {
+  border-color: rgb(51 65 85 / 0.76);
+  color: rgb(148 163 184);
+}
+
+.user-usage-stat-footline strong {
+  flex: none;
+  color: rgb(15 118 110);
+  font-weight: 800;
+}
+
+.dark .user-usage-stat-footline strong {
+  color: rgb(94 234 212);
 }
 
 .user-usage-insights {
