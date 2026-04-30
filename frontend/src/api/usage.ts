@@ -340,5 +340,3 @@ export const usageAPI = {
   getDashboardSelfInsights,
   getDashboardApiKeysUsage
 }
-
-export default usageAPI

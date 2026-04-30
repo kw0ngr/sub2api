@@ -63,5 +63,3 @@ export const redeemAPI = {
   redeem,
   getHistory
 }
-
-export default redeemAPI

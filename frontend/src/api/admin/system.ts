@@ -77,5 +77,3 @@ export const systemAPI = {
   rollback,
   restartService
 }
-
-export default systemAPI

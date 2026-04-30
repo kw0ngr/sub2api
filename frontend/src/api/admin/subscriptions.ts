@@ -192,5 +192,3 @@ export const subscriptionsAPI = {
   listByGroup,
   listByUser
 }
-
-export default subscriptionsAPI

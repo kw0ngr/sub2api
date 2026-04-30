@@ -29,5 +29,3 @@ export async function updateApiKeyGroup(id: number, groupId: number | null): Pro
 export const apiKeysAPI = {
   updateApiKeyGroup
 }
-
-export default apiKeysAPI

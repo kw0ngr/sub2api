@@ -17,10 +17,7 @@ export async function markRead(id: number): Promise<{ message: string }> {
   return data
 }
 
-const announcementsAPI = {
+export const announcementsAPI = {
   list,
   markRead
 }
-
-export default announcementsAPI
-

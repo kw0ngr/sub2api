@@ -236,7 +236,7 @@ import ModelTagInput from './ModelTagInput.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
 import { perTokenToMTok, getPlatformTagClass } from './types'
 import type { BillingMode } from '@/api/admin/channels'
-import channelsAPI from '@/api/admin/channels'
+import { channelsAPI } from '@/api/admin/channels'
 
 const { t } = useI18n()
 

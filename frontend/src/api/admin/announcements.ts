@@ -74,7 +74,7 @@ export async function getReadStatus(
   return data
 }
 
-const announcementsAPI = {
+export const announcementsAPI = {
   list,
   getById,
   create,
@@ -82,5 +82,3 @@ const announcementsAPI = {
   delete: deleteAnnouncement,
   getReadStatus
 }
-
-export default announcementsAPI

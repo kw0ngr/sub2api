@@ -164,5 +164,4 @@ export async function getModelDefaultPricing(model: string): Promise<ModelDefaul
   return data
 }
 
-const channelsAPI = { list, getById, create, update, remove, getModelDefaultPricing }
-export default channelsAPI
+export const channelsAPI = { list, getById, create, update, remove, getModelDefaultPricing }

@@ -139,5 +139,3 @@ export const keysAPI = {
   delete: deleteKey,
   toggleStatus
 }
-
-export default keysAPI

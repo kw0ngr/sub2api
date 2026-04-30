@@ -312,5 +312,3 @@ export const usersAPI = {
   replaceGroup,
   bindUserAuthIdentity
 }
-
-export default usersAPI

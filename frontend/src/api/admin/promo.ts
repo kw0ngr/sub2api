@@ -63,7 +63,7 @@ export async function getUsages(
   return data
 }
 
-const promoAPI = {
+export const promoAPI = {
   list,
   getById,
   create,
@@ -71,5 +71,3 @@ const promoAPI = {
   delete: deleteCode,
   getUsages
 }
-
-export default promoAPI

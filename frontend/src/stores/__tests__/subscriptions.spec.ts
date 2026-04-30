@@ -6,7 +6,7 @@ import { useSubscriptionStore } from '@/stores/subscriptions'
 const mockGetActiveSubscriptions = vi.fn()
 
 vi.mock('@/api/subscriptions', () => ({
-  default: {
+  subscriptionsAPI: {
     getActiveSubscriptions: (...args: any[]) => mockGetActiveSubscriptions(...args),
   },
 }))

@@ -175,5 +175,3 @@ export const redeemAPI = {
   getStats,
   exportCodes
 }
-
-export default redeemAPI

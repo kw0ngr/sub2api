@@ -94,5 +94,3 @@ export const tlsFingerprintProfileAPI = {
   update,
   delete: deleteProfile
 }
-
-export default tlsFingerprintProfileAPI

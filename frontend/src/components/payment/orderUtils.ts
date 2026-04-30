@@ -1,6 +1,6 @@
 /**
  * Shared utility functions for payment order display.
- * Used by AdminOrderDetail, AdminOrderTable, AdminRefundDialog, AdminOrdersView, etc.
+ * Used by AdminRefundDialog, AdminOrdersView, and shared order table components.
  */
 
 const STATUS_BADGE_MAP: Record<string, string> = {

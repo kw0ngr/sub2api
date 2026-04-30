@@ -205,5 +205,3 @@ export const adminUsageAPI = {
   createCleanupTask,
   cancelCleanupTask
 }
-
-export default adminUsageAPI

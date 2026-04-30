@@ -273,5 +273,3 @@ export const proxiesAPI = {
   exportData,
   importData
 }
-
-export default proxiesAPI

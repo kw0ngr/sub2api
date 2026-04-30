@@ -79,5 +79,3 @@ export const totpAPI = {
   enable,
   disable
 }
-
-export default totpAPI

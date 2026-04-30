@@ -81,5 +81,3 @@ export const scheduledTestsAPI = {
   delete: deletePlan,
   listResults
 }
-
-export default scheduledTestsAPI

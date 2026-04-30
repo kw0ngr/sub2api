@@ -182,5 +182,3 @@ export const userAPI = {
   buildOAuthBindingStartURL,
   startOAuthBinding
 }
-
-export default userAPI

@@ -7,7 +7,7 @@ vi.mock('@/i18n', () => ({
 
 describe('admin accounts API key tooling', () => {
   let apiClient: AxiosInstance
-  let accountsAPI: typeof import('@/api/admin/accounts').default
+  let accountsAPI: typeof import('@/api/admin/accounts').accountsAPI
 
   beforeEach(async () => {
     localStorage.clear()
@@ -15,7 +15,7 @@ describe('admin accounts API key tooling', () => {
     const clientMod = await import('@/api/client')
     const accountsMod = await import('@/api/admin/accounts')
     apiClient = clientMod.apiClient
-    accountsAPI = accountsMod.default
+    accountsAPI = accountsMod.accountsAPI
   })
 
   afterEach(() => {

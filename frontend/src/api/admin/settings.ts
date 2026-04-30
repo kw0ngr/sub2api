@@ -1127,5 +1127,3 @@ export const settingsAPI = {
   setActiveClaudeCodeFingerprint,
   deleteClaudeCodeFingerprint,
 };
-
-export default settingsAPI;

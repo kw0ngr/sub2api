@@ -67,4 +67,4 @@ export async function refreshAntigravityToken(
   return data
 }
 
-export default { generateAuthUrl, exchangeCode, refreshAntigravityToken }
+export const antigravityAPI = { generateAuthUrl, exchangeCode, refreshAntigravityToken }

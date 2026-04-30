@@ -72,5 +72,3 @@ export async function getAvailable(options?: { signal?: AbortSignal }): Promise<
 }
 
 export const userChannelsAPI = { getAvailable }
-
-export default userChannelsAPI

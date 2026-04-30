@@ -67,7 +67,7 @@ export async function getSubscriptionProgress(
   return response.data
 }
 
-export default {
+export const subscriptionsAPI = {
   getMySubscriptions,
   getActiveSubscriptions,
   getSubscriptionsProgress,

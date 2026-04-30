@@ -676,5 +676,3 @@ export const authAPI = {
   completeOIDCOAuthRegistration,
   completeWeChatOAuthRegistration
 }
-
-export default authAPI

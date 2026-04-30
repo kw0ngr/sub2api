@@ -328,5 +328,3 @@ export const dataManagementAPI = {
   listBackupJobs,
   getBackupJob
 }
-
-export default dataManagementAPI

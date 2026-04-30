@@ -758,5 +758,3 @@ export const accountsAPI = {
   batchRefresh,
   setPrivacy
 }
-
-export default accountsAPI

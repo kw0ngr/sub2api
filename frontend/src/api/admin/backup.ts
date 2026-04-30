@@ -115,5 +115,3 @@ export const backupAPI = {
   getDownloadURL,
   restoreBackup,
 }
-
-export default backupAPI

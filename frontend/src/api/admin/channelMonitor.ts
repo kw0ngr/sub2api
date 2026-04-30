@@ -198,5 +198,3 @@ export const channelMonitorAPI = {
   runNow,
   listHistory,
 }
-
-export default channelMonitorAPI

@@ -133,5 +133,3 @@ export const errorPassthroughAPI = {
   delete: deleteRule,
   toggleEnabled
 }
-
-export default errorPassthroughAPI

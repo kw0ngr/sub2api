@@ -127,5 +127,3 @@ export const userAttributesAPI = {
   updateUserAttributeValues,
   getBatchUserAttributes
 }
-
-export default userAttributesAPI

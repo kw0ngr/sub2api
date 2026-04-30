@@ -322,5 +322,3 @@ export const groupsAPI = {
   getUsageSummary,
   getCapacitySummary
 }
-
-export default groupsAPI

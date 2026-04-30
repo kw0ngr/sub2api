@@ -174,5 +174,3 @@ export const adminPaymentAPI = {
     return apiClient.delete(`/admin/payment/providers/${id}`)
   }
 }
-
-export default adminPaymentAPI

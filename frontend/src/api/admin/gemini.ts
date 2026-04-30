@@ -69,4 +69,4 @@ export async function getCapabilities(): Promise<GeminiOAuthCapabilities> {
   return data
 }
 
-export default { generateAuthUrl, exchangeCode, getCapabilities }
+export const geminiAPI = { generateAuthUrl, exchangeCode, getCapabilities }

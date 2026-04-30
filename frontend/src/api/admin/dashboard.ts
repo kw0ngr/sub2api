@@ -411,5 +411,3 @@ export const dashboardAPI = {
   getBatchUsersUsage,
   getBatchApiKeysUsage
 }
-
-export default dashboardAPI

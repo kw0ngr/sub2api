@@ -79,5 +79,3 @@ export const channelMonitorUserAPI = {
   list,
   status,
 }
-
-export default channelMonitorUserAPI

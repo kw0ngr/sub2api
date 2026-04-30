@@ -128,5 +128,3 @@ export const channelMonitorTemplateAPI = {
   apply,
   listAssociatedMonitors,
 }
-
-export default channelMonitorTemplateAPI

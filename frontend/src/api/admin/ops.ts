@@ -1420,5 +1420,3 @@ export const opsAPI = {
   cleanupSystemLogs,
   getSystemLogSinkHealth
 }
-
-export default opsAPI

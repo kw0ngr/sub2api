@@ -31,5 +31,3 @@ export const userGroupsAPI = {
   getAvailable,
   getUserGroupRates
 }
-
-export default userGroupsAPI
