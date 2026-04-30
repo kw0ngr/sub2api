@@ -223,6 +223,17 @@ func (h *SettingHandler) GetClaudeCodeFingerprintLibrary(c *gin.Context) {
 	response.Success(c, library)
 }
 
+// GetClaudeCodeFingerprintDrift 获取最近一次 outgoing Claude Code 指纹巡检结果
+// GET /api/v1/admin/settings/claude-code-fingerprints/drift
+func (h *SettingHandler) GetClaudeCodeFingerprintDrift(c *gin.Context) {
+	status, err := h.settingService.GetClaudeCodeFingerprintDriftStatus(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
+}
+
 type UpdateActiveClaudeCodeFingerprintRequest struct {
 	ID string `json:"id"`
 }

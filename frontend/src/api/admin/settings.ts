@@ -1035,9 +1035,50 @@ export interface ClaudeCodeFingerprintLibrary {
   active_id: string;
 }
 
+export interface ClaudeCodeFingerprintHeaderDiff {
+  header: string;
+  expected?: string;
+  actual?: string;
+  default?: string;
+}
+
+export interface ClaudeCodeFingerprintDriftStatus {
+  status: "idle" | "ok" | "warning" | string;
+  message?: string;
+  endpoint?: string;
+  account_id?: number;
+  account_name?: string;
+  mimic_claude_code: boolean;
+  active_profile_id?: string;
+  active_profile_name?: string;
+  sample_applied: boolean;
+  score: number;
+  header_matches?: string[];
+  header_mismatches?: ClaudeCodeFingerprintHeaderDiff[];
+  missing_headers?: string[];
+  default_overwrites?: ClaudeCodeFingerprintHeaderDiff[];
+  beta_expected?: string[];
+  beta_actual?: string[];
+  beta_missing?: string[];
+  beta_unexpected?: string[];
+  cc_version_from_ua?: string;
+  cc_version_from_billing?: string;
+  cc_version_matches: boolean;
+  warnings?: string[];
+  outgoing_header_summary?: Record<string, string>;
+  updated_at: number;
+}
+
 export async function getClaudeCodeFingerprints(): Promise<ClaudeCodeFingerprintLibrary> {
   const { data } = await apiClient.get<ClaudeCodeFingerprintLibrary>(
     "/admin/settings/claude-code-fingerprints",
+  );
+  return data;
+}
+
+export async function getClaudeCodeFingerprintDrift(): Promise<ClaudeCodeFingerprintDriftStatus> {
+  const { data } = await apiClient.get<ClaudeCodeFingerprintDriftStatus>(
+    "/admin/settings/claude-code-fingerprints/drift",
   );
   return data;
 }
@@ -1082,6 +1123,7 @@ export const settingsAPI = {
   testWebSearchEmulation,
   resetWebSearchUsage,
   getClaudeCodeFingerprints,
+  getClaudeCodeFingerprintDrift,
   setActiveClaudeCodeFingerprint,
   deleteClaudeCodeFingerprint,
 };

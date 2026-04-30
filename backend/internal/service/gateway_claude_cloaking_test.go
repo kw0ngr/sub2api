@@ -381,6 +381,84 @@ func TestBuildUpstreamRequest_OAuth_MimicUsesActiveClaudeCodeFingerprint(t *test
 	rawBody, err := io.ReadAll(upstreamReq.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(rawBody), "cc_version=2.1.99.")
+
+	drift, err := svc.settingService.GetClaudeCodeFingerprintDriftStatus(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "ok", drift.Status)
+	require.Equal(t, profile.ID, drift.ActiveProfileID)
+	require.True(t, drift.SampleApplied)
+	require.True(t, drift.CCVersionMatches)
+	require.Contains(t, drift.HeaderMatches, "User-Agent")
+	require.Empty(t, drift.MissingHeaders)
+	require.Empty(t, drift.DefaultOverwrites)
+}
+
+func TestClaudeCodeFingerprintDriftDetectsDefaultOverwrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req.Header.Set("x-api-key", "test-key-drift")
+	req.Header.Set("User-Agent", "curl/8.0")
+	c.Request = req
+
+	profile := ClaudeCodeFingerprintProfile{
+		ID:                      "overwrite-sample",
+		Name:                    "Claude Code drift sample",
+		Source:                  "auto_capture",
+		UserAgent:               "claude-cli/2.1.77 (external, cli)",
+		Accept:                  "application/x-claude-custom",
+		ContentType:             "application/json",
+		AnthropicVersion:        "2023-06-01",
+		AnthropicBeta:           "claude-code-20250219,oauth-2025-04-20",
+		XApp:                    "cli",
+		DirectBrowserAccess:     "true",
+		StainlessLang:           "js",
+		StainlessPackageVersion: "0.99.0",
+		StainlessOS:             "Darwin",
+		StainlessArch:           "arm64",
+		StainlessRuntime:        "node",
+		StainlessRuntimeVersion: "v24.99.0",
+		StainlessRetryCount:     "0",
+		StainlessTimeout:        "600",
+		CompletenessScore:       100,
+		CreatedAt:               time.Now().Unix(),
+		UpdatedAt:               time.Now().Unix(),
+		LastSeenAt:              time.Now().Unix(),
+		SeenCount:               1,
+	}
+	payload, err := json.Marshal([]ClaudeCodeFingerprintProfile{profile})
+	require.NoError(t, err)
+	svc := &GatewayService{
+		settingService: newGatewayForwardingSettingService(t, map[string]string{
+			SettingKeyEnableFingerprintUnification:         "true",
+			SettingKeyEnableMetadataPassthrough:            "false",
+			SettingKeyEnableCCHSigning:                     "true",
+			SettingKeyClaudeCodeFingerprintProfiles:        string(payload),
+			SettingKeyActiveClaudeCodeFingerprintProfileID: profile.ID,
+		}),
+	}
+	account := &Account{
+		ID:       4247,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"account_uuid": "acc-uuid-drift",
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":[{"type":"text","text":"hello drift"}]}]}`)
+
+	_, err = svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-6", false, true)
+	require.NoError(t, err)
+
+	drift, err := svc.settingService.GetClaudeCodeFingerprintDriftStatus(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "warning", drift.Status)
+	require.Equal(t, profile.ID, drift.ActiveProfileID)
+	require.True(t, drift.SampleApplied)
+	require.NotEmpty(t, drift.DefaultOverwrites)
+	require.Equal(t, "Accept", drift.DefaultOverwrites[0].Header)
+	require.Equal(t, "application/json", drift.DefaultOverwrites[0].Actual)
 }
 
 func TestClaudeCodeSessionCachePrunesToBoundedSize(t *testing.T) {

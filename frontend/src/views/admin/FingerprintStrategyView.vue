@@ -275,6 +275,82 @@
         </div>
       </section>
 
+      <section class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div class="fingerprint-panel fingerprint-drift-panel">
+          <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2>Outgoing 指纹巡检</h2>
+              <p>展示最近一次真实转发前的最终 HTTP 指纹，直接核对样本是否生效。</p>
+            </div>
+            <span :class="['fingerprint-status', driftStatusTone]">
+              {{ driftStatusLabel }} · {{ driftStatus?.score || 0 }}%
+            </span>
+          </div>
+
+          <div class="fingerprint-drift-cards">
+            <div v-for="item in driftChecklist" :key="item.label" class="fingerprint-drift-card" :class="{ ok: item.ok }">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <p>{{ item.hint }}</p>
+            </div>
+          </div>
+
+          <div class="mt-4 fingerprint-drift-issues">
+            <div v-for="row in driftIssueRows" :key="row.title" :class="['fingerprint-drift-issue', row.tone]">
+              <strong>{{ row.title }}</strong>
+              <p>{{ row.detail }}</p>
+            </div>
+          </div>
+
+          <dl v-if="driftStatus?.outgoing_header_summary" class="fingerprint-header-summary">
+            <div v-for="(value, key) in driftStatus.outgoing_header_summary" :key="key">
+              <dt>{{ key }}</dt>
+              <dd>{{ value }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="fingerprint-panel fingerprint-binding-panel">
+          <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2>HTTP / TLS 绑定推荐</h2>
+              <p>把选中的 Claude Code HTTP 样本和 TLS 模板放在一起看，避免一个像 macOS Node，一个像随机 TLS。</p>
+            </div>
+            <span :class="['fingerprint-status', tlsBindingRecommendation.tone]">
+              一致性 {{ tlsBindingRecommendation.level }}
+            </span>
+          </div>
+
+          <div class="fingerprint-binding-summary">
+            <div>
+              <span>HTTP 样本</span>
+              <strong>{{ tlsBindingRecommendation.httpSummary }}</strong>
+            </div>
+            <div>
+              <span>推荐 TLS 模板</span>
+              <strong>{{ tlsBindingRecommendation.profileName }}</strong>
+              <p>{{ tlsBindingRecommendation.profileHint }}</p>
+            </div>
+          </div>
+
+          <div class="mt-4 fingerprint-binding-meter">
+            <span>一致性评分</span>
+            <strong>{{ tlsBindingRecommendation.score }}%</strong>
+            <i :style="{ width: `${tlsBindingRecommendation.score}%` }" />
+          </div>
+
+          <div class="mt-4 fingerprint-check-list">
+            <div v-for="reason in tlsBindingRecommendation.reasons" :key="reason" class="fingerprint-check-item compact">
+              <span class="fingerprint-check">✓</span>
+              <div>
+                <strong>判断依据</strong>
+                <p>{{ reason }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="fingerprint-panel">
         <details class="fingerprint-advanced">
           <summary>
@@ -372,7 +448,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { TLSFingerprintProfile } from '@/api/admin'
-import type { ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
+import type { ClaudeCodeFingerprintDriftStatus, ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
@@ -389,6 +465,7 @@ const showTLSModal = ref(false)
 const profiles = ref<TLSFingerprintProfile[]>([])
 const httpFingerprintProfiles = ref<ClaudeCodeFingerprintProfile[]>([])
 const activeHTTPFingerprintID = ref('')
+const fingerprintDrift = ref<ClaudeCodeFingerprintDriftStatus | null>(null)
 
 type PresetID = 'stable' | 'compatible' | 'debug'
 
@@ -455,6 +532,106 @@ const activePresetLabel = computed(() => {
 })
 
 const visibleProfiles = computed(() => profiles.value.slice(0, 4))
+
+const activeHTTPFingerprint = computed(() => {
+  if (!activeHTTPFingerprintID.value) {
+    return null
+  }
+  return httpFingerprintProfiles.value.find((profile) => profile.id === activeHTTPFingerprintID.value) || null
+})
+
+const driftStatus = computed(() => fingerprintDrift.value)
+
+const driftStatusLabel = computed(() => {
+  const status = driftStatus.value?.status
+  if (status === 'ok') return '一致'
+  if (status === 'warning') return '有偏差'
+  return '待采集'
+})
+
+const driftStatusTone = computed(() => {
+  const status = driftStatus.value?.status
+  if (status === 'ok') return 'good'
+  if (status === 'warning') return 'warn'
+  return 'neutral'
+})
+
+const driftChecklist = computed(() => {
+  const drift = driftStatus.value
+  return [
+    {
+      label: '样本生效',
+      value: drift?.sample_applied ? '已生效' : '未确认',
+      ok: drift?.sample_applied === true,
+      hint: drift?.active_profile_name || '未选择固定 HTTP 样本'
+    },
+    {
+      label: 'Header 覆盖',
+      value: `${drift?.default_overwrites?.length || 0} 项`,
+      ok: (drift?.default_overwrites?.length || 0) === 0,
+      hint: (drift?.default_overwrites?.length || 0) === 0 ? '未发现默认值回写' : '有样本字段被内置默认值覆盖'
+    },
+    {
+      label: 'Beta Token',
+      value: `${(drift?.beta_missing?.length || 0) + (drift?.beta_unexpected?.length || 0)} 处`,
+      ok: (drift?.beta_missing?.length || 0) === 0,
+      hint: (drift?.beta_missing?.length || 0) === 0 ? '没有缺少样本 beta' : '缺少样本中的 beta token'
+    },
+    {
+      label: 'cc_version',
+      value: drift?.cc_version_matches ? '匹配' : '待确认',
+      ok: drift?.cc_version_matches === true,
+      hint: `${drift?.cc_version_from_ua || '-'} / ${drift?.cc_version_from_billing || '-'}`
+    }
+  ]
+})
+
+const driftIssueRows = computed(() => {
+  const drift = driftStatus.value
+  if (!drift) return []
+  const rows: Array<{ title: string; detail: string; tone: string }> = []
+  if (drift.missing_headers?.length) {
+    rows.push({
+      title: '缺失 Header',
+      detail: drift.missing_headers.join(', '),
+      tone: 'warn'
+    })
+  }
+  if (drift.default_overwrites?.length) {
+    rows.push({
+      title: '默认值覆盖',
+      detail: drift.default_overwrites.map((item) => `${item.header}: ${item.actual}`).join(' / '),
+      tone: 'warn'
+    })
+  }
+  if (drift.header_mismatches?.length) {
+    rows.push({
+      title: '字段不一致',
+      detail: drift.header_mismatches.map((item) => `${item.header}: ${item.actual || '-'}`).join(' / '),
+      tone: 'neutral'
+    })
+  }
+  if (drift.beta_missing?.length || drift.beta_unexpected?.length) {
+    rows.push({
+      title: 'Beta 差异',
+      detail: [
+        drift.beta_missing?.length ? `缺少 ${drift.beta_missing.join(', ')}` : '',
+        drift.beta_unexpected?.length ? `额外 ${drift.beta_unexpected.join(', ')}` : ''
+      ].filter(Boolean).join('；'),
+      tone: drift.beta_missing?.length ? 'warn' : 'neutral'
+    })
+  }
+  if (rows.length === 0) {
+    rows.push({
+      title: '暂无明显偏差',
+      detail: drift.message || '等待下一次请求刷新巡检结果。',
+      tone: drift.status === 'ok' ? 'good' : 'neutral'
+    })
+  }
+  return rows
+})
+
+const tlsBindingRecommendation = computed(() => buildTLSBindingRecommendation(activeHTTPFingerprint.value, profiles.value))
 
 const summaryCards = computed(() => [
   {
@@ -604,6 +781,122 @@ const captureCommand = computed(() => {
   return `ANTHROPIC_BASE_URL="${origin}" ANTHROPIC_AUTH_TOKEN="sk-你的网关密钥" claude -p "ping"`
 })
 
+function describeHTTPFingerprint(profile: ClaudeCodeFingerprintProfile | null) {
+  if (!profile) {
+    return '未选择固定 HTTP 样本'
+  }
+  const version = extractClaudeCLIVersion(profile.user_agent) || '未知版本'
+  const os = profile.stainless_os || '未知 OS'
+  const arch = profile.stainless_arch || '未知架构'
+  const runtime = [profile.stainless_runtime || 'runtime?', profile.stainless_runtime_version || ''].filter(Boolean).join(' ')
+  return `Claude Code ${version} / ${os} / ${arch} / ${runtime}`
+}
+
+function extractClaudeCLIVersion(userAgent: string | undefined) {
+  const match = (userAgent || '').match(/\/(\d+\.\d+\.\d+)/)
+  return match?.[1] || ''
+}
+
+function buildTLSBindingRecommendation(
+  httpProfile: ClaudeCodeFingerprintProfile | null,
+  tlsProfiles: TLSFingerprintProfile[]
+) {
+  const httpSummary = describeHTTPFingerprint(httpProfile)
+  if (!httpProfile) {
+    return {
+      httpSummary,
+      profileName: '先选择 HTTP 样本',
+      profileHint: '让真实 Claude Code 请求一次并选中样本后，再给账号绑定 TLS 模板。',
+      level: '低',
+      tone: 'warn',
+      score: 0,
+      reasons: ['缺少固定 HTTP 样本，无法判断 HTTP/TLS 是否同源。']
+    }
+  }
+
+  const candidates = tlsProfiles.map((profile) => ({
+    name: profile.name,
+    description: profile.description || '',
+    enableGrease: profile.enable_grease,
+    alpnProtocols: profile.alpn_protocols || [],
+    supportedVersions: profile.supported_versions || [],
+    extensions: profile.extensions || [],
+    score: scoreTLSCandidate(httpProfile, profile),
+    reasons: describeTLSCandidateReasons(httpProfile, profile)
+  }))
+  candidates.push({
+    name: 'Built-in Default (Node.js 24.x)',
+    description: '没有绑定模板时的内置 Node.js 24.x / Claude Code 默认 TLS 指纹。',
+    enableGrease: false,
+    alpnProtocols: ['http/1.1'],
+    supportedVersions: [772, 771],
+    extensions: [],
+    score: scoreBuiltInTLSCandidate(httpProfile),
+    reasons: ['内置模板面向 Node.js 24.x，适合没有自采集 TLS 模板时作为保守默认。']
+  })
+  candidates.sort((a, b) => b.score - a.score)
+  const best = candidates[0]
+  const level = best.score >= 75 ? '高' : best.score >= 55 ? '中' : '低'
+  const tone = best.score >= 75 ? 'good' : best.score >= 55 ? 'neutral' : 'warn'
+  return {
+    httpSummary,
+    profileName: best.name,
+    profileHint: best.description || '建议在账号侧固定绑定该模板，不建议长期使用随机模板。',
+    level,
+    tone,
+    score: best.score,
+    reasons: best.reasons
+  }
+}
+
+function scoreTLSCandidate(httpProfile: ClaudeCodeFingerprintProfile, profile: TLSFingerprintProfile) {
+  const text = `${profile.name} ${profile.description || ''}`.toLowerCase()
+  let score = 25
+  if (text.includes('claude')) score += 18
+  if (text.includes('node')) score += 18
+  if (text.includes('24') || text.includes('v24')) score += 12
+  const httpOS = (httpProfile.stainless_os || '').toLowerCase()
+  if (httpOS && (text.includes(httpOS) || (httpOS.includes('darwin') && text.includes('mac')))) score += 10
+  const httpArch = (httpProfile.stainless_arch || '').toLowerCase()
+  if (httpArch && text.includes(httpArch)) score += 8
+  if (!profile.enable_grease) score += 8
+  if ((profile.alpn_protocols || []).includes('http/1.1')) score += 8
+  if ((profile.supported_versions || []).includes(772)) score += 6
+  if ((profile.extensions || []).length > 0) score += 5
+  return Math.min(100, score)
+}
+
+function scoreBuiltInTLSCandidate(httpProfile: ClaudeCodeFingerprintProfile) {
+  const runtime = `${httpProfile.stainless_runtime || ''} ${httpProfile.stainless_runtime_version || ''}`.toLowerCase()
+  let score = 62
+  if (runtime.includes('node')) score += 12
+  if (runtime.includes('v24')) score += 12
+  if ((httpProfile.stainless_os || '').toLowerCase().includes('darwin')) score += 4
+  return Math.min(92, score)
+}
+
+function describeTLSCandidateReasons(httpProfile: ClaudeCodeFingerprintProfile, profile: TLSFingerprintProfile) {
+  const reasons: string[] = []
+  const text = `${profile.name} ${profile.description || ''}`.toLowerCase()
+  if (text.includes('claude') || text.includes('node')) {
+    reasons.push('模板名称/描述与 Claude Code / Node.js 方向一致。')
+  }
+  if (!profile.enable_grease) {
+    reasons.push('GREASE 关闭，和当前内置 Node.js 24 模板更接近。')
+  }
+  if ((profile.alpn_protocols || []).includes('http/1.1')) {
+    reasons.push('ALPN 包含 http/1.1，适合当前上游请求链路。')
+  }
+  const httpOS = (httpProfile.stainless_os || '').toLowerCase()
+  if (httpOS && text.includes(httpOS)) {
+    reasons.push(`模板描述包含 ${httpProfile.stainless_os}，和 HTTP 样本 OS 对齐。`)
+  }
+  if (reasons.length === 0) {
+    reasons.push('可用，但和当前 HTTP 样本的系统/运行时特征没有明显绑定证据。')
+  }
+  return reasons
+}
+
 async function copyCaptureCommand() {
   try {
     await navigator.clipboard.writeText(captureCommand.value)
@@ -696,10 +989,11 @@ function applyRecommendedPreset() {
 async function loadData() {
   loading.value = true
   try {
-    const [settings, tlsProfiles, fingerprintLibrary] = await Promise.all([
+    const [settings, tlsProfiles, fingerprintLibrary, drift] = await Promise.all([
       adminAPI.settings.getSettings(),
       adminAPI.tlsFingerprintProfiles.list(),
-      adminAPI.settings.getClaudeCodeFingerprints()
+      adminAPI.settings.getClaudeCodeFingerprints(),
+      adminAPI.settings.getClaudeCodeFingerprintDrift()
     ])
     form.min_claude_code_version = settings.min_claude_code_version || ''
     form.max_claude_code_version = settings.max_claude_code_version || ''
@@ -708,6 +1002,7 @@ async function loadData() {
     form.enable_cch_signing = settings.enable_cch_signing !== false
     profiles.value = tlsProfiles
     applyFingerprintLibrary(fingerprintLibrary)
+    fingerprintDrift.value = drift
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, '加载指纹策略失败'))
   } finally {
@@ -1436,6 +1731,211 @@ onMounted(loadData)
   padding: 1rem;
 }
 
+.fingerprint-drift-panel,
+.fingerprint-binding-panel {
+  overflow: hidden;
+}
+
+.fingerprint-drift-cards {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fingerprint-drift-card,
+.fingerprint-binding-summary > div {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgb(248 250 252 / 0.86), rgb(255 255 255 / 0.72));
+  padding: 1rem;
+}
+
+:global(.dark) .fingerprint-drift-card,
+:global(.dark) .fingerprint-binding-summary > div {
+  border-color: rgb(51 65 85);
+  background:
+    linear-gradient(135deg, rgb(30 41 59 / 0.72), rgb(15 23 42 / 0.5));
+}
+
+.fingerprint-drift-card.ok {
+  border-color: rgb(16 185 129 / 0.35);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.11), transparent 45%),
+    rgb(255 255 255 / 0.82);
+}
+
+:global(.dark) .fingerprint-drift-card.ok {
+  background:
+    radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.16), transparent 48%),
+    rgb(15 23 42 / 0.55);
+}
+
+.fingerprint-drift-card span,
+.fingerprint-binding-summary span,
+.fingerprint-binding-meter span {
+  display: block;
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fingerprint-drift-card strong,
+.fingerprint-binding-summary strong,
+.fingerprint-binding-meter strong {
+  display: block;
+  margin-top: 0.28rem;
+  color: rgb(15 23 42);
+  font-size: 1.02rem;
+  font-weight: 900;
+}
+
+:global(.dark) .fingerprint-drift-card strong,
+:global(.dark) .fingerprint-binding-summary strong,
+:global(.dark) .fingerprint-binding-meter strong {
+  color: white;
+}
+
+.fingerprint-drift-card p,
+.fingerprint-binding-summary p {
+  margin-top: 0.28rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.fingerprint-drift-issues {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.fingerprint-drift-issue {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.95rem;
+  padding: 0.85rem 1rem;
+}
+
+.fingerprint-drift-issue.good {
+  border-color: rgb(16 185 129 / 0.34);
+  background: rgb(236 253 245 / 0.58);
+}
+
+.fingerprint-drift-issue.warn {
+  border-color: rgb(245 158 11 / 0.36);
+  background: rgb(255 251 235 / 0.7);
+}
+
+.fingerprint-drift-issue.neutral {
+  border-color: rgb(59 130 246 / 0.28);
+  background: rgb(239 246 255 / 0.58);
+}
+
+:global(.dark) .fingerprint-drift-issue.good {
+  background: rgb(6 78 59 / 0.18);
+}
+
+:global(.dark) .fingerprint-drift-issue.warn {
+  background: rgb(120 53 15 / 0.18);
+}
+
+:global(.dark) .fingerprint-drift-issue.neutral {
+  background: rgb(30 58 138 / 0.16);
+}
+
+.fingerprint-drift-issue strong {
+  color: rgb(15 23 42);
+  font-weight: 850;
+}
+
+:global(.dark) .fingerprint-drift-issue strong {
+  color: white;
+}
+
+.fingerprint-drift-issue p {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.fingerprint-header-summary {
+  display: grid;
+  margin-top: 1rem;
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+}
+
+:global(.dark) .fingerprint-header-summary {
+  border-color: rgb(51 65 85);
+}
+
+.fingerprint-header-summary div {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(8rem, 0.45fr) minmax(0, 1fr);
+  border-bottom: 1px solid rgb(226 232 240);
+  padding: 0.72rem 0.9rem;
+}
+
+.fingerprint-header-summary div:last-child {
+  border-bottom: 0;
+}
+
+:global(.dark) .fingerprint-header-summary div {
+  border-color: rgb(51 65 85);
+}
+
+.fingerprint-header-summary dt {
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.fingerprint-header-summary dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgb(30 41 59);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.72rem;
+}
+
+:global(.dark) .fingerprint-header-summary dd {
+  color: rgb(226 232 240);
+}
+
+.fingerprint-binding-summary {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.fingerprint-binding-meter {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+:global(.dark) .fingerprint-binding-meter {
+  border-color: rgb(51 65 85);
+}
+
+.fingerprint-binding-meter i {
+  display: block;
+  height: 0.55rem;
+  margin-top: 0.85rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(14 165 233), rgb(16 185 129));
+  box-shadow: 0 8px 20px rgb(14 165 233 / 0.18);
+}
+
+.fingerprint-check-item.compact {
+  padding: 0.85rem;
+}
+
 @media (max-width: 768px) {
   .fingerprint-hero,
   .fingerprint-guide {
@@ -1463,6 +1963,11 @@ onMounted(loadData)
 
   .fingerprint-library-actions {
     flex-direction: column;
+  }
+
+  .fingerprint-drift-cards,
+  .fingerprint-header-summary div {
+    grid-template-columns: 1fr;
   }
 }
 </style>

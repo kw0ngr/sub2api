@@ -402,6 +402,7 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
 		adminSettings.GET("/claude-code-fingerprints", h.Admin.Setting.GetClaudeCodeFingerprintLibrary)
+		adminSettings.GET("/claude-code-fingerprints/drift", h.Admin.Setting.GetClaudeCodeFingerprintDrift)
 		adminSettings.PUT("/claude-code-fingerprints/active", h.Admin.Setting.UpdateActiveClaudeCodeFingerprint)
 		adminSettings.DELETE("/claude-code-fingerprints/:id", h.Admin.Setting.DeleteClaudeCodeFingerprint)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)

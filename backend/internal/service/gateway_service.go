@@ -6275,6 +6275,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		}
 	}
 
+	if tokenType == "oauth" && s.settingService != nil {
+		s.settingService.RecordClaudeCodeFingerprintDrift(ctx, req, body, account, tokenType, mimicClaudeCode, activeFingerprintApplied, "/v1/messages")
+	}
+
 	// === DEBUG: 打印上游转发请求（headers + body 摘要），与 CLIENT_ORIGINAL 对比 ===
 	s.debugLogGatewaySnapshot("UPSTREAM_FORWARD", req.Header, body, map[string]string{
 		"url":                 req.URL.String(),
@@ -9410,6 +9414,10 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
 			}
 		}
+	}
+
+	if tokenType == "oauth" && s.settingService != nil {
+		s.settingService.RecordClaudeCodeFingerprintDrift(ctx, req, body, account, tokenType, mimicClaudeCode, ctActiveFingerprintApplied, "/v1/messages/count_tokens")
 	}
 
 	if c != nil && tokenType == "oauth" {
