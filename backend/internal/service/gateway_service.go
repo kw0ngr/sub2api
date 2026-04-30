@@ -6111,6 +6111,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：对齐 Claude Code 请求身份（指纹 + system cloaking + metadata.user_id）。
 	var fingerprint *Fingerprint
+	activeFingerprintApplied := false
 	enableFP, enableMPT, enableCCH := true, false, true
 	if s.settingService != nil {
 		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
@@ -6135,6 +6136,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if enableFP && s.settingService != nil {
 			if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, fingerprint); ok {
 				fingerprint = activeFingerprint
+				activeFingerprintApplied = true
 				if deviceID == "" {
 					deviceID = strings.TrimSpace(fingerprint.ClientID)
 				}
@@ -6144,10 +6146,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if deviceID == "" {
 			deviceID = generateClientID()
 		}
-		if mimicClaudeCode {
+		if mimicClaudeCode && !activeFingerprintApplied {
 			cliVersion = claude.CLICurrentVersion
 		}
-
 		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
 			body = next
 		}
@@ -6164,7 +6165,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
 	if account.IsOAuth() && mimicClaudeCode {
-		body = syncBillingHeaderVersion(body, claude.DefaultHeaders["User-Agent"])
+		mimicUA := claude.DefaultHeaders["User-Agent"]
+		if activeFingerprintApplied && fingerprint != nil && strings.TrimSpace(fingerprint.UserAgent) != "" {
+			mimicUA = fingerprint.UserAgent
+		}
+		body = syncBillingHeaderVersion(body, mimicUA)
 	} else if fingerprint != nil && enableFP {
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
 	} else if account.IsOAuth() {
@@ -6229,7 +6234,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
 			// 非 Claude Code 客户端：强制 Claude Code 风格请求头。
-			applyClaudeCodeMimicHeaders(req, reqStream)
+			var mimicFingerprint *Fingerprint
+			if activeFingerprintApplied {
+				mimicFingerprint = fingerprint
+			}
+			applyClaudeCodeMimicHeaders(req, reqStream, mimicFingerprint)
 
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
 			// Claude Code OAuth credentials are scoped to Claude Code.
@@ -6692,7 +6701,7 @@ var defaultDroppedBetasSet = buildBetaTokenSet(claude.DroppedBetas)
 // applyClaudeCodeMimicHeaders forces "Claude Code-like" request headers.
 // This mirrors opencode-anthropic-auth behavior: do not trust downstream
 // headers when using Claude Code-scoped OAuth credentials.
-func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
+func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, fp *Fingerprint) {
 	if req == nil {
 		return
 	}
@@ -6706,6 +6715,9 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 		}
 		setHeaderRaw(req.Header, resolveWireCasing(key), value)
 	}
+	// If the operator selected an auto-captured Claude Code sample, overlay it
+	// after static defaults so mimic mode does not drift back to bundled values.
+	applyClaudeFingerprintHeaders(req, fp)
 	// Real Claude CLI keeps application/json even for streaming requests and
 	// marks stream mode via x-stainless-helper-method.
 	setHeaderRaw(req.Header, "Accept", "application/json")
@@ -9276,6 +9288,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	var ctFingerprint *Fingerprint
+	ctActiveFingerprintApplied := false
 	if account.IsOAuth() && ctEnableFP && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil && fp != nil {
@@ -9287,12 +9300,17 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if account.IsOAuth() && ctEnableFP && s.settingService != nil {
 		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, ctFingerprint); ok {
 			ctFingerprint = activeFingerprint
+			ctActiveFingerprintApplied = true
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
 	if account.IsOAuth() && mimicClaudeCode {
-		body = syncBillingHeaderVersion(body, claude.DefaultHeaders["User-Agent"])
+		mimicUA := claude.DefaultHeaders["User-Agent"]
+		if ctActiveFingerprintApplied && ctFingerprint != nil && strings.TrimSpace(ctFingerprint.UserAgent) != "" {
+			mimicUA = ctFingerprint.UserAgent
+		}
+		body = syncBillingHeaderVersion(body, mimicUA)
 	} else if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	} else if account.IsOAuth() {
@@ -9352,7 +9370,11 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// OAuth 账号：处理 anthropic-beta header
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-			applyClaudeCodeMimicHeaders(req, false)
+			var mimicFingerprint *Fingerprint
+			if ctActiveFingerprintApplied {
+				mimicFingerprint = ctFingerprint
+			}
+			applyClaudeCodeMimicHeaders(req, false, mimicFingerprint)
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
 			requiredBetas := append(claudeCodeMimicryBetas(modelID, body), claude.BetaTokenCounting)
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, ctEffectiveDropSet))

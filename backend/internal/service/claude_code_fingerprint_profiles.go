@@ -31,12 +31,22 @@ type ClaudeCodeFingerprintProfile struct {
 	AccountID               int64  `json:"account_id,omitempty"`
 	AccountName             string `json:"account_name,omitempty"`
 	UserAgent               string `json:"user_agent"`
+	Accept                  string `json:"accept,omitempty"`
+	ContentType             string `json:"content_type,omitempty"`
+	AnthropicVersion        string `json:"anthropic_version,omitempty"`
+	AnthropicBeta           string `json:"anthropic_beta,omitempty"`
+	XApp                    string `json:"x_app,omitempty"`
+	DirectBrowserAccess     string `json:"direct_browser_access,omitempty"`
 	StainlessLang           string `json:"stainless_lang,omitempty"`
 	StainlessPackageVersion string `json:"stainless_package_version,omitempty"`
 	StainlessOS             string `json:"stainless_os,omitempty"`
 	StainlessArch           string `json:"stainless_arch,omitempty"`
 	StainlessRuntime        string `json:"stainless_runtime,omitempty"`
 	StainlessRuntimeVersion string `json:"stainless_runtime_version,omitempty"`
+	StainlessRetryCount     string `json:"stainless_retry_count,omitempty"`
+	StainlessTimeout        string `json:"stainless_timeout,omitempty"`
+	HelperMethod            string `json:"helper_method,omitempty"`
+	CompletenessScore       int    `json:"completeness_score"`
 	CreatedAt               int64  `json:"created_at"`
 	UpdatedAt               int64  `json:"updated_at"`
 	LastSeenAt              int64  `json:"last_seen_at"`
@@ -144,12 +154,22 @@ func (s *SettingService) ObserveClaudeCodeFingerprint(ctx context.Context, accou
 		library.Profiles[i].LastSeenAt = now.Unix()
 		library.Profiles[i].SeenCount++
 		library.Profiles[i].UserAgent = profile.UserAgent
+		library.Profiles[i].Accept = profile.Accept
+		library.Profiles[i].ContentType = profile.ContentType
+		library.Profiles[i].AnthropicVersion = profile.AnthropicVersion
+		library.Profiles[i].AnthropicBeta = profile.AnthropicBeta
+		library.Profiles[i].XApp = profile.XApp
+		library.Profiles[i].DirectBrowserAccess = profile.DirectBrowserAccess
 		library.Profiles[i].StainlessLang = profile.StainlessLang
 		library.Profiles[i].StainlessPackageVersion = profile.StainlessPackageVersion
 		library.Profiles[i].StainlessOS = profile.StainlessOS
 		library.Profiles[i].StainlessArch = profile.StainlessArch
 		library.Profiles[i].StainlessRuntime = profile.StainlessRuntime
 		library.Profiles[i].StainlessRuntimeVersion = profile.StainlessRuntimeVersion
+		library.Profiles[i].StainlessRetryCount = profile.StainlessRetryCount
+		library.Profiles[i].StainlessTimeout = profile.StainlessTimeout
+		library.Profiles[i].HelperMethod = profile.HelperMethod
+		library.Profiles[i].CompletenessScore = profile.CompletenessScore
 		break
 	}
 	if !merged {
@@ -249,18 +269,73 @@ func parseClaudeCodeFingerprintProfiles(raw string) []ClaudeCodeFingerprintProfi
 	if err := json.Unmarshal([]byte(raw), &profiles); err != nil {
 		return nil
 	}
+	for i := range profiles {
+		normalizeClaudeCodeFingerprintProfile(&profiles[i])
+	}
 	return profiles
+}
+
+func normalizeClaudeCodeFingerprintProfile(profile *ClaudeCodeFingerprintProfile) {
+	if profile == nil {
+		return
+	}
+	if profile.Accept == "" {
+		profile.Accept = defaultFingerprint.Accept
+	}
+	if profile.ContentType == "" {
+		profile.ContentType = defaultFingerprint.ContentType
+	}
+	if profile.AnthropicVersion == "" {
+		profile.AnthropicVersion = defaultFingerprint.AnthropicVersion
+	}
+	if profile.XApp == "" {
+		profile.XApp = defaultFingerprint.XApp
+	}
+	if profile.DirectBrowserAccess == "" {
+		profile.DirectBrowserAccess = defaultFingerprint.DirectBrowserAccess
+	}
+	if profile.StainlessRetryCount == "" {
+		profile.StainlessRetryCount = defaultFingerprint.StainlessRetryCount
+	}
+	if profile.StainlessTimeout == "" {
+		profile.StainlessTimeout = defaultFingerprint.StainlessTimeout
+	}
+	fp := profile.toFingerprint(nil)
+	profile.CompletenessScore = claudeCodeFingerprintCompletenessScore(*fp)
 }
 
 func claudeCodeFingerprintProfileFromHeaders(accountID int64, accountName string, headers http.Header, now time.Time) ClaudeCodeFingerprintProfile {
 	fp := Fingerprint{
 		UserAgent:               strings.TrimSpace(headers.Get("User-Agent")),
+		Accept:                  strings.TrimSpace(headers.Get("Accept")),
+		ContentType:             strings.TrimSpace(headers.Get("Content-Type")),
+		AnthropicVersion:        strings.TrimSpace(headers.Get("anthropic-version")),
+		AnthropicBeta:           strings.TrimSpace(headers.Get("anthropic-beta")),
+		XApp:                    strings.TrimSpace(headers.Get("X-App")),
+		DirectBrowserAccess:     strings.TrimSpace(headers.Get("Anthropic-Dangerous-Direct-Browser-Access")),
 		StainlessLang:           getHeaderOrDefault(headers, "X-Stainless-Lang", defaultFingerprint.StainlessLang),
 		StainlessPackageVersion: getHeaderOrDefault(headers, "X-Stainless-Package-Version", defaultFingerprint.StainlessPackageVersion),
 		StainlessOS:             getHeaderOrDefault(headers, "X-Stainless-OS", defaultFingerprint.StainlessOS),
 		StainlessArch:           getHeaderOrDefault(headers, "X-Stainless-Arch", defaultFingerprint.StainlessArch),
 		StainlessRuntime:        getHeaderOrDefault(headers, "X-Stainless-Runtime", defaultFingerprint.StainlessRuntime),
 		StainlessRuntimeVersion: getHeaderOrDefault(headers, "X-Stainless-Runtime-Version", defaultFingerprint.StainlessRuntimeVersion),
+		StainlessRetryCount:     getHeaderOrDefault(headers, "X-Stainless-Retry-Count", defaultFingerprint.StainlessRetryCount),
+		StainlessTimeout:        getHeaderOrDefault(headers, "X-Stainless-Timeout", defaultFingerprint.StainlessTimeout),
+	}
+	if fp.Accept == "" {
+		fp.Accept = defaultFingerprint.Accept
+	}
+	if fp.ContentType == "" {
+		fp.ContentType = defaultFingerprint.ContentType
+	}
+	if fp.AnthropicVersion == "" {
+		fp.AnthropicVersion = defaultFingerprint.AnthropicVersion
+	}
+	if fp.XApp == "" {
+		fp.XApp = defaultFingerprint.XApp
+	}
+	if fp.DirectBrowserAccess == "" {
+		fp.DirectBrowserAccess = defaultFingerprint.DirectBrowserAccess
 	}
 	id := claudeCodeFingerprintProfileID(fp)
 	version := ExtractCLIVersion(fp.UserAgent)
@@ -283,12 +358,22 @@ func claudeCodeFingerprintProfileFromHeaders(accountID int64, accountName string
 		AccountID:               accountID,
 		AccountName:             accountName,
 		UserAgent:               fp.UserAgent,
+		Accept:                  fp.Accept,
+		ContentType:             fp.ContentType,
+		AnthropicVersion:        fp.AnthropicVersion,
+		AnthropicBeta:           fp.AnthropicBeta,
+		XApp:                    fp.XApp,
+		DirectBrowserAccess:     fp.DirectBrowserAccess,
 		StainlessLang:           fp.StainlessLang,
 		StainlessPackageVersion: fp.StainlessPackageVersion,
 		StainlessOS:             fp.StainlessOS,
 		StainlessArch:           fp.StainlessArch,
 		StainlessRuntime:        fp.StainlessRuntime,
 		StainlessRuntimeVersion: fp.StainlessRuntimeVersion,
+		StainlessRetryCount:     fp.StainlessRetryCount,
+		StainlessTimeout:        fp.StainlessTimeout,
+		HelperMethod:            strings.TrimSpace(headers.Get("X-Stainless-Helper-Method")),
+		CompletenessScore:       claudeCodeFingerprintCompletenessScore(fp),
 		CreatedAt:               now.Unix(),
 		UpdatedAt:               now.Unix(),
 		LastSeenAt:              now.Unix(),
@@ -304,6 +389,24 @@ func (p ClaudeCodeFingerprintProfile) toFingerprint(base *Fingerprint) *Fingerpr
 	}
 	if p.UserAgent != "" {
 		out.UserAgent = p.UserAgent
+	}
+	if p.Accept != "" {
+		out.Accept = p.Accept
+	}
+	if p.ContentType != "" {
+		out.ContentType = p.ContentType
+	}
+	if p.AnthropicVersion != "" {
+		out.AnthropicVersion = p.AnthropicVersion
+	}
+	if p.AnthropicBeta != "" {
+		out.AnthropicBeta = p.AnthropicBeta
+	}
+	if p.XApp != "" {
+		out.XApp = p.XApp
+	}
+	if p.DirectBrowserAccess != "" {
+		out.DirectBrowserAccess = p.DirectBrowserAccess
 	}
 	if p.StainlessLang != "" {
 		out.StainlessLang = p.StainlessLang
@@ -323,21 +426,63 @@ func (p ClaudeCodeFingerprintProfile) toFingerprint(base *Fingerprint) *Fingerpr
 	if p.StainlessRuntimeVersion != "" {
 		out.StainlessRuntimeVersion = p.StainlessRuntimeVersion
 	}
+	if p.StainlessRetryCount != "" {
+		out.StainlessRetryCount = p.StainlessRetryCount
+	}
+	if p.StainlessTimeout != "" {
+		out.StainlessTimeout = p.StainlessTimeout
+	}
 	return out
 }
 
 func claudeCodeFingerprintProfileID(fp Fingerprint) string {
 	parts := []string{
 		fp.UserAgent,
+		fp.Accept,
+		fp.ContentType,
+		fp.AnthropicVersion,
+		fp.XApp,
+		fp.DirectBrowserAccess,
 		fp.StainlessLang,
 		fp.StainlessPackageVersion,
 		fp.StainlessOS,
 		fp.StainlessArch,
 		fp.StainlessRuntime,
 		fp.StainlessRuntimeVersion,
+		fp.StainlessRetryCount,
+		fp.StainlessTimeout,
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:8])
+}
+
+func claudeCodeFingerprintCompletenessScore(fp Fingerprint) int {
+	fields := []string{
+		fp.UserAgent,
+		fp.Accept,
+		fp.ContentType,
+		fp.AnthropicVersion,
+		fp.XApp,
+		fp.DirectBrowserAccess,
+		fp.StainlessLang,
+		fp.StainlessPackageVersion,
+		fp.StainlessOS,
+		fp.StainlessArch,
+		fp.StainlessRuntime,
+		fp.StainlessRuntimeVersion,
+		fp.StainlessRetryCount,
+		fp.StainlessTimeout,
+	}
+	if len(fields) == 0 {
+		return 0
+	}
+	present := 0
+	for _, field := range fields {
+		if strings.TrimSpace(field) != "" {
+			present++
+		}
+	}
+	return present * 100 / len(fields)
 }
 
 func looksLikeClaudeCodeHeaders(headers http.Header) bool {

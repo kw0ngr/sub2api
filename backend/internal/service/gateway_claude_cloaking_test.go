@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -100,8 +101,10 @@ func (c *recordingIdentityCache) SetMaskedSessionID(_ context.Context, _ int64, 
 func newGatewayForwardingSettingService(t *testing.T, values map[string]string) *SettingService {
 	t.Helper()
 	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{expiresAt: time.Now().Add(-time.Second).UnixNano()})
+	claudeCodeFingerprintLibraryCache.Store(&cachedClaudeCodeFingerprintLibrary{expiresAt: time.Now().Add(-time.Second).UnixNano()})
 	t.Cleanup(func() {
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{expiresAt: time.Now().Add(-time.Second).UnixNano()})
+		claudeCodeFingerprintLibraryCache.Store(&cachedClaudeCodeFingerprintLibrary{expiresAt: time.Now().Add(-time.Second).UnixNano()})
 	})
 	return NewSettingService(&gatewayForwardingSettingRepoStub{values: values}, &config.Config{})
 }
@@ -306,6 +309,78 @@ func TestBuildCountTokensRequest_OAuth_FingerprintUnificationDisabledPreservesCl
 	require.Equal(t, int64(0), cache.gets.Load(), "fingerprint cache should not be read for count_tokens when unification is disabled")
 	require.Equal(t, "claude-cli/2.1.2 (client, cli)", getHeaderRaw(upstreamReq.Header, "User-Agent"))
 	require.Equal(t, "count-client-js", getHeaderRaw(upstreamReq.Header, "X-Stainless-Lang"))
+}
+
+func TestBuildUpstreamRequest_OAuth_MimicUsesActiveClaudeCodeFingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req.Header.Set("x-api-key", "test-key-active-claude-code-fp")
+	req.Header.Set("User-Agent", "curl/8.0")
+	c.Request = req
+
+	profile := ClaudeCodeFingerprintProfile{
+		ID:                      "real-cc-sample",
+		Name:                    "Claude Code 2.1.99",
+		Source:                  "auto_capture",
+		UserAgent:               "claude-cli/2.1.99 (external, cli)",
+		Accept:                  "application/json",
+		ContentType:             "application/json",
+		AnthropicVersion:        "2023-06-01",
+		AnthropicBeta:           "claude-code-20250219,oauth-2025-04-20,prompt-caching-scope-2026-01-05",
+		XApp:                    "cli",
+		DirectBrowserAccess:     "true",
+		StainlessLang:           "js",
+		StainlessPackageVersion: "0.99.0",
+		StainlessOS:             "Darwin",
+		StainlessArch:           "arm64",
+		StainlessRuntime:        "node",
+		StainlessRuntimeVersion: "v24.99.0",
+		StainlessRetryCount:     "0",
+		StainlessTimeout:        "600",
+		CompletenessScore:       100,
+		CreatedAt:               time.Now().Unix(),
+		UpdatedAt:               time.Now().Unix(),
+		LastSeenAt:              time.Now().Unix(),
+		SeenCount:               3,
+	}
+	payload, err := json.Marshal([]ClaudeCodeFingerprintProfile{profile})
+	require.NoError(t, err)
+
+	svc := &GatewayService{
+		settingService: newGatewayForwardingSettingService(t, map[string]string{
+			SettingKeyEnableFingerprintUnification:         "true",
+			SettingKeyEnableMetadataPassthrough:            "false",
+			SettingKeyEnableCCHSigning:                     "true",
+			SettingKeyClaudeCodeFingerprintProfiles:        string(payload),
+			SettingKeyActiveClaudeCodeFingerprintProfileID: profile.ID,
+		}),
+	}
+	account := &Account{
+		ID:       4246,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"account_uuid": "acc-uuid-active-fp",
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
+
+	upstreamReq, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-6", false, true)
+	require.NoError(t, err)
+
+	require.Equal(t, profile.UserAgent, getHeaderRaw(upstreamReq.Header, "User-Agent"))
+	require.Equal(t, profile.StainlessPackageVersion, getHeaderRaw(upstreamReq.Header, "X-Stainless-Package-Version"))
+	require.Equal(t, profile.StainlessRuntimeVersion, getHeaderRaw(upstreamReq.Header, "X-Stainless-Runtime-Version"))
+	require.Equal(t, profile.XApp, getHeaderRaw(upstreamReq.Header, "x-app"))
+	require.Equal(t, profile.DirectBrowserAccess, getHeaderRaw(upstreamReq.Header, "anthropic-dangerous-direct-browser-access"))
+	require.Contains(t, getHeaderRaw(upstreamReq.Header, "anthropic-beta"), "prompt-caching-scope-2026-01-05")
+	require.Contains(t, getHeaderRaw(upstreamReq.Header, "anthropic-beta"), "claude-code-20250219")
+
+	rawBody, err := io.ReadAll(upstreamReq.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(rawBody), "cc_version=2.1.99.")
 }
 
 func TestClaudeCodeSessionCachePrunesToBoundedSize(t *testing.T) {

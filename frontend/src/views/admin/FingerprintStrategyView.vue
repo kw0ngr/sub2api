@@ -187,7 +187,7 @@
         <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2>已捕获 HTTP 指纹样本库</h2>
-            <p>团队成员用真实 Claude Code 走一次网关后，这里会自动出现可复用样本；小白直接选一个保存即可。</p>
+            <p>团队成员用真实 Claude Code 走一次网关后，这里会自动出现可复用样本；只保存非凭据 headers，不保存 Auth、Cookie 或 API Key。</p>
           </div>
           <span class="fingerprint-badge">{{ httpFingerprintProfiles.length }} 个样本</span>
         </div>
@@ -213,7 +213,7 @@
         </div>
 
         <div v-if="httpFingerprintProfiles.length === 0" class="fingerprint-empty">
-          暂无样本。让任意团队成员用真实 Claude Code 通过网关调用一次，系统会自动保存 User-Agent 和 X-Stainless-*。
+          暂无样本。让任意团队成员用真实 Claude Code 通过网关调用一次，系统会自动保存 User-Agent、X-App、Anthropic-* 和 X-Stainless-* 等非凭据特征。
         </div>
         <div v-else class="mt-4 grid gap-3 lg:grid-cols-2">
           <article
@@ -231,8 +231,20 @@
             </div>
             <dl class="fingerprint-http-meta">
               <div>
+                <dt>完整度</dt>
+                <dd>{{ profile.completeness_score || 0 }}%</dd>
+              </div>
+              <div>
                 <dt>User-Agent</dt>
                 <dd>{{ profile.user_agent }}</dd>
+              </div>
+              <div>
+                <dt>App / Version</dt>
+                <dd>{{ profile.x_app || '-' }} / {{ profile.anthropic_version || '-' }}</dd>
+              </div>
+              <div>
+                <dt>Beta</dt>
+                <dd>{{ formatBetaTokens(profile.anthropic_beta) }}</dd>
               </div>
               <div>
                 <dt>Runtime</dt>
@@ -241,6 +253,10 @@
               <div>
                 <dt>OS / Arch</dt>
                 <dd>{{ profile.stainless_os || '-' }} / {{ profile.stainless_arch || '-' }}</dd>
+              </div>
+              <div>
+                <dt>Retry / Timeout</dt>
+                <dd>{{ profile.stainless_retry_count || '-' }} / {{ profile.stainless_timeout || '-' }}</dd>
               </div>
               <div>
                 <dt>最近捕获</dt>
@@ -642,6 +658,17 @@ function formatFingerprintTime(timestamp: number) {
     return '-'
   }
   return new Date(timestamp * 1000).toLocaleString()
+}
+
+function formatBetaTokens(beta: string | undefined) {
+  if (!beta) {
+    return '-'
+  }
+  const tokens = beta.split(',').map((item) => item.trim()).filter(Boolean)
+  if (tokens.length <= 3) {
+    return tokens.join(', ')
+  }
+  return `${tokens.slice(0, 3).join(', ')} +${tokens.length - 3}`
 }
 
 function applyPreset(preset: PresetID) {

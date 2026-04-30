@@ -28,24 +28,40 @@ var (
 // 默认指纹值（当客户端未提供时使用）
 var defaultFingerprint = Fingerprint{
 	UserAgent:               claude.DefaultHeaders["User-Agent"],
+	Accept:                  "application/json",
+	ContentType:             "application/json",
+	AnthropicVersion:        "2023-06-01",
+	AnthropicBeta:           claude.DefaultBetaHeader,
+	XApp:                    claude.DefaultHeaders["X-App"],
+	DirectBrowserAccess:     claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"],
 	StainlessLang:           claude.DefaultHeaders["X-Stainless-Lang"],
 	StainlessPackageVersion: claude.DefaultHeaders["X-Stainless-Package-Version"],
 	StainlessOS:             claude.DefaultHeaders["X-Stainless-OS"],
 	StainlessArch:           claude.DefaultHeaders["X-Stainless-Arch"],
 	StainlessRuntime:        claude.DefaultHeaders["X-Stainless-Runtime"],
 	StainlessRuntimeVersion: claude.DefaultHeaders["X-Stainless-Runtime-Version"],
+	StainlessRetryCount:     claude.DefaultHeaders["X-Stainless-Retry-Count"],
+	StainlessTimeout:        claude.DefaultHeaders["X-Stainless-Timeout"],
 }
 
 // Fingerprint represents account fingerprint data
 type Fingerprint struct {
 	ClientID                string
 	UserAgent               string
+	Accept                  string
+	ContentType             string
+	AnthropicVersion        string
+	AnthropicBeta           string
+	XApp                    string
+	DirectBrowserAccess     string
 	StainlessLang           string
 	StainlessPackageVersion string
 	StainlessOS             string
 	StainlessArch           string
 	StainlessRuntime        string
 	StainlessRuntimeVersion string
+	StainlessRetryCount     string
+	StainlessTimeout        string
 	UpdatedAt               int64 `json:",omitempty"` // Unix timestamp，用于判断是否需要续期TTL
 }
 
@@ -130,6 +146,12 @@ func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fin
 		fp.UserAgent = defaultFingerprint.UserAgent
 	}
 
+	fp.Accept = strings.TrimSpace(headers.Get("Accept"))
+	fp.ContentType = strings.TrimSpace(headers.Get("Content-Type"))
+	fp.AnthropicVersion = strings.TrimSpace(headers.Get("anthropic-version"))
+	fp.AnthropicBeta = strings.TrimSpace(headers.Get("anthropic-beta"))
+	fp.XApp = strings.TrimSpace(headers.Get("X-App"))
+	fp.DirectBrowserAccess = strings.TrimSpace(headers.Get("Anthropic-Dangerous-Direct-Browser-Access"))
 	// 获取x-stainless-*头，如果没有则使用默认值
 	fp.StainlessLang = getHeaderOrDefault(headers, "X-Stainless-Lang", defaultFingerprint.StainlessLang)
 	fp.StainlessPackageVersion = getHeaderOrDefault(headers, "X-Stainless-Package-Version", defaultFingerprint.StainlessPackageVersion)
@@ -137,6 +159,8 @@ func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fin
 	fp.StainlessArch = getHeaderOrDefault(headers, "X-Stainless-Arch", defaultFingerprint.StainlessArch)
 	fp.StainlessRuntime = getHeaderOrDefault(headers, "X-Stainless-Runtime", defaultFingerprint.StainlessRuntime)
 	fp.StainlessRuntimeVersion = getHeaderOrDefault(headers, "X-Stainless-Runtime-Version", defaultFingerprint.StainlessRuntimeVersion)
+	fp.StainlessRetryCount = getHeaderOrDefault(headers, "X-Stainless-Retry-Count", defaultFingerprint.StainlessRetryCount)
+	fp.StainlessTimeout = getHeaderOrDefault(headers, "X-Stainless-Timeout", defaultFingerprint.StainlessTimeout)
 
 	return fp
 }
@@ -150,6 +174,12 @@ func mergeHeadersIntoFingerprint(fp *Fingerprint, headers http.Header) {
 	if ua := headers.Get("User-Agent"); ua != "" {
 		fp.UserAgent = ua
 	}
+	mergeHeader(headers, "Accept", &fp.Accept)
+	mergeHeader(headers, "Content-Type", &fp.ContentType)
+	mergeHeader(headers, "anthropic-version", &fp.AnthropicVersion)
+	mergeHeader(headers, "anthropic-beta", &fp.AnthropicBeta)
+	mergeHeader(headers, "X-App", &fp.XApp)
+	mergeHeader(headers, "Anthropic-Dangerous-Direct-Browser-Access", &fp.DirectBrowserAccess)
 	// X-Stainless-* 头：仅在请求中实际携带时才更新，否则保留缓存值
 	mergeHeader(headers, "X-Stainless-Lang", &fp.StainlessLang)
 	mergeHeader(headers, "X-Stainless-Package-Version", &fp.StainlessPackageVersion)
@@ -157,6 +187,8 @@ func mergeHeadersIntoFingerprint(fp *Fingerprint, headers http.Header) {
 	mergeHeader(headers, "X-Stainless-Arch", &fp.StainlessArch)
 	mergeHeader(headers, "X-Stainless-Runtime", &fp.StainlessRuntime)
 	mergeHeader(headers, "X-Stainless-Runtime-Version", &fp.StainlessRuntimeVersion)
+	mergeHeader(headers, "X-Stainless-Retry-Count", &fp.StainlessRetryCount)
+	mergeHeader(headers, "X-Stainless-Timeout", &fp.StainlessTimeout)
 }
 
 // mergeHeader 如果请求头中存在该字段则更新目标值，否则保留原值
@@ -177,6 +209,10 @@ func getHeaderOrDefault(headers http.Header, key, defaultValue string) string {
 // ApplyFingerprint 将指纹应用到请求头（覆盖原有的x-stainless-*头）
 // 使用 setHeaderRaw 保持原始大小写（如 X-Stainless-OS）
 func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
+	applyClaudeFingerprintHeaders(req, fp)
+}
+
+func applyClaudeFingerprintHeaders(req *http.Request, fp *Fingerprint) {
 	if fp == nil {
 		return
 	}
@@ -184,6 +220,24 @@ func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
 	// 设置user-agent
 	if fp.UserAgent != "" {
 		setHeaderRaw(req.Header, "User-Agent", fp.UserAgent)
+	}
+	if fp.Accept != "" {
+		setHeaderRaw(req.Header, "Accept", fp.Accept)
+	}
+	if fp.ContentType != "" {
+		setHeaderRaw(req.Header, "content-type", fp.ContentType)
+	}
+	if fp.AnthropicVersion != "" {
+		setHeaderRaw(req.Header, "anthropic-version", fp.AnthropicVersion)
+	}
+	if fp.AnthropicBeta != "" {
+		setHeaderRaw(req.Header, "anthropic-beta", fp.AnthropicBeta)
+	}
+	if fp.XApp != "" {
+		setHeaderRaw(req.Header, "x-app", fp.XApp)
+	}
+	if fp.DirectBrowserAccess != "" {
+		setHeaderRaw(req.Header, "anthropic-dangerous-direct-browser-access", fp.DirectBrowserAccess)
 	}
 
 	// 设置x-stainless-*头（保持与 claude.DefaultHeaders 一致的大小写）
@@ -204,6 +258,12 @@ func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
 	}
 	if fp.StainlessRuntimeVersion != "" {
 		setHeaderRaw(req.Header, "X-Stainless-Runtime-Version", fp.StainlessRuntimeVersion)
+	}
+	if fp.StainlessRetryCount != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Retry-Count", fp.StainlessRetryCount)
+	}
+	if fp.StainlessTimeout != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Timeout", fp.StainlessTimeout)
 	}
 }
 
