@@ -259,6 +259,8 @@ const (
 	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
 	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习
 	SettingKeyActiveClaudeCodeFingerprintProfileID = "active_claude_code_fingerprint_profile_id"
+	// SettingKeyClaudeCodeFingerprintDriftStatus 最近一次 outgoing Claude Code 指纹巡检结果
+	SettingKeyClaudeCodeFingerprintDriftStatus = "claude_code_fingerprint_drift_status"
 
 	// Balance Low Notification
 	SettingKeyBalanceLowNotifyEnabled     = "balance_low_notify_enabled"      // 全局开关

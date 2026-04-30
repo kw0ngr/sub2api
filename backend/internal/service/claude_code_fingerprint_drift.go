@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"sort"
@@ -11,10 +13,12 @@ import (
 )
 
 const claudeCodeFingerprintDriftMaxValueLen = 240
+const claudeCodeFingerprintDriftPersistInterval = 15 * time.Second
 
 var (
 	claudeCodeFingerprintDriftLatest atomic.Value // *ClaudeCodeFingerprintDriftStatus
 	ccVersionSummaryRe               = regexp.MustCompile(`\bcc_version=([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9A-Fa-f]+)?)`)
+	claudeCodeFingerprintDriftNextDB atomic.Int64
 )
 
 type ClaudeCodeFingerprintHeaderDiff struct {
@@ -66,33 +70,69 @@ func (s *SettingService) RecordClaudeCodeFingerprintDrift(
 	}
 	status := s.buildClaudeCodeFingerprintDriftStatus(ctx, req, body, account, mimicClaudeCode, sampleApplied, endpoint)
 	claudeCodeFingerprintDriftLatest.Store(&status)
+	s.persistClaudeCodeFingerprintDriftStatus(ctx, status)
 }
 
-func (s *SettingService) GetClaudeCodeFingerprintDriftStatus(context.Context) (ClaudeCodeFingerprintDriftStatus, error) {
+func (s *SettingService) GetClaudeCodeFingerprintDriftStatus(ctx context.Context) (ClaudeCodeFingerprintDriftStatus, error) {
 	if raw, ok := claudeCodeFingerprintDriftLatest.Load().(*ClaudeCodeFingerprintDriftStatus); ok && raw != nil {
-		cp := *raw
-		cp.HeaderMatches = append([]string(nil), raw.HeaderMatches...)
-		cp.HeaderMismatches = append([]ClaudeCodeFingerprintHeaderDiff(nil), raw.HeaderMismatches...)
-		cp.MissingHeaders = append([]string(nil), raw.MissingHeaders...)
-		cp.DefaultOverwrites = append([]ClaudeCodeFingerprintHeaderDiff(nil), raw.DefaultOverwrites...)
-		cp.BetaExpected = append([]string(nil), raw.BetaExpected...)
-		cp.BetaActual = append([]string(nil), raw.BetaActual...)
-		cp.BetaMissing = append([]string(nil), raw.BetaMissing...)
-		cp.BetaUnexpected = append([]string(nil), raw.BetaUnexpected...)
-		cp.Warnings = append([]string(nil), raw.Warnings...)
-		if raw.OutgoingHeaderSummary != nil {
-			cp.OutgoingHeaderSummary = make(map[string]string, len(raw.OutgoingHeaderSummary))
-			for key, value := range raw.OutgoingHeaderSummary {
-				cp.OutgoingHeaderSummary[key] = value
+		return cloneClaudeCodeFingerprintDriftStatus(*raw), nil
+	}
+	if s != nil && s.settingRepo != nil {
+		if value, err := s.settingRepo.GetValue(ctx, SettingKeyClaudeCodeFingerprintDriftStatus); err == nil && strings.TrimSpace(value) != "" {
+			var persisted ClaudeCodeFingerprintDriftStatus
+			if err := json.Unmarshal([]byte(value), &persisted); err == nil {
+				clone := cloneClaudeCodeFingerprintDriftStatus(persisted)
+				claudeCodeFingerprintDriftLatest.Store(&clone)
+				return clone, nil
 			}
+		} else if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			return ClaudeCodeFingerprintDriftStatus{}, err
 		}
-		return cp, nil
 	}
 	return ClaudeCodeFingerprintDriftStatus{
 		Status:    "idle",
-		Message:   "还没有捕获到 OAuth 上游转发指纹。让 Claude Code / 兼容客户端请求一次后再查看。",
+		Message:   "还没有捕获到 OAuth 上游转发指纹。升级或重启后需要让 Claude Code / 兼容客户端请求一次，或查看历史持久化结果。",
 		UpdatedAt: time.Now().Unix(),
 	}, nil
+}
+
+func (s *SettingService) persistClaudeCodeFingerprintDriftStatus(ctx context.Context, status ClaudeCodeFingerprintDriftStatus) {
+	if s == nil || s.settingRepo == nil {
+		return
+	}
+	now := time.Now()
+	next := claudeCodeFingerprintDriftNextDB.Load()
+	if status.Status != "warning" && next > now.UnixNano() {
+		return
+	}
+	claudeCodeFingerprintDriftNextDB.Store(now.Add(claudeCodeFingerprintDriftPersistInterval).UnixNano())
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return
+	}
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	_ = s.settingRepo.Set(dbCtx, SettingKeyClaudeCodeFingerprintDriftStatus, string(payload))
+}
+
+func cloneClaudeCodeFingerprintDriftStatus(raw ClaudeCodeFingerprintDriftStatus) ClaudeCodeFingerprintDriftStatus {
+	cp := raw
+	cp.HeaderMatches = append([]string(nil), raw.HeaderMatches...)
+	cp.HeaderMismatches = append([]ClaudeCodeFingerprintHeaderDiff(nil), raw.HeaderMismatches...)
+	cp.MissingHeaders = append([]string(nil), raw.MissingHeaders...)
+	cp.DefaultOverwrites = append([]ClaudeCodeFingerprintHeaderDiff(nil), raw.DefaultOverwrites...)
+	cp.BetaExpected = append([]string(nil), raw.BetaExpected...)
+	cp.BetaActual = append([]string(nil), raw.BetaActual...)
+	cp.BetaMissing = append([]string(nil), raw.BetaMissing...)
+	cp.BetaUnexpected = append([]string(nil), raw.BetaUnexpected...)
+	cp.Warnings = append([]string(nil), raw.Warnings...)
+	if raw.OutgoingHeaderSummary != nil {
+		cp.OutgoingHeaderSummary = make(map[string]string, len(raw.OutgoingHeaderSummary))
+		for key, value := range raw.OutgoingHeaderSummary {
+			cp.OutgoingHeaderSummary[key] = value
+		}
+	}
+	return cp
 }
 
 func (s *SettingService) buildClaudeCodeFingerprintDriftStatus(

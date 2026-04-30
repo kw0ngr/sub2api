@@ -33,8 +33,12 @@ func (s *gatewayForwardingSettingRepoStub) GetValue(_ context.Context, key strin
 	return "", ErrSettingNotFound
 }
 
-func (s *gatewayForwardingSettingRepoStub) Set(context.Context, string, string) error {
-	panic("unexpected Set call")
+func (s *gatewayForwardingSettingRepoStub) Set(_ context.Context, key string, value string) error {
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	s.values[key] = value
+	return nil
 }
 
 func (s *gatewayForwardingSettingRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
@@ -47,8 +51,14 @@ func (s *gatewayForwardingSettingRepoStub) GetMultiple(_ context.Context, keys [
 	return out, nil
 }
 
-func (s *gatewayForwardingSettingRepoStub) SetMultiple(context.Context, map[string]string) error {
-	panic("unexpected SetMultiple call")
+func (s *gatewayForwardingSettingRepoStub) SetMultiple(_ context.Context, values map[string]string) error {
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	for key, value := range values {
+		s.values[key] = value
+	}
+	return nil
 }
 
 func (s *gatewayForwardingSettingRepoStub) GetAll(context.Context) (map[string]string, error) {

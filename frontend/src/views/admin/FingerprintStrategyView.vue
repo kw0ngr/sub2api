@@ -141,10 +141,10 @@
         <div class="fingerprint-panel">
           <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2>抓取真实 Claude Code 指纹</h2>
-              <p>HTTP 指纹会自动学习；TLS 指纹需要用采集器导入模板。</p>
+              <h2>站内 TLS 采集器</h2>
+              <p>直接在后台生成采集命令、读取采集结果，并一键保存为 TLS 模板。</p>
             </div>
-            <span class="fingerprint-badge">真实优先</span>
+            <span class="fingerprint-badge">{{ tlsCollectorFingerprints.length }} 条 TLS 样本</span>
           </div>
 
           <div class="fingerprint-capture-flow">
@@ -159,25 +159,62 @@
 
           <div class="fingerprint-command">
             <div>
-              <span>Claude Code 预热命令</span>
-              <code>{{ captureCommand }}</code>
+              <span>Claude Code TLS 采集命令</span>
+              <code>{{ tlsCollectorCommand }}</code>
             </div>
-            <button class="btn btn-secondary" type="button" @click="copyCaptureCommand">
+            <button class="btn btn-secondary" type="button" @click="copyTLSCollectorCommand">
               复制
             </button>
           </div>
 
+          <div v-if="latestTLSCollectorFingerprint" class="fingerprint-tls-capture-card">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <strong>{{ tlsCollectorProfileName(latestTLSCollectorFingerprint) }}</strong>
+                <p>
+                  JA3 {{ latestTLSCollectorFingerprint.ja3_hash || '-' }} ·
+                  {{ latestTLSCollectorFingerprint.stainless_os || '未知 OS' }} /
+                  {{ latestTLSCollectorFingerprint.stainless_arch || '未知架构' }} /
+                  {{ latestTLSCollectorFingerprint.stainless_runtime_version || '未知运行时' }}
+                </p>
+              </div>
+              <span class="fingerprint-status good">最新捕获</span>
+            </div>
+            <div class="fingerprint-tls-capture-grid">
+              <div>
+                <span>Cipher Suites</span>
+                <strong>{{ latestTLSCollectorFingerprint.cipher_suites?.length || 0 }} 项</strong>
+              </div>
+              <div>
+                <span>Extensions</span>
+                <strong>{{ latestTLSCollectorFingerprint.extensions?.length || 0 }} 项</strong>
+              </div>
+              <div>
+                <span>ALPN</span>
+                <strong>{{ latestTLSCollectorFingerprint.alpn_protocols?.join(', ') || '-' }}</strong>
+              </div>
+              <div>
+                <span>TLS Versions</span>
+                <strong>{{ latestTLSCollectorFingerprint.supported_versions?.join(', ') || '-' }}</strong>
+              </div>
+            </div>
+          </div>
+          <div v-else class="fingerprint-empty">
+            暂无 TLS 捕获结果。复制上方命令到真实 Claude Code 所在机器执行，然后点击“刷新 TLS 捕获”。
+          </div>
+
           <div class="mt-4 flex flex-wrap gap-3">
-            <a
-              class="fingerprint-link-button"
-              href="https://tls.sub2api.org"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              打开 TLS 采集器
-            </a>
+            <button class="btn btn-secondary" type="button" :disabled="tlsCollectorLoading" @click="refreshTLSCollector">
+              {{ tlsCollectorLoading ? '刷新中' : '刷新 TLS 捕获' }}
+            </button>
+            <button class="btn btn-primary" type="button" :disabled="!latestTLSCollectorFingerprint || tlsCollectorImporting" @click="importLatestTLSFingerprint">
+              {{ tlsCollectorImporting ? '导入中' : '一键导入模板' }}
+            </button>
+            <button class="btn btn-secondary" type="button" @click="resetTLSCollectorToken">
+              换采集 Token
+            </button>
             <button class="btn btn-secondary" type="button" @click="showTLSModal = true">
-              粘贴/管理 TLS 模板
+              管理 TLS 模板
             </button>
           </div>
         </div>
@@ -447,7 +484,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { TLSFingerprintProfile } from '@/api/admin'
+import type { CreateProfileRequest, TLSFingerprintProfile } from '@/api/admin'
 import type { ClaudeCodeFingerprintDriftStatus, ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -466,8 +503,44 @@ const profiles = ref<TLSFingerprintProfile[]>([])
 const httpFingerprintProfiles = ref<ClaudeCodeFingerprintProfile[]>([])
 const activeHTTPFingerprintID = ref('')
 const fingerprintDrift = ref<ClaudeCodeFingerprintDriftStatus | null>(null)
+const tlsCollectorLoading = ref(false)
+const tlsCollectorImporting = ref(false)
+const tlsCollectorFingerprints = ref<TLSCollectorFingerprint[]>([])
+const tlsCollectorCapturePort = ref('8090')
+const tlsCollectorToken = ref(loadTLSCollectorToken())
 
 type PresetID = 'stable' | 'compatible' | 'debug'
+
+interface TLSCollectorFingerprint {
+  id?: string
+  timestamp?: string
+  model?: string
+  ja3_raw?: string
+  ja3_hash?: string
+  ja4?: string
+  http2?: string
+  user_agent?: string
+  client_ip?: string
+  cipher_suites?: number[]
+  curves?: number[]
+  point_formats?: number[]
+  extensions?: number[]
+  signature_algorithms?: number[]
+  alpn_protocols?: string[]
+  supported_versions?: number[]
+  key_share_groups?: number[]
+  psk_modes?: number[]
+  enable_grease?: boolean
+  stainless_os?: string
+  stainless_arch?: string
+  stainless_runtime?: string
+  stainless_runtime_version?: string
+  stainless_lang?: string
+  stainless_package_version?: string
+}
+
+const TLS_COLLECTOR_BASE_URL = 'https://tls.sub2api.org'
+const TLS_COLLECTOR_TOKEN_STORAGE_KEY = 'sub2api_tls_fingerprint_token'
 
 const form = reactive({
   min_claude_code_version: '',
@@ -540,12 +613,56 @@ const activeHTTPFingerprint = computed(() => {
   return httpFingerprintProfiles.value.find((profile) => profile.id === activeHTTPFingerprintID.value) || null
 })
 
+const driftHTTPFingerprintPreview = computed<ClaudeCodeFingerprintProfile | null>(() => {
+  const summary = driftStatus.value?.outgoing_header_summary
+  if (!summary) {
+    return null
+  }
+  const userAgent = getSummaryHeader(summary, 'User-Agent')
+  if (!userAgent) {
+    return null
+  }
+  const updatedAt = driftStatus.value?.updated_at || Math.floor(Date.now() / 1000)
+  return {
+    id: 'outgoing-drift-preview',
+    name: '最近 outgoing 捕获',
+    description: '来自最近一次真实转发请求，仅用于 HTTP/TLS 一致性预览。',
+    source: 'outgoing',
+    user_agent: userAgent,
+    accept: getSummaryHeader(summary, 'Accept'),
+    content_type: getSummaryHeader(summary, 'content-type'),
+    anthropic_version: getSummaryHeader(summary, 'anthropic-version'),
+    anthropic_beta: getSummaryHeader(summary, 'anthropic-beta'),
+    x_app: getSummaryHeader(summary, 'x-app'),
+    direct_browser_access: getSummaryHeader(summary, 'anthropic-dangerous-direct-browser-access'),
+    stainless_lang: getSummaryHeader(summary, 'X-Stainless-Lang'),
+    stainless_package_version: getSummaryHeader(summary, 'X-Stainless-Package-Version'),
+    stainless_os: getSummaryHeader(summary, 'X-Stainless-OS'),
+    stainless_arch: getSummaryHeader(summary, 'X-Stainless-Arch'),
+    stainless_runtime: getSummaryHeader(summary, 'X-Stainless-Runtime'),
+    stainless_runtime_version: getSummaryHeader(summary, 'X-Stainless-Runtime-Version'),
+    stainless_retry_count: getSummaryHeader(summary, 'X-Stainless-Retry-Count'),
+    stainless_timeout: getSummaryHeader(summary, 'X-Stainless-Timeout'),
+    helper_method: getSummaryHeader(summary, 'x-stainless-helper-method'),
+    completeness_score: Object.keys(summary).length,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    last_seen_at: updatedAt,
+    seen_count: 1
+  }
+})
+
+const referenceHTTPFingerprint = computed(() => activeHTTPFingerprint.value || driftHTTPFingerprintPreview.value || httpFingerprintProfiles.value[0] || null)
+
+const latestTLSCollectorFingerprint = computed(() => tlsCollectorFingerprints.value[0] || null)
+
 const driftStatus = computed(() => fingerprintDrift.value)
 
 const driftStatusLabel = computed(() => {
   const status = driftStatus.value?.status
   if (status === 'ok') return '一致'
   if (status === 'warning') return '有偏差'
+  if (driftStatus.value?.outgoing_header_summary) return '已观测'
   return '待采集'
 })
 
@@ -561,9 +678,9 @@ const driftChecklist = computed(() => {
   return [
     {
       label: '样本生效',
-      value: drift?.sample_applied ? '已生效' : '未确认',
+      value: drift?.sample_applied ? '已生效' : drift?.outgoing_header_summary ? '自动学习' : '未确认',
       ok: drift?.sample_applied === true,
-      hint: drift?.active_profile_name || '未选择固定 HTTP 样本'
+      hint: drift?.active_profile_name || (drift?.outgoing_header_summary ? '已捕获 outgoing 摘要，但未固定 HTTP 样本' : '未选择固定 HTTP 样本')
     },
     {
       label: 'Header 覆盖',
@@ -631,7 +748,11 @@ const driftIssueRows = computed(() => {
   return rows
 })
 
-const tlsBindingRecommendation = computed(() => buildTLSBindingRecommendation(activeHTTPFingerprint.value, profiles.value))
+const tlsBindingRecommendation = computed(() => buildTLSBindingRecommendation(
+  referenceHTTPFingerprint.value,
+  profiles.value,
+  Boolean(activeHTTPFingerprint.value)
+))
 
 const summaryCards = computed(() => [
   {
@@ -766,20 +887,57 @@ const captureFlow = [
   },
   {
     step: '02',
-    title: 'TLS 指纹用采集器导入',
-    description: '在同一台机器或同一网络环境访问采集器，把得到的 YAML 粘贴到 TLS 模板，再绑定到 OAuth 账号。'
+    title: 'TLS 指纹站内采集',
+    description: '复制下方命令到真实 Claude Code 机器执行，后台会用 Token 读取采集器结果。'
   },
   {
     step: '03',
-    title: '固定模板，不要乱换',
-    description: '稳定比“看起来很新”更重要。重要账号建议绑定固定模板，避免频繁变化造成识别漂移。'
+    title: '一键导入并固定',
+    description: '捕获后直接保存为 TLS 模板，再到账号侧固定绑定，避免频繁变化造成识别漂移。'
   }
 ]
 
-const captureCommand = computed(() => {
-  const origin = typeof window === 'undefined' ? 'https://你的网关域名' : window.location.origin
-  return `ANTHROPIC_BASE_URL="${origin}" ANTHROPIC_AUTH_TOKEN="sk-你的网关密钥" claude -p "ping"`
-})
+const tlsCollectorCommand = computed(() => [
+  `export ANTHROPIC_BASE_URL=${TLS_COLLECTOR_BASE_URL}:${tlsCollectorCapturePort.value}`,
+  `export ANTHROPIC_AUTH_TOKEN=${tlsCollectorToken.value}`,
+  'export NODE_TLS_REJECT_UNAUTHORIZED=0',
+  'claude "test"'
+].join('\n'))
+
+function loadTLSCollectorToken() {
+  if (typeof window === 'undefined') {
+    return generateTLSCollectorToken()
+  }
+  const existing = window.localStorage.getItem(TLS_COLLECTOR_TOKEN_STORAGE_KEY)
+  if (existing) {
+    return existing
+  }
+  const token = generateTLSCollectorToken()
+  window.localStorage.setItem(TLS_COLLECTOR_TOKEN_STORAGE_KEY, token)
+  return token
+}
+
+function generateTLSCollectorToken() {
+  const bytes = new Uint8Array(12)
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
+  }
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function getSummaryHeader(summary: Record<string, string>, header: string) {
+  const direct = summary[header]
+  if (direct) {
+    return direct
+  }
+  const target = header.toLowerCase()
+  const key = Object.keys(summary).find((item) => item.toLowerCase() === target)
+  return key ? summary[key] : ''
+}
 
 function describeHTTPFingerprint(profile: ClaudeCodeFingerprintProfile | null) {
   if (!profile) {
@@ -799,18 +957,19 @@ function extractClaudeCLIVersion(userAgent: string | undefined) {
 
 function buildTLSBindingRecommendation(
   httpProfile: ClaudeCodeFingerprintProfile | null,
-  tlsProfiles: TLSFingerprintProfile[]
+  tlsProfiles: TLSFingerprintProfile[],
+  fixedHTTPProfile: boolean
 ) {
   const httpSummary = describeHTTPFingerprint(httpProfile)
   if (!httpProfile) {
     return {
       httpSummary,
-      profileName: '先选择 HTTP 样本',
-      profileHint: '让真实 Claude Code 请求一次并选中样本后，再给账号绑定 TLS 模板。',
-      level: '低',
-      tone: 'warn',
-      score: 0,
-      reasons: ['缺少固定 HTTP 样本，无法判断 HTTP/TLS 是否同源。']
+      profileName: 'Built-in Default (Node.js 24.x)',
+      profileHint: '还没有 HTTP 样本时先用内置默认模板兜底；真实 Claude Code 请求一次后会自动给出更准推荐。',
+      level: '中',
+      tone: 'neutral',
+      score: 58,
+      reasons: ['缺少 HTTP 样本时无法判断系统/架构，但内置 Node.js 24.x 模板比随机 TLS 更稳。']
     }
   }
 
@@ -839,13 +998,15 @@ function buildTLSBindingRecommendation(
   const level = best.score >= 75 ? '高' : best.score >= 55 ? '中' : '低'
   const tone = best.score >= 75 ? 'good' : best.score >= 55 ? 'neutral' : 'warn'
   return {
-    httpSummary,
+    httpSummary: fixedHTTPProfile ? httpSummary : `${httpSummary}（最近捕获预览）`,
     profileName: best.name,
     profileHint: best.description || '建议在账号侧固定绑定该模板，不建议长期使用随机模板。',
     level,
     tone,
     score: best.score,
-    reasons: best.reasons
+    reasons: fixedHTTPProfile
+      ? best.reasons
+      : ['当前未固定 HTTP 样本，已用最近捕获样本做预览；建议确认后点击“应用选择”。', ...best.reasons]
   }
 }
 
@@ -897,12 +1058,106 @@ function describeTLSCandidateReasons(httpProfile: ClaudeCodeFingerprintProfile, 
   return reasons
 }
 
-async function copyCaptureCommand() {
+async function copyTLSCollectorCommand() {
   try {
-    await navigator.clipboard.writeText(captureCommand.value)
-    appStore.showSuccess('采集命令已复制')
+    await navigator.clipboard.writeText(tlsCollectorCommand.value)
+    appStore.showSuccess('TLS 采集命令已复制')
   } catch {
     appStore.showError('复制失败，请手动复制命令')
+  }
+}
+
+async function refreshTLSCollector() {
+  tlsCollectorLoading.value = true
+  try {
+    const configRes = await fetch(`${TLS_COLLECTOR_BASE_URL}/api/config`, { cache: 'no-store' })
+    if (configRes.ok) {
+      const config = await configRes.json() as { capture_port?: string }
+      if (config.capture_port) {
+        tlsCollectorCapturePort.value = String(config.capture_port)
+      }
+    }
+    const latestRes = await fetch(
+      `${TLS_COLLECTOR_BASE_URL}/api/latest?token=${encodeURIComponent(tlsCollectorToken.value)}`,
+      { cache: 'no-store' }
+    )
+    if (!latestRes.ok) {
+      throw new Error(`collector returned ${latestRes.status}`)
+    }
+    const latest = await latestRes.json() as { fingerprints?: TLSCollectorFingerprint[] }
+    tlsCollectorFingerprints.value = Array.isArray(latest.fingerprints) ? latest.fingerprints : []
+    if (tlsCollectorFingerprints.value.length === 0) {
+      appStore.showInfo('还没有捕获结果，执行采集命令后再刷新')
+    }
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, '读取 TLS 采集器失败'))
+  } finally {
+    tlsCollectorLoading.value = false
+  }
+}
+
+function resetTLSCollectorToken() {
+  const token = generateTLSCollectorToken()
+  tlsCollectorToken.value = token
+  tlsCollectorFingerprints.value = []
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(TLS_COLLECTOR_TOKEN_STORAGE_KEY, token)
+  }
+  appStore.showSuccess('已生成新的采集 Token')
+}
+
+async function importLatestTLSFingerprint() {
+  const latest = latestTLSCollectorFingerprint.value
+  if (!latest) {
+    appStore.showError('暂无可导入的 TLS 捕获结果')
+    return
+  }
+  tlsCollectorImporting.value = true
+  try {
+    const profile = tlsCollectorFingerprintToProfile(latest)
+    await adminAPI.tlsFingerprintProfiles.create(profile)
+    profiles.value = await adminAPI.tlsFingerprintProfiles.list()
+    appStore.showSuccess('TLS 模板已导入')
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, '导入 TLS 模板失败'))
+  } finally {
+    tlsCollectorImporting.value = false
+  }
+}
+
+function tlsCollectorProfileName(fp: TLSCollectorFingerprint) {
+  const parts = [
+    'Claude Code',
+    fp.stainless_os || 'TLS',
+    fp.stainless_arch,
+    fp.stainless_runtime,
+    fp.stainless_runtime_version
+  ].filter(Boolean)
+  return parts.join(' / ')
+}
+
+function tlsCollectorFingerprintToProfile(fp: TLSCollectorFingerprint): CreateProfileRequest {
+  const ja3 = fp.ja3_hash ? `JA3 ${fp.ja3_hash}` : 'JA3 unknown'
+  const ja4 = fp.ja4 ? `JA4 ${fp.ja4}` : 'JA4 unknown'
+  return {
+    name: tlsCollectorProfileName(fp),
+    description: [
+      '站内采集器导入',
+      ja3,
+      ja4,
+      fp.user_agent ? `UA ${fp.user_agent}` : '',
+      fp.timestamp ? `captured ${new Date(fp.timestamp).toLocaleString()}` : ''
+    ].filter(Boolean).join(' · '),
+    enable_grease: fp.enable_grease === true,
+    cipher_suites: fp.cipher_suites || [],
+    curves: fp.curves || [],
+    point_formats: fp.point_formats || [],
+    signature_algorithms: fp.signature_algorithms || [],
+    alpn_protocols: fp.alpn_protocols || ['http/1.1'],
+    supported_versions: fp.supported_versions || [],
+    key_share_groups: fp.key_share_groups || [],
+    psk_modes: fp.psk_modes || [],
+    extensions: fp.extensions || []
   }
 }
 
@@ -1033,7 +1288,10 @@ async function handleTLSModalClose() {
   await loadData()
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  await loadData()
+  void refreshTLSCollector()
+})
 </script>
 
 <style scoped>
@@ -1444,6 +1702,7 @@ onMounted(loadData)
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 0.78rem;
   line-height: 1.45;
+  white-space: pre-wrap;
   word-break: break-all;
 }
 
@@ -1453,6 +1712,68 @@ onMounted(loadData)
 
 :global(.dark) .fingerprint-command code {
   color: rgb(226 232 240);
+}
+
+.fingerprint-tls-capture-card {
+  margin-top: 1rem;
+  border: 1px solid rgb(16 185 129 / 0.34);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.12), transparent 38%),
+    linear-gradient(135deg, rgb(248 250 252 / 0.9), rgb(255 255 255 / 0.74));
+  padding: 1rem;
+}
+
+:global(.dark) .fingerprint-tls-capture-card {
+  border-color: rgb(16 185 129 / 0.32);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(16 185 129 / 0.15), transparent 42%),
+    linear-gradient(135deg, rgb(30 41 59 / 0.74), rgb(15 23 42 / 0.55));
+}
+
+.fingerprint-tls-capture-card strong {
+  color: rgb(15 23 42);
+  font-weight: 900;
+}
+
+:global(.dark) .fingerprint-tls-capture-card strong {
+  color: white;
+}
+
+.fingerprint-tls-capture-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.fingerprint-tls-capture-grid div {
+  min-width: 0;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.62);
+  padding: 0.8rem;
+}
+
+:global(.dark) .fingerprint-tls-capture-grid div {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42 / 0.48);
+}
+
+.fingerprint-tls-capture-grid span {
+  display: block;
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fingerprint-tls-capture-grid strong {
+  display: block;
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
 }
 
 .fingerprint-link-button {
@@ -1966,6 +2287,7 @@ onMounted(loadData)
   }
 
   .fingerprint-drift-cards,
+  .fingerprint-tls-capture-grid,
   .fingerprint-header-summary div {
     grid-template-columns: 1fr;
   }
