@@ -2998,10 +2998,12 @@
                 {{ t("admin.settings.gatewayForwarding.description") }}
               </p>
             </div>
-            <div class="space-y-5 p-6">
+            <div class="grid gap-3 p-5 sm:p-6">
               <!-- Fingerprint Unification -->
-              <div class="flex items-center justify-between">
-                <div>
+              <div
+                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div class="min-w-0 pr-0 sm:pr-6">
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
@@ -3019,12 +3021,17 @@
                     }}
                   </p>
                 </div>
-                <Toggle v-model="form.enable_fingerprint_unification" />
+                <Toggle
+                  v-model="form.enable_fingerprint_unification"
+                  class="shrink-0"
+                />
               </div>
 
               <!-- Metadata Passthrough -->
-              <div class="flex items-center justify-between">
-                <div>
+              <div
+                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div class="min-w-0 pr-0 sm:pr-6">
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
@@ -3040,12 +3047,17 @@
                     }}
                   </p>
                 </div>
-                <Toggle v-model="form.enable_metadata_passthrough" />
+                <Toggle
+                  v-model="form.enable_metadata_passthrough"
+                  class="shrink-0"
+                />
               </div>
 
               <!-- CCH Signing -->
-              <div class="flex items-center justify-between">
-                <div>
+              <div
+                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div class="min-w-0 pr-0 sm:pr-6">
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
@@ -3055,7 +3067,42 @@
                     {{ t("admin.settings.gatewayForwarding.cchSigningHint") }}
                   </p>
                 </div>
-                <Toggle v-model="form.enable_cch_signing" />
+                <Toggle v-model="form.enable_cch_signing" class="shrink-0" />
+              </div>
+
+              <!-- Anthropic Cache TTL 1h Injection -->
+              <div
+                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div class="min-w-0 pr-0 sm:pr-6">
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint",
+                      )
+                    }}
+                  </p>
+                  <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionNote",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.enable_anthropic_cache_ttl_1h_injection"
+                  class="shrink-0"
+                />
               </div>
             </div>
           </div>
@@ -5396,6 +5443,7 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: true,
+  enable_anthropic_cache_ttl_1h_injection: false,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6295,6 +6343,8 @@ async function saveSettings() {
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
+      enable_anthropic_cache_ttl_1h_injection:
+        form.enable_anthropic_cache_ttl_1h_injection,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,

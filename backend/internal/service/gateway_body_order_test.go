@@ -6,6 +6,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func assertJSONTokenOrder(t *testing.T, body string, tokens ...string) {
@@ -69,4 +70,20 @@ func TestEnforceCacheControlLimit_PreservesTopLevelFieldOrder(t *testing.T) {
 
 	assertJSONTokenOrder(t, resultStr, `"alpha"`, `"system"`, `"messages"`, `"omega"`)
 	require.Equal(t, 4, strings.Count(resultStr, `"cache_control"`))
+}
+
+func TestInjectAnthropicCacheControlTTL1h_OnlyExistingEphemeralBlocks(t *testing.T) {
+	body := []byte(`{"alpha":1,"cache_control":{"type":"ephemeral"},"system":[{"type":"text","text":"s1","cache_control":{"type":"ephemeral"}},{"type":"text","text":"s2","cache_control":{"type":"persistent"}}],"messages":[{"role":"user","content":[{"type":"text","text":"m1","cache_control":{"type":"ephemeral","ttl":"5m"}},{"type":"text","text":"m2"}]}],"tools":[{"name":"tool","cache_control":{"type":"ephemeral","ttl":"1h"}}],"omega":2}`)
+
+	result := injectAnthropicCacheControlTTL1h(body)
+	resultStr := string(result)
+
+	assertJSONTokenOrder(t, resultStr, `"alpha"`, `"cache_control"`, `"system"`, `"messages"`, `"tools"`, `"omega"`)
+	require.Equal(t, "1h", gjson.GetBytes(result, "cache_control.ttl").String())
+	require.Equal(t, "1h", gjson.GetBytes(result, "system.0.cache_control.ttl").String())
+	require.False(t, gjson.GetBytes(result, "system.1.cache_control.ttl").Exists())
+	require.Equal(t, "1h", gjson.GetBytes(result, "messages.0.content.0.cache_control.ttl").String())
+	require.False(t, gjson.GetBytes(result, "messages.0.content.1.cache_control").Exists())
+	require.Equal(t, "1h", gjson.GetBytes(result, "tools.0.cache_control.ttl").String())
+	require.Equal(t, strings.Count(string(body), `"cache_control"`), strings.Count(resultStr, `"cache_control"`))
 }

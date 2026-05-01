@@ -589,6 +589,7 @@ func TestAPIContracts(t *testing.T) {
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
 					"enable_cch_signing": true,
+					"enable_anthropic_cache_ttl_1h_injection": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
 					"web_search_emulation_enabled": false,

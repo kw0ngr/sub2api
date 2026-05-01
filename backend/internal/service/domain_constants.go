@@ -255,6 +255,8 @@ const (
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 true）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
+	// SettingKeyEnableAnthropicCacheTTL1hInjection 是否对 Anthropic OAuth/SetupToken 的已有 ephemeral cache_control 注入 ttl=1h（默认 false）
+	SettingKeyEnableAnthropicCacheTTL1hInjection = "enable_anthropic_cache_ttl_1h_injection"
 	// SettingKeyClaudeCodeFingerprintProfiles 自动捕获的 Claude Code HTTP 指纹样本库
 	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
 	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习

@@ -1158,9 +1158,12 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingReadError(t *testing
 
 	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 6}, time.Now(), "claude-3-7-sonnet-20250219")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "stream read error")
-	require.NotNil(t, result)
-	require.False(t, result.clientDisconnect)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.True(t, errors.As(err, &failoverErr), "未输出过字节时 Anthropic API Key passthrough stream read error 必须包成 UpstreamFailoverError，实际: %v", err)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Contains(t, ExtractUpstreamErrorMessage(failoverErr.ResponseBody), "upstream stream disconnected")
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingTimeoutAfterClientDisconnect(t *testing.T) {

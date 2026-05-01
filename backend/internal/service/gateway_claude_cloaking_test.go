@@ -125,6 +125,30 @@ func TestComputeClaudeCodeBillingFingerprint(t *testing.T) {
 	require.Equal(t, "f34", got)
 }
 
+func TestGatewayService_ShouldInjectAnthropicCacheTTL1h(t *testing.T) {
+	settingSvc := newGatewayForwardingSettingService(t, map[string]string{
+		SettingKeyEnableAnthropicCacheTTL1hInjection: "true",
+	})
+	svc := &GatewayService{settingService: settingSvc}
+
+	require.True(t, svc.shouldInjectAnthropicCacheTTL1h(context.Background(), &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+	}))
+	require.True(t, svc.shouldInjectAnthropicCacheTTL1h(context.Background(), &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeSetupToken,
+	}))
+	require.False(t, svc.shouldInjectAnthropicCacheTTL1h(context.Background(), &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+	}))
+	require.False(t, svc.shouldInjectAnthropicCacheTTL1h(context.Background(), &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}))
+}
+
 func TestGenerateClaudeCodeBillingHeader(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
 	got := generateClaudeCodeBillingHeader(body, "2.1.92", "cli", "")

@@ -362,6 +362,7 @@ const baseSettingsResponse = {
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: true,
+  enable_anthropic_cache_ttl_1h_injection: false,
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,
