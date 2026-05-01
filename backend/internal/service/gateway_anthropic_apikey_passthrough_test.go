@@ -195,6 +195,86 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Equal(t, "claude-3-haiku-20240307", gjson.GetBytes(bodyBytes, "model").String(), "缓存的上游请求体应包含映射后的模型")
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_HTTP403TriggersFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	parsed := &ParsedRequest{Body: body, Model: "claude-sonnet-4-6", Stream: true}
+	respBody := `{"type":"error","error":{"type":"permission_error","message":"Upstream access forbidden, please contact administrator"}}`
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"x-request-id": []string{"rid-forbidden"},
+			},
+			Body: io.NopCloser(strings.NewReader(respBody)),
+		},
+	}
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+		},
+		responseHeaderFilter: compileResponseHeaderFilter(&config.Config{}),
+		httpUpstream:         upstream,
+	}
+
+	result, err := svc.Forward(context.Background(), c, newAnthropicAPIKeyAccountForTest(), parsed)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.True(t, errors.As(err, &failoverErr), "HTTP 403 should be converted to failover")
+	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Contains(t, ExtractUpstreamErrorMessage(failoverErr.ResponseBody), "Upstream access forbidden")
+	require.Empty(t, rec.Body.String(), "failover-eligible upstream 403 must not be written before handler can switch accounts")
+}
+
+func TestGatewayService_AnthropicAPIKeyPassthrough_StreamErrorBeforeOutputTriggersFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	parsed := &ParsedRequest{Body: body, Model: "claude-sonnet-4-6", Stream: true}
+	upstreamSSE := strings.Join([]string{
+		"event: error",
+		`data: {"type":"error","error":{"type":"permission_error","message":"Upstream access forbidden, please contact administrator"}}`,
+		"",
+	}, "\n")
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+				"x-request-id": []string{"rid-stream-forbidden"},
+			},
+			Body: io.NopCloser(strings.NewReader(upstreamSSE)),
+		},
+	}
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+		},
+		responseHeaderFilter: compileResponseHeaderFilter(&config.Config{}),
+		httpUpstream:         upstream,
+	}
+
+	result, err := svc.Forward(context.Background(), c, newAnthropicAPIKeyAccountForTest(), parsed)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.True(t, errors.As(err, &failoverErr), "stream error before first byte should be converted to failover")
+	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Contains(t, ExtractUpstreamErrorMessage(failoverErr.ResponseBody), "Upstream access forbidden")
+	require.Empty(t, rec.Body.String(), "upstream SSE error must stay buffered so handler can replay on another account")
+}
+
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

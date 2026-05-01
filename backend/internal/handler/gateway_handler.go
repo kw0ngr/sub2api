@@ -541,6 +541,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				case FailoverCanceled:
 					return
 				default: // FailoverExhausted
+					groupIDText := "<nil>"
+					if currentAPIKey.GroupID != nil {
+						groupIDText = strconv.FormatInt(*currentAPIKey.GroupID, 10)
+					}
+					service.AppendOpsUpstreamError(c, service.OpsUpstreamErrorEvent{
+						Platform: platform,
+						Kind:     "selection_exhausted",
+						Message:  err.Error(),
+						Detail: fmt.Sprintf(
+							"model=%s group_id=%s failed_account_count=%d switch_count=%d max_switches=%d",
+							reqModel,
+							groupIDText,
+							len(fs.FailedAccountIDs),
+							fs.SwitchCount,
+							fs.MaxSwitches,
+						),
+					})
 					if fs.LastFailoverErr != nil {
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, platform, streamStarted)
 					} else {

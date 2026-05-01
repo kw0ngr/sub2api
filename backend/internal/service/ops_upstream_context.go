@@ -157,6 +157,12 @@ func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	checkSkipMonitoringForUpstreamEvent(c, &evCopy)
 }
 
+// AppendOpsUpstreamError records an upstream-attempt diagnostic from handler-level
+// control flow, such as failover selection exhaustion after service-level errors.
+func AppendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
+	appendOpsUpstreamError(c, ev)
+}
+
 // checkSkipMonitoringForUpstreamEvent checks whether the upstream error event
 // matches a passthrough rule with skip_monitoring=true and, if so, sets the
 // OpsSkipPassthroughKey on the context.  This ensures intermediate retry /

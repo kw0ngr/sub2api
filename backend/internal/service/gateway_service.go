@@ -5396,6 +5396,33 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	if input.RequestStream {
 		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
+			var sseErr *streamSSEError
+			if errors.As(err, &sseErr) {
+				if s.rateLimitService != nil {
+					s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusForbidden, resp.Header, sseErr.body)
+				}
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: http.StatusForbidden,
+					UpstreamRequestID:  resp.Header.Get("x-request-id"),
+					Passthrough:        true,
+					Kind:               "stream_error_failover",
+					Message:            extractUpstreamErrorMessage(sseErr.body),
+					Detail: func() string {
+						if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+							return truncateString(string(sseErr.body), s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes)
+						}
+						return ""
+					}(),
+				})
+				return nil, &UpstreamFailoverError{
+					StatusCode:      http.StatusForbidden,
+					ResponseBody:    sseErr.body,
+					ResponseHeaders: resp.Header,
+				}
+			}
 			return nil, err
 		}
 		usage = streamResult.usage
@@ -5569,10 +5596,41 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		intervalCh = intervalTicker.C
 	}
 
+	errorEventLines := make([]string, 0, 4)
+	bufferingErrorEvent := false
+	flushBufferedErrorEvent := func() error {
+		if len(errorEventLines) == 0 {
+			return nil
+		}
+
+		dataLine := ""
+		for _, line := range errorEventLines {
+			if dataLine == "" {
+				if data, ok := extractAnthropicSSEDataLine(line); ok {
+					dataLine = data
+				}
+			}
+		}
+
+		body := []byte(strings.TrimSpace(dataLine))
+		if len(body) == 0 {
+			body = []byte(`{"error":{"type":"stream_error","message":"error event in stream"}}`)
+		}
+		return &streamSSEError{body: body}
+	}
+
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if bufferingErrorEvent {
+					if err := flushBufferedErrorEvent(); err != nil {
+						if clientDisconnected {
+							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+						}
+						return nil, err
+					}
+				}
 				if !sawTerminalEvent {
 					disconnectMsg := "upstream stream disconnected: " + sanitizeStreamError(io.EOF)
 					if clientDisconnected {
@@ -5615,7 +5673,34 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 			line := ev.line
-			if data, ok := extractAnthropicSSEDataLine(line); ok {
+			trimmedLine := strings.TrimSpace(line)
+			if bufferingErrorEvent {
+				if trimmedLine == "" {
+					if err := flushBufferedErrorEvent(); err != nil {
+						if clientDisconnected {
+							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+						}
+						return nil, err
+					}
+					bufferingErrorEvent = false
+					errorEventLines = errorEventLines[:0]
+					continue
+				}
+				errorEventLines = append(errorEventLines, line)
+				continue
+			}
+
+			if strings.HasPrefix(trimmedLine, "event:") {
+				eventName := strings.TrimSpace(strings.TrimPrefix(trimmedLine, "event:"))
+				if eventName == "error" {
+					bufferingErrorEvent = true
+					errorEventLines = append(errorEventLines[:0], line)
+					continue
+				}
+				if anthropicStreamEventIsTerminal(eventName, "") {
+					sawTerminalEvent = true
+				}
+			} else if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
 				if anthropicStreamEventIsTerminal("", trimmed) {
 					sawTerminalEvent = true
@@ -5625,11 +5710,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					firstTokenMs = &ms
 				}
 				s.parseSSEUsagePassthrough(data, usage)
-			} else {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
-					sawTerminalEvent = true
-				}
 			}
 
 			if !clientDisconnected {
@@ -5646,6 +5726,14 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 		case <-intervalCh:
+			if bufferingErrorEvent {
+				if err := flushBufferedErrorEvent(); err != nil {
+					if clientDisconnected {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+					}
+					return nil, err
+				}
+			}
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
 			if time.Since(lastRead) < streamInterval {
 				continue
