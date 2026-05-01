@@ -85,6 +85,51 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   sort_order?: 'asc' | 'desc'
 }
 
+export interface ReplayLabCheck {
+  key: string
+  label: string
+  status: 'ok' | 'warn' | 'blocked' | string
+  message: string
+}
+
+export interface ReplayLabRouteInfo {
+  inbound_endpoint: string
+  upstream_endpoint: string
+  request_type: string
+  requested_model: string
+  upstream_model?: string | null
+  model_mapping_chain?: string | null
+  channel_id?: number | null
+  account_id: number
+  account_name?: string
+  account_platform?: string
+  account_type?: string
+  account_status?: string
+  account_schedulable?: boolean | null
+  group_id?: number | null
+  project_key?: string | null
+  project_label?: string | null
+}
+
+export interface ReplayLabSafetyInfo {
+  can_replay: boolean
+  raw_snapshot_available: boolean
+  requires_manual_body: boolean
+  risk_level: string
+  reasons: string[]
+  recommended_mode: string
+}
+
+export interface ReplayLabPackage {
+  usage: AdminUsageLog
+  summary: Record<string, unknown>
+  route: ReplayLabRouteInfo
+  safety: ReplayLabSafetyInfo
+  curl_template: string
+  checks: ReplayLabCheck[]
+  generated_at: string
+}
+
 // ==================== API Functions ====================
 
 /**
@@ -196,6 +241,11 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
   return data
 }
 
+export async function getReplayPackage(id: number): Promise<ReplayLabPackage> {
+  const { data } = await apiClient.get<ReplayLabPackage>(`/admin/usage/${id}/replay-package`)
+  return data
+}
+
 export const adminUsageAPI = {
   list,
   getStats,
@@ -203,5 +253,6 @@ export const adminUsageAPI = {
   searchApiKeys,
   listCleanupTasks,
   createCleanupTask,
-  cancelCleanupTask
+  cancelCleanupTask,
+  getReplayPackage
 }

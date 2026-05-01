@@ -150,6 +150,12 @@
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 当前版本先做低风险 dry-run 摘要，不直接重放请求体，避免误计费和敏感内容落库。
               </p>
+              <p v-if="replayLoading" class="mt-2 text-xs font-medium text-violet-600 dark:text-violet-300">
+                正在加载后端诊断包...
+              </p>
+              <p v-else-if="replayError" class="mt-2 text-xs font-medium text-amber-600 dark:text-amber-300">
+                {{ replayError }}
+              </p>
             </div>
             <button class="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-800 dark:hover:text-gray-200" @click="closeReplayLab">
               ✕
@@ -177,13 +183,69 @@
             <ReplayTile label="耗时" :value="`${replayLog.duration_ms || 0}ms`" />
           </div>
 
+          <div v-if="replayPackage" class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4 dark:border-violet-500/20 dark:bg-violet-500/10">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-gray-950 dark:text-white">路由解释</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ replayPackage.route.request_type }} · {{ replayPackage.route.inbound_endpoint || 'unknown endpoint' }}
+                </p>
+              </div>
+              <span class="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-violet-700 shadow-sm dark:bg-dark-900 dark:text-violet-300">
+                {{ replayPackage.safety.risk_level }}
+              </span>
+            </div>
+            <div class="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+              <ReplayTile label="入口 endpoint" :value="replayPackage.route.inbound_endpoint || '-'" />
+              <ReplayTile label="上游 endpoint" :value="replayPackage.route.upstream_endpoint || '-'" />
+              <ReplayTile label="请求模型" :value="replayPackage.route.requested_model || '-'" />
+              <ReplayTile label="上游模型" :value="replayPackage.route.upstream_model || '-'" />
+              <ReplayTile label="映射链" :value="replayPackage.route.model_mapping_chain || '未映射'" />
+              <ReplayTile label="原账号状态" :value="formatReplayAccountState" />
+            </div>
+          </div>
+
+          <div v-if="replayPackage?.checks?.length" class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
+            <h3 class="font-semibold text-gray-950 dark:text-white">预检项</h3>
+            <div class="mt-3 space-y-2">
+              <div
+                v-for="check in replayPackage.checks"
+                :key="check.key"
+                class="flex items-start gap-3 rounded-xl bg-gray-50 p-3 dark:bg-dark-800/70"
+              >
+                <span class="mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase" :class="replayCheckClass(check.status)">
+                  {{ check.status }}
+                </span>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ check.label }}</p>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ check.message }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
             <h3 class="font-semibold text-gray-950 dark:text-white">Dry-run 结论</h3>
             <ul class="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-              <li>· 可基于这条日志定位用户、Key、模型、上游账号和 endpoint。</li>
-              <li>· 当前日志没有保存原始请求体，暂不直接真实回放，避免敏感内容和重复费用。</li>
-              <li>· 下一步会接入 snapshot 后支持“原路径回放 / 换健康账号回放 / 生成 curl”。</li>
+              <template v-if="replayPackage?.safety?.reasons?.length">
+                <li v-for="reason in replayPackage.safety.reasons" :key="reason">· {{ reason }}</li>
+              </template>
+              <template v-else>
+                <li>· 可基于这条日志定位用户、Key、模型、上游账号和 endpoint。</li>
+                <li>· 当前日志没有保存原始请求体，暂不直接真实回放，避免敏感内容和重复费用。</li>
+                <li>· 下一步会接入 snapshot 后支持“原路径回放 / 换健康账号回放 / 生成 curl”。</li>
+              </template>
             </ul>
+          </div>
+
+          <div v-if="replayPackage?.curl_template" class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h3 class="font-semibold text-gray-950 dark:text-white">curl 模板</h3>
+              <button class="text-xs font-semibold text-violet-600 hover:text-violet-700 dark:text-violet-300" type="button" @click="copyReplayCurl">
+                复制模板
+              </button>
+            </div>
+            <pre class="mt-3 max-h-72 overflow-auto rounded-xl bg-gray-950 p-3 text-xs text-gray-100">{{ replayPackage.curl_template }}</pre>
           </div>
 
           <div class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
@@ -223,7 +285,7 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
+import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams, ReplayLabPackage } from '@/api/admin/usage'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -266,6 +328,9 @@ let modelStatsReqSeq = 0
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
 const replayLog = ref<AdminUsageLog | null>(null)
+const replayPackage = ref<ReplayLabPackage | null>(null)
+const replayLoading = ref(false)
+const replayError = ref('')
 // Balance history modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
@@ -274,6 +339,15 @@ const showGatewaySignalPreview = computed(() => {
 })
 
 const replaySummary = computed(() => {
+  if (replayPackage.value) {
+    return JSON.stringify({
+      summary: replayPackage.value.summary,
+      route: replayPackage.value.route,
+      safety: replayPackage.value.safety,
+      checks: replayPackage.value.checks,
+      generated_at: replayPackage.value.generated_at
+    }, null, 2)
+  }
   if (!replayLog.value) return ''
   return JSON.stringify({
     usage_log_id: replayLog.value.id,
@@ -293,6 +367,18 @@ const replaySummary = computed(() => {
     ip_address: replayLog.value.ip_address,
     created_at: replayLog.value.created_at
   }, null, 2)
+})
+
+const formatReplayAccountState = computed(() => {
+  const route = replayPackage.value?.route
+  if (!route) return '-'
+  const parts = [
+    route.account_name || (route.account_id ? `#${route.account_id}` : '-'),
+    route.account_platform,
+    route.account_status,
+    route.account_schedulable === false ? '不可调度' : route.account_schedulable === true ? '可调度' : ''
+  ].filter(Boolean)
+  return parts.join(' · ')
 })
 
 const breakdownFilters = computed(() => {
@@ -316,12 +402,34 @@ const handleUserClick = async (userId: number) => {
   }
 }
 
-function openReplayLab(row: AdminUsageLog) {
+async function openReplayLab(row: AdminUsageLog) {
   replayLog.value = row
+  replayPackage.value = null
+  replayError.value = ''
+  replayLoading.value = true
+  try {
+    const usageLogID = row.id
+    const pkg = await adminUsageAPI.getReplayPackage(usageLogID)
+    if (replayLog.value?.id !== usageLogID) return
+    replayPackage.value = pkg
+    if (pkg.usage) {
+      replayLog.value = pkg.usage
+    }
+  } catch (error) {
+    if (replayLog.value?.id !== row.id) return
+    replayError.value = normalizeReplayError(error) || '后端诊断包加载失败，当前展示列表内已有摘要。'
+  } finally {
+    if (replayLog.value?.id === row.id) {
+      replayLoading.value = false
+    }
+  }
 }
 
 function closeReplayLab() {
   replayLog.value = null
+  replayPackage.value = null
+  replayError.value = ''
+  replayLoading.value = false
 }
 
 async function copyReplaySummary() {
@@ -331,6 +439,29 @@ async function copyReplaySummary() {
   } catch {
     appStore.showError('复制失败，请手动复制摘要')
   }
+}
+
+async function copyReplayCurl() {
+  if (!replayPackage.value?.curl_template) return
+  try {
+    await navigator.clipboard.writeText(replayPackage.value.curl_template)
+    appStore.showSuccess('Replay curl 模板已复制')
+  } catch {
+    appStore.showError('复制失败，请手动复制 curl 模板')
+  }
+}
+
+function replayCheckClass(status: string): string {
+  if (status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+  if (status === 'blocked') return 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
+  return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+}
+
+function normalizeReplayError(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message || '')
+  }
+  return ''
 }
 
 const granularityOptions = computed(() => [{ value: 'day', label: t('admin.dashboard.day') }, { value: 'hour', label: t('admin.dashboard.hour') }])
