@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -235,6 +237,72 @@ func (h *SettingHandler) GetClaudeCodeFingerprintDrift(c *gin.Context) {
 	response.Success(c, status)
 }
 
+type ClaudeCodeFingerprintLabDiagnosis struct {
+	Level              string                                   `json:"level"`
+	Tone               string                                   `json:"tone"`
+	Detail             string                                   `json:"detail"`
+	Score              int                                      `json:"score"`
+	HTTP               ClaudeCodeFingerprintLabHTTP             `json:"http"`
+	TLS                ClaudeCodeFingerprintLabTLS              `json:"tls"`
+	Drift              service.ClaudeCodeFingerprintDriftStatus `json:"drift"`
+	Cards              []ClaudeCodeFingerprintLabCard           `json:"cards"`
+	Checks             []ClaudeCodeFingerprintLabCheck          `json:"checks"`
+	RecommendedActions []string                                 `json:"recommended_actions"`
+	GeneratedAt        int64                                    `json:"generated_at"`
+}
+
+type ClaudeCodeFingerprintLabHTTP struct {
+	Mode                 string                                `json:"mode"`
+	ActiveProfileID      string                                `json:"active_profile_id,omitempty"`
+	ActiveProfileName    string                                `json:"active_profile_name,omitempty"`
+	RecommendedProfileID string                                `json:"recommended_profile_id,omitempty"`
+	RecommendedName      string                                `json:"recommended_name,omitempty"`
+	SampleApplied        bool                                  `json:"sample_applied"`
+	SampleAvailable      bool                                  `json:"sample_available"`
+	SampleSummary        string                                `json:"sample_summary"`
+	PreviewSource        string                                `json:"preview_source"`
+	Profile              *service.ClaudeCodeFingerprintProfile `json:"profile,omitempty"`
+}
+
+type ClaudeCodeFingerprintLabTLS struct {
+	Level                  string   `json:"level"`
+	Tone                   string   `json:"tone"`
+	Score                  int      `json:"score"`
+	RecommendedTemplate    string   `json:"recommended_template"`
+	RecommendedDescription string   `json:"recommended_description"`
+	ConsistencySummary     string   `json:"consistency_summary"`
+	Reasons                []string `json:"reasons"`
+}
+
+type ClaudeCodeFingerprintLabCard struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Tone        string `json:"tone"`
+}
+
+type ClaudeCodeFingerprintLabCheck struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// GetClaudeCodeFingerprintLabDiagnosis 获取 Fingerprint Lab 聚合诊断
+// GET /api/v1/admin/settings/claude-code-fingerprints/lab-diagnosis
+func (h *SettingHandler) GetClaudeCodeFingerprintLabDiagnosis(c *gin.Context) {
+	library, err := h.settingService.GetClaudeCodeFingerprintLibrary(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	drift, err := h.settingService.GetClaudeCodeFingerprintDriftStatus(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, buildClaudeCodeFingerprintLabDiagnosis(library, drift))
+}
+
 type UpdateActiveClaudeCodeFingerprintRequest struct {
 	ID string `json:"id"`
 }
@@ -272,6 +340,473 @@ func (h *SettingHandler) DeleteClaudeCodeFingerprint(c *gin.Context) {
 		return
 	}
 	response.Success(c, library)
+}
+
+func buildClaudeCodeFingerprintLabDiagnosis(library service.ClaudeCodeFingerprintLibrary, drift service.ClaudeCodeFingerprintDriftStatus) ClaudeCodeFingerprintLabDiagnosis {
+	activeProfile := findClaudeCodeFingerprintProfileByID(library.Profiles, library.ActiveID)
+	recommendedProfile := recommendedClaudeCodeFingerprintProfile(library.Profiles)
+	driftProfile := profileFromDriftSummary(drift)
+
+	http := ClaudeCodeFingerprintLabHTTP{
+		Mode:                 "waiting",
+		ActiveProfileID:      strings.TrimSpace(library.ActiveID),
+		SampleApplied:        drift.SampleApplied,
+		SampleAvailable:      len(library.Profiles) > 0 || driftProfile != nil,
+		SampleSummary:        "等待真实 Claude Code 请求通过网关后自动学习。",
+		PreviewSource:        "none",
+		RecommendedProfileID: "",
+		RecommendedName:      "",
+	}
+	if recommendedProfile != nil {
+		http.RecommendedProfileID = recommendedProfile.ID
+		http.RecommendedName = recommendedProfile.Name
+	}
+	if activeProfile != nil {
+		http.Mode = "fixed"
+		http.ActiveProfileName = activeProfile.Name
+		http.SampleSummary = summarizeClaudeCodeFingerprintProfile(*activeProfile)
+		http.PreviewSource = "active"
+		profileCopy := *activeProfile
+		http.Profile = &profileCopy
+	} else if driftProfile != nil {
+		http.Mode = "outgoing_preview"
+		http.SampleSummary = summarizeClaudeCodeFingerprintProfile(*driftProfile)
+		http.PreviewSource = "recent_outgoing"
+		http.Profile = driftProfile
+	} else if recommendedProfile != nil {
+		http.Mode = "library_preview"
+		http.SampleSummary = summarizeClaudeCodeFingerprintProfile(*recommendedProfile)
+		http.PreviewSource = "library_latest"
+		profileCopy := *recommendedProfile
+		http.Profile = &profileCopy
+	}
+
+	tls := buildClaudeCodeFingerprintLabTLS(http.Profile, activeProfile != nil)
+	score := summarizeClaudeCodeFingerprintLab(http, tls, drift, strings.TrimSpace(library.ActiveID) != "" && activeProfile == nil)
+	level, tone, detail := claudeCodeLabDriftLabel(http, tls, drift, score)
+
+	return ClaudeCodeFingerprintLabDiagnosis{
+		Level:              level,
+		Tone:               tone,
+		Detail:             detail,
+		Score:              score,
+		HTTP:               http,
+		TLS:                tls,
+		Drift:              drift,
+		Cards:              buildClaudeCodeHTTPCard(http, tls, drift),
+		Checks:             buildClaudeCodeFingerprintLabChecks(http, tls, drift),
+		RecommendedActions: buildClaudeCodeFingerprintLabActions(http, tls, drift, strings.TrimSpace(library.ActiveID) != "" && activeProfile == nil),
+		GeneratedAt:        time.Now().Unix(),
+	}
+}
+
+func findClaudeCodeFingerprintProfileByID(profiles []service.ClaudeCodeFingerprintProfile, id string) *service.ClaudeCodeFingerprintProfile {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	for i := range profiles {
+		if profiles[i].ID == id {
+			return &profiles[i]
+		}
+	}
+	return nil
+}
+
+func recommendedClaudeCodeFingerprintProfile(profiles []service.ClaudeCodeFingerprintProfile) *service.ClaudeCodeFingerprintProfile {
+	if len(profiles) == 0 {
+		return nil
+	}
+	candidates := append([]service.ClaudeCodeFingerprintProfile(nil), profiles...)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		leftSeen := candidates[i].LastSeenAt
+		if leftSeen == 0 {
+			leftSeen = candidates[i].UpdatedAt
+		}
+		rightSeen := candidates[j].LastSeenAt
+		if rightSeen == 0 {
+			rightSeen = candidates[j].UpdatedAt
+		}
+		if leftSeen != rightSeen {
+			return leftSeen > rightSeen
+		}
+		if candidates[i].CompletenessScore != candidates[j].CompletenessScore {
+			return candidates[i].CompletenessScore > candidates[j].CompletenessScore
+		}
+		return candidates[i].SeenCount > candidates[j].SeenCount
+	})
+	return &candidates[0]
+}
+
+func profileFromDriftSummary(drift service.ClaudeCodeFingerprintDriftStatus) *service.ClaudeCodeFingerprintProfile {
+	summary := drift.OutgoingHeaderSummary
+	if len(summary) == 0 {
+		return nil
+	}
+	userAgent := getLabSummaryHeader(summary, "User-Agent")
+	if strings.TrimSpace(userAgent) == "" {
+		return nil
+	}
+	updatedAt := drift.UpdatedAt
+	if updatedAt == 0 {
+		updatedAt = time.Now().Unix()
+	}
+	return &service.ClaudeCodeFingerprintProfile{
+		ID:                      "outgoing-drift-preview",
+		Name:                    "最近 outgoing 捕获",
+		Description:             "来自最近一次真实转发请求，仅用于 HTTP/TLS 一致性预览。",
+		Source:                  "outgoing",
+		AccountID:               drift.AccountID,
+		AccountName:             strings.TrimSpace(drift.AccountName),
+		UserAgent:               userAgent,
+		Accept:                  getLabSummaryHeader(summary, "Accept"),
+		ContentType:             getLabSummaryHeader(summary, "content-type"),
+		AnthropicVersion:        getLabSummaryHeader(summary, "anthropic-version"),
+		AnthropicBeta:           getLabSummaryHeader(summary, "anthropic-beta"),
+		XApp:                    getLabSummaryHeader(summary, "x-app"),
+		DirectBrowserAccess:     getLabSummaryHeader(summary, "anthropic-dangerous-direct-browser-access"),
+		StainlessLang:           getLabSummaryHeader(summary, "X-Stainless-Lang"),
+		StainlessPackageVersion: getLabSummaryHeader(summary, "X-Stainless-Package-Version"),
+		StainlessOS:             getLabSummaryHeader(summary, "X-Stainless-OS"),
+		StainlessArch:           getLabSummaryHeader(summary, "X-Stainless-Arch"),
+		StainlessRuntime:        getLabSummaryHeader(summary, "X-Stainless-Runtime"),
+		StainlessRuntimeVersion: getLabSummaryHeader(summary, "X-Stainless-Runtime-Version"),
+		StainlessRetryCount:     getLabSummaryHeader(summary, "X-Stainless-Retry-Count"),
+		StainlessTimeout:        getLabSummaryHeader(summary, "X-Stainless-Timeout"),
+		HelperMethod:            getLabSummaryHeader(summary, "x-stainless-helper-method"),
+		CompletenessScore:       len(summary),
+		CreatedAt:               updatedAt,
+		UpdatedAt:               updatedAt,
+		LastSeenAt:              updatedAt,
+		SeenCount:               1,
+	}
+}
+
+func getLabSummaryHeader(summary map[string]string, header string) string {
+	if len(summary) == 0 {
+		return ""
+	}
+	if value := strings.TrimSpace(summary[header]); value != "" {
+		return value
+	}
+	target := strings.ToLower(strings.TrimSpace(header))
+	for key, value := range summary {
+		if strings.ToLower(strings.TrimSpace(key)) == target {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func summarizeClaudeCodeFingerprintProfile(profile service.ClaudeCodeFingerprintProfile) string {
+	version := service.ExtractCLIVersion(profile.UserAgent)
+	if version == "" {
+		version = "未知版本"
+	}
+	os := strings.TrimSpace(profile.StainlessOS)
+	if os == "" {
+		os = "未知 OS"
+	}
+	arch := strings.TrimSpace(profile.StainlessArch)
+	if arch == "" {
+		arch = "未知架构"
+	}
+	runtime := strings.TrimSpace(strings.Join([]string{profile.StainlessRuntime, profile.StainlessRuntimeVersion}, " "))
+	if runtime == "" {
+		runtime = "runtime?"
+	}
+	return fmt.Sprintf("Claude Code %s / %s / %s / %s", version, os, arch, runtime)
+}
+
+func buildClaudeCodeFingerprintLabTLS(profile *service.ClaudeCodeFingerprintProfile, fixedHTTPProfile bool) ClaudeCodeFingerprintLabTLS {
+	tls := ClaudeCodeFingerprintLabTLS{
+		Level:                  "中",
+		Tone:                   "neutral",
+		Score:                  58,
+		RecommendedTemplate:    "Built-in Default (Node.js 24.x)",
+		RecommendedDescription: "没有绑定真实模板时，先使用内置 Node.js 24.x 方向模板；有真实采集结果后在账号侧固定绑定。",
+		ConsistencySummary:     "缺少 HTTP 样本时无法判断系统/架构，先保持保守默认。",
+		Reasons:                []string{"内置模板比随机 TLS 更稳定，适合作为采集前的兜底。"},
+	}
+	if profile == nil {
+		return tls
+	}
+
+	runtime := strings.ToLower(strings.TrimSpace(profile.StainlessRuntime + " " + profile.StainlessRuntimeVersion))
+	osName := strings.ToLower(strings.TrimSpace(profile.StainlessOS))
+	score := 62
+	reasons := []string{"HTTP 样本可用，建议 TLS 模板和它的 OS / Arch / Runtime 保持同一族。"}
+	if strings.Contains(runtime, "node") {
+		score += 12
+		reasons = append(reasons, "HTTP 样本 runtime 指向 Node.js。")
+	}
+	if strings.Contains(runtime, "v24") || strings.Contains(runtime, "24.") {
+		score += 12
+		reasons = append(reasons, "HTTP 样本 runtime 版本接近 Node.js 24。")
+	}
+	if strings.Contains(osName, "darwin") || strings.Contains(osName, "mac") {
+		score += 4
+		reasons = append(reasons, "HTTP 样本 OS 指向 macOS / Darwin。")
+	}
+	if !fixedHTTPProfile {
+		score -= 8
+		reasons = append([]string{"当前 HTTP 样本还未固定，TLS 推荐仅按最近捕获预览计算。"}, reasons...)
+	}
+	score = clampClaudeCodeLabScore(score)
+	level := "中"
+	tone := "neutral"
+	if score >= 75 {
+		level = "高"
+		tone = "good"
+	} else if score < 55 {
+		level = "低"
+		tone = "warn"
+	}
+
+	return ClaudeCodeFingerprintLabTLS{
+		Level:                  level,
+		Tone:                   tone,
+		Score:                  score,
+		RecommendedTemplate:    "Built-in Default (Node.js 24.x)",
+		RecommendedDescription: "如果已导入真实 TLS 模板，优先选择名称/描述与该 HTTP 样本 OS、Arch、Runtime 一致的模板并固定到账号。",
+		ConsistencySummary:     fmt.Sprintf("HTTP 样本：%s。TLS 推荐一致性：%s。", summarizeClaudeCodeFingerprintProfile(*profile), level),
+		Reasons:                reasons,
+	}
+}
+
+func buildClaudeCodeFingerprintLabChecks(http ClaudeCodeFingerprintLabHTTP, tls ClaudeCodeFingerprintLabTLS, drift service.ClaudeCodeFingerprintDriftStatus) []ClaudeCodeFingerprintLabCheck {
+	checks := []ClaudeCodeFingerprintLabCheck{
+		{
+			Key:     "http_sample",
+			Label:   "HTTP 样本",
+			Status:  "blocked",
+			Message: "还没有捕获到真实 Claude Code HTTP 样本。",
+		},
+		{
+			Key:     "sample_applied",
+			Label:   "样本生效",
+			Status:  "warn",
+			Message: "等待下一次真实转发刷新样本生效状态。",
+		},
+		{
+			Key:     "default_overwrite",
+			Label:   "默认值覆盖",
+			Status:  "ok",
+			Message: "未发现默认 header 覆盖样本字段。",
+		},
+		{
+			Key:     "beta_tokens",
+			Label:   "Beta Token",
+			Status:  "ok",
+			Message: "未发现 beta token 缺失或异常。",
+		},
+		{
+			Key:     "cc_version",
+			Label:   "cc_version",
+			Status:  "warn",
+			Message: "等待请求 body 中的 billing cc_version 和 UA 版本同时出现。",
+		},
+		{
+			Key:     "tls_binding",
+			Label:   "TLS 绑定",
+			Status:  "warn",
+			Message: tls.ConsistencySummary,
+		},
+	}
+
+	if http.Mode == "fixed" {
+		checks[0].Status = "ok"
+		checks[0].Message = "已固定 HTTP 样本：" + http.SampleSummary
+	} else if http.Profile != nil {
+		checks[0].Status = "warn"
+		checks[0].Message = "已有可预览样本，建议确认后固定。"
+	}
+
+	if drift.SampleApplied {
+		checks[1].Status = "ok"
+		checks[1].Message = "最近一次 outgoing 已确认应用选中样本。"
+	} else if http.Mode == "fixed" && drift.Status == "warning" {
+		checks[1].Status = "blocked"
+		checks[1].Message = "已固定样本，但最近一次 outgoing 没有真正应用。"
+	}
+
+	if count := len(drift.DefaultOverwrites); count > 0 {
+		checks[2].Status = "warn"
+		checks[2].Message = fmt.Sprintf("发现 %d 个字段被默认值覆盖。", count)
+	}
+
+	if len(drift.BetaMissing)+len(drift.BetaUnexpected) > 0 {
+		checks[3].Status = "warn"
+		checks[3].Message = fmt.Sprintf("缺少 %d 个、额外 %d 个 beta token。", len(drift.BetaMissing), len(drift.BetaUnexpected))
+	}
+
+	if drift.CCVersionMatches {
+		checks[4].Status = "ok"
+		checks[4].Message = "UA 版本和 billing cc_version 一致。"
+	} else if drift.CCVersionFromUA != "" || drift.CCVersionFromBilling != "" {
+		checks[4].Status = "warn"
+		checks[4].Message = fmt.Sprintf("UA=%s / billing=%s，需要保持一致。", emptyDash(drift.CCVersionFromUA), emptyDash(drift.CCVersionFromBilling))
+	}
+
+	if tls.Score >= 75 {
+		checks[5].Status = "ok"
+	} else if http.Profile == nil {
+		checks[5].Status = "blocked"
+		checks[5].Message = "需要先捕获 HTTP 样本，才能做 HTTP/TLS 绑定推荐。"
+	}
+
+	return checks
+}
+
+func summarizeClaudeCodeFingerprintLab(http ClaudeCodeFingerprintLabHTTP, tls ClaudeCodeFingerprintLabTLS, drift service.ClaudeCodeFingerprintDriftStatus, activeMissing bool) int {
+	score := 25
+	if http.Profile != nil {
+		score = 58
+	}
+	if http.Mode == "fixed" {
+		score = 70
+	}
+	if http.SampleApplied {
+		score += 8
+	}
+	if drift.Status == "ok" {
+		score = maxClaudeCodeLabScore(score, drift.Score)
+		score += 6
+	}
+	if drift.Status == "warning" {
+		score -= 12
+	}
+	if activeMissing {
+		score -= 18
+	}
+	score += (tls.Score - 60) / 4
+	return clampClaudeCodeLabScore(score)
+}
+
+func buildClaudeCodeHTTPCard(http ClaudeCodeFingerprintLabHTTP, tls ClaudeCodeFingerprintLabTLS, drift service.ClaudeCodeFingerprintDriftStatus) []ClaudeCodeFingerprintLabCard {
+	httpTitle := "等待 HTTP 样本"
+	httpTone := "warn"
+	httpDesc := "让真实 Claude Code 通过网关请求一次后会自动学习。"
+	if http.Mode == "fixed" {
+		httpTitle = "HTTP 样本已固定"
+		httpTone = "good"
+		httpDesc = http.SampleSummary
+	} else if http.Profile != nil {
+		httpTitle = "有真实样本可应用"
+		httpTone = "neutral"
+		httpDesc = http.SampleSummary
+	}
+
+	return []ClaudeCodeFingerprintLabCard{
+		{
+			Title:       httpTitle,
+			Description: httpDesc,
+			Tone:        httpTone,
+		},
+		{
+			Title:       "TLS 推荐：" + tls.Level,
+			Description: fmt.Sprintf("%s · %d/100", tls.RecommendedTemplate, tls.Score),
+			Tone:        tls.Tone,
+		},
+		{
+			Title:       "漂移检测：" + claudeCodeLabStatusText(drift.Status),
+			Description: strings.TrimSpace(drift.Message),
+			Tone:        claudeCodeLabStatusTone(drift.Status),
+		},
+	}
+}
+
+func buildClaudeCodeFingerprintLabActions(http ClaudeCodeFingerprintLabHTTP, tls ClaudeCodeFingerprintLabTLS, drift service.ClaudeCodeFingerprintDriftStatus, activeMissing bool) []string {
+	actions := make([]string, 0, 5)
+	if http.Profile == nil {
+		actions = append(actions, "让真实 Claude Code 使用当前网关发起一次请求，系统会自动学习 HTTP 指纹。")
+	}
+	if http.Mode != "fixed" && http.RecommendedProfileID != "" {
+		actions = append(actions, "确认样本来源后点击“一键应用最近真实样本”，让后续 outgoing 固定使用它。")
+	}
+	if activeMissing {
+		actions = append(actions, "当前固定样本已不存在，建议清空或重新选择一个真实样本。")
+	}
+	if len(drift.DefaultOverwrites) > 0 {
+		actions = append(actions, "复查默认 header 注入逻辑，避免把已选样本字段覆盖回内置值。")
+	}
+	if len(drift.BetaMissing) > 0 {
+		actions = append(actions, "补齐样本中的 anthropic-beta token，尤其是和 Claude Code 版本绑定的 beta。")
+	}
+	if drift.CCVersionFromUA != "" && drift.CCVersionFromBilling != "" && !drift.CCVersionMatches {
+		actions = append(actions, "同步 User-Agent 版本和 billing metadata 中的 cc_version。")
+	}
+	if tls.Score < 75 && http.Profile != nil {
+		actions = append(actions, "导入真实 TLS 采集模板，并在账号侧绑定与 HTTP 样本 OS/Runtime 一致的模板。")
+	}
+	if len(actions) == 0 {
+		actions = append(actions, "保持当前配置，定期在真实请求后重新检测即可。")
+	}
+	return actions
+}
+
+func claudeCodeLabDriftLabel(http ClaudeCodeFingerprintLabHTTP, tls ClaudeCodeFingerprintLabTLS, drift service.ClaudeCodeFingerprintDriftStatus, score int) (string, string, string) {
+	if http.Profile == nil {
+		return "等待真实样本", "neutral", "还没有捕获到可复用 HTTP 指纹。"
+	}
+	if drift.Status == "warning" {
+		return "建议修复", "warn", "最近 outgoing 摘要和当前样本存在偏差。"
+	}
+	if http.Mode == "fixed" && drift.SampleApplied && tls.Score >= 75 && score >= 75 {
+		return "一致性高", "good", "HTTP 样本、outgoing 巡检和 TLS 推荐方向比较一致。"
+	}
+	return "可继续优化", "neutral", "已有样本或预览，但建议固定样本并绑定 TLS 模板。"
+}
+
+func claudeCodeLabStatusText(status string) string {
+	switch status {
+	case "ok":
+		return "一致"
+	case "warning":
+		return "有偏差"
+	case "idle":
+		return "待采集"
+	default:
+		if strings.TrimSpace(status) == "" {
+			return "待采集"
+		}
+		return status
+	}
+}
+
+func claudeCodeLabStatusTone(status string) string {
+	switch status {
+	case "ok":
+		return "good"
+	case "warning":
+		return "warn"
+	default:
+		return "neutral"
+	}
+}
+
+func emptyDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return strings.TrimSpace(value)
+}
+
+func clampClaudeCodeLabScore(score int) int {
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
+}
+
+func maxClaudeCodeLabScore(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

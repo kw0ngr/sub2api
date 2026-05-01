@@ -1071,6 +1071,56 @@ export interface ClaudeCodeFingerprintDriftStatus {
   updated_at: number;
 }
 
+export interface ClaudeCodeFingerprintLabHTTP {
+  mode: "fixed" | "outgoing_preview" | "library_preview" | "waiting" | string;
+  active_profile_id?: string;
+  active_profile_name?: string;
+  recommended_profile_id?: string;
+  recommended_name?: string;
+  sample_applied: boolean;
+  sample_available: boolean;
+  sample_summary: string;
+  preview_source: string;
+  profile?: ClaudeCodeFingerprintProfile;
+}
+
+export interface ClaudeCodeFingerprintLabTLS {
+  level: string;
+  tone: "good" | "warn" | "neutral" | string;
+  score: number;
+  recommended_template: string;
+  recommended_description: string;
+  consistency_summary: string;
+  reasons: string[];
+}
+
+export interface ClaudeCodeFingerprintLabCard {
+  title: string;
+  description: string;
+  tone: "good" | "warn" | "neutral" | string;
+}
+
+export interface ClaudeCodeFingerprintLabCheck {
+  key: string;
+  label: string;
+  status: "ok" | "warn" | "blocked" | string;
+  message: string;
+}
+
+export interface ClaudeCodeFingerprintLabDiagnosis {
+  level: string;
+  tone: "good" | "warn" | "neutral" | string;
+  detail: string;
+  score: number;
+  http: ClaudeCodeFingerprintLabHTTP;
+  tls: ClaudeCodeFingerprintLabTLS;
+  drift: ClaudeCodeFingerprintDriftStatus;
+  cards: ClaudeCodeFingerprintLabCard[];
+  checks: ClaudeCodeFingerprintLabCheck[];
+  recommended_actions: string[];
+  generated_at: number;
+}
+
 export async function getClaudeCodeFingerprints(): Promise<ClaudeCodeFingerprintLibrary> {
   const { data } = await apiClient.get<ClaudeCodeFingerprintLibrary>(
     "/admin/settings/claude-code-fingerprints",
@@ -1081,6 +1131,13 @@ export async function getClaudeCodeFingerprints(): Promise<ClaudeCodeFingerprint
 export async function getClaudeCodeFingerprintDrift(): Promise<ClaudeCodeFingerprintDriftStatus> {
   const { data } = await apiClient.get<ClaudeCodeFingerprintDriftStatus>(
     "/admin/settings/claude-code-fingerprints/drift",
+  );
+  return data;
+}
+
+export async function getClaudeCodeFingerprintLabDiagnosis(): Promise<ClaudeCodeFingerprintLabDiagnosis> {
+  const { data } = await apiClient.get<ClaudeCodeFingerprintLabDiagnosis>(
+    "/admin/settings/claude-code-fingerprints/lab-diagnosis",
   );
   return data;
 }
@@ -1126,6 +1183,7 @@ export const settingsAPI = {
   resetWebSearchUsage,
   getClaudeCodeFingerprints,
   getClaudeCodeFingerprintDrift,
+  getClaudeCodeFingerprintLabDiagnosis,
   setActiveClaudeCodeFingerprint,
   deleteClaudeCodeFingerprint,
 };

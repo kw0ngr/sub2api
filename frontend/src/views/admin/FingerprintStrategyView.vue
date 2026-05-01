@@ -61,6 +61,13 @@
           </article>
         </div>
 
+        <div v-if="fingerprintRecommendedActions.length" class="fingerprint-diagnosis-recommendations">
+          <span class="fingerprint-diagnosis-recommendations-label">下一步</span>
+          <span v-for="action in fingerprintRecommendedActions" :key="action" class="fingerprint-diagnosis-recommendation">
+            {{ action }}
+          </span>
+        </div>
+
         <div class="fingerprint-diagnosis-actions">
           <button class="btn btn-primary" type="button" :disabled="!recommendedHTTPFingerprint || savingHTTPFingerprint" @click="applyLatestHTTPFingerprint">
             一键应用最近真实样本
@@ -520,7 +527,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { CreateProfileRequest, TLSFingerprintProfile } from '@/api/admin'
-import type { ClaudeCodeFingerprintDriftStatus, ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
+import type { ClaudeCodeFingerprintDriftStatus, ClaudeCodeFingerprintLabDiagnosis, ClaudeCodeFingerprintProfile } from '@/api/admin/settings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
@@ -538,6 +545,7 @@ const profiles = ref<TLSFingerprintProfile[]>([])
 const httpFingerprintProfiles = ref<ClaudeCodeFingerprintProfile[]>([])
 const activeHTTPFingerprintID = ref('')
 const fingerprintDrift = ref<ClaudeCodeFingerprintDriftStatus | null>(null)
+const fingerprintLabDiagnosis = ref<ClaudeCodeFingerprintLabDiagnosis | null>(null)
 const tlsCollectorLoading = ref(false)
 const tlsCollectorImporting = ref(false)
 const tlsCollectorFingerprints = ref<TLSCollectorFingerprint[]>([])
@@ -792,6 +800,13 @@ const driftIssueRows = computed(() => {
 })
 
 const fingerprintDiagnosis = computed(() => {
+  if (fingerprintLabDiagnosis.value) {
+    return {
+      level: fingerprintLabDiagnosis.value.level,
+      tone: fingerprintLabDiagnosis.value.tone,
+      detail: fingerprintLabDiagnosis.value.detail
+    }
+  }
   if (!httpFingerprintProfiles.value.length && !driftStatus.value?.outgoing_header_summary) {
     return {
       level: '等待真实样本',
@@ -820,27 +835,34 @@ const fingerprintDiagnosis = computed(() => {
   }
 })
 
-const diagnosisCards = computed(() => [
-  {
-    title: activeHTTPFingerprint.value ? 'HTTP 样本已固定' : recommendedHTTPFingerprint.value ? '有真实样本可应用' : '等待 HTTP 样本',
-    description: activeHTTPFingerprint.value
-      ? describeHTTPFingerprint(activeHTTPFingerprint.value)
-      : recommendedHTTPFingerprint.value
-        ? `推荐应用：${recommendedHTTPFingerprint.value.name}`
-        : '让真实 Claude Code 通过网关调用一次后会自动学习。',
-    tone: activeHTTPFingerprint.value ? 'good' : recommendedHTTPFingerprint.value ? 'neutral' : 'warn'
-  },
-  {
-    title: `TLS 推荐：${tlsBindingRecommendation.value.level}`,
-    description: `${tlsBindingRecommendation.value.profileName} · ${tlsBindingRecommendation.value.score}/100`,
-    tone: tlsBindingRecommendation.value.tone
-  },
-  {
-    title: `漂移检测：${driftStatusLabel.value}`,
-    description: fingerprintDiagnosis.value.detail,
-    tone: driftStatusTone.value
+const diagnosisCards = computed(() => {
+  if (fingerprintLabDiagnosis.value?.cards?.length) {
+    return fingerprintLabDiagnosis.value.cards
   }
-])
+  return [
+    {
+      title: activeHTTPFingerprint.value ? 'HTTP 样本已固定' : recommendedHTTPFingerprint.value ? '有真实样本可应用' : '等待 HTTP 样本',
+      description: activeHTTPFingerprint.value
+        ? describeHTTPFingerprint(activeHTTPFingerprint.value)
+        : recommendedHTTPFingerprint.value
+          ? `推荐应用：${recommendedHTTPFingerprint.value.name}`
+          : '让真实 Claude Code 通过网关调用一次后会自动学习。',
+      tone: activeHTTPFingerprint.value ? 'good' : recommendedHTTPFingerprint.value ? 'neutral' : 'warn'
+    },
+    {
+      title: `TLS 推荐：${tlsBindingRecommendation.value.level}`,
+      description: `${tlsBindingRecommendation.value.profileName} · ${tlsBindingRecommendation.value.score}/100`,
+      tone: tlsBindingRecommendation.value.tone
+    },
+    {
+      title: `漂移检测：${driftStatusLabel.value}`,
+      description: fingerprintDiagnosis.value.detail,
+      tone: driftStatusTone.value
+    }
+  ]
+})
+
+const fingerprintRecommendedActions = computed(() => fingerprintLabDiagnosis.value?.recommended_actions || [])
 
 const tlsBindingRecommendation = computed(() => buildTLSBindingRecommendation(
   referenceHTTPFingerprint.value,
@@ -1348,11 +1370,12 @@ function applyRecommendedPreset() {
 async function loadData() {
   loading.value = true
   try {
-    const [settings, tlsProfiles, fingerprintLibrary, drift] = await Promise.all([
+    const [settings, tlsProfiles, fingerprintLibrary, drift, labDiagnosis] = await Promise.all([
       adminAPI.settings.getSettings(),
       adminAPI.tlsFingerprintProfiles.list(),
       adminAPI.settings.getClaudeCodeFingerprints(),
-      adminAPI.settings.getClaudeCodeFingerprintDrift()
+      adminAPI.settings.getClaudeCodeFingerprintDrift(),
+      adminAPI.settings.getClaudeCodeFingerprintLabDiagnosis().catch(() => null)
     ])
     form.min_claude_code_version = settings.min_claude_code_version || ''
     form.max_claude_code_version = settings.max_claude_code_version || ''
@@ -1361,7 +1384,8 @@ async function loadData() {
     form.enable_cch_signing = settings.enable_cch_signing !== false
     profiles.value = tlsProfiles
     applyFingerprintLibrary(fingerprintLibrary)
-    fingerprintDrift.value = drift
+    fingerprintLabDiagnosis.value = labDiagnosis
+    fingerprintDrift.value = labDiagnosis?.drift || drift
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, '加载指纹策略失败'))
   } finally {
@@ -1540,6 +1564,48 @@ onMounted(async () => {
 
 .fingerprint-diagnosis-dot.warn {
   background: rgb(245 158 11);
+}
+
+.fingerprint-diagnosis-recommendations {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  border: 1px dashed rgb(125 211 252 / 0.85);
+  border-radius: 1rem;
+  background: rgb(240 249 255 / 0.72);
+  padding: 0.75rem;
+}
+
+:global(.dark) .fingerprint-diagnosis-recommendations {
+  border-color: rgb(56 189 248 / 0.46);
+  background: rgb(8 47 73 / 0.26);
+}
+
+.fingerprint-diagnosis-recommendations-label,
+.fingerprint-diagnosis-recommendation {
+  border-radius: 999px;
+  padding: 0.38rem 0.62rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.fingerprint-diagnosis-recommendations-label {
+  background: rgb(14 165 233);
+  color: white;
+}
+
+.fingerprint-diagnosis-recommendation {
+  background: white;
+  color: rgb(15 23 42);
+  box-shadow: inset 0 0 0 1px rgb(186 230 253);
+}
+
+:global(.dark) .fingerprint-diagnosis-recommendation {
+  background: rgb(15 23 42 / 0.76);
+  color: rgb(226 232 240);
+  box-shadow: inset 0 0 0 1px rgb(14 165 233 / 0.38);
 }
 
 .fingerprint-diagnosis-actions {
