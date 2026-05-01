@@ -62,6 +62,51 @@ export interface AccountListWithEtagResult {
   data: PaginatedResponse<Account> | null
 }
 
+export type AccountPoolMapStatusKind = 'healthy' | 'degraded' | 'rate_limited' | 'error' | 'disabled'
+
+export interface AccountPoolMapSummary {
+  total: number
+  healthy: number
+  degraded: number
+  rate_limited: number
+  error: number
+  disabled: number
+  attention: number
+  pools: number
+  tls_enabled: number
+  rpm: number
+  concurrency: number
+  active_sessions: number
+}
+
+export interface AccountPoolMapAccount extends Account {
+  status_kind: AccountPoolMapStatusKind
+  status_label: string
+  status_reason?: string
+  attention: boolean
+}
+
+export interface AccountPoolMapPool {
+  key: string
+  platform: string
+  type: string
+  summary: AccountPoolMapSummary
+  accounts: AccountPoolMapAccount[]
+}
+
+export interface AccountPoolMapResponse {
+  summary: AccountPoolMapSummary
+  pools: AccountPoolMapPool[]
+  accounts: AccountPoolMapAccount[]
+  generated_at: string
+  source: {
+    total: number
+    returned: number
+    limit: number
+    truncated: boolean
+  }
+}
+
 export async function listWithEtag(
   page: number = 1,
   pageSize: number = 20,
@@ -111,6 +156,25 @@ export async function listWithEtag(
     etag: etagHeader,
     data: response.data
   }
+}
+
+export async function getPoolMap(
+  filters?: {
+    platform?: string
+    type?: string
+    status?: string
+    search?: string
+    limit?: number
+  },
+  options?: {
+    signal?: AbortSignal
+  }
+): Promise<AccountPoolMapResponse> {
+  const { data } = await apiClient.get<AccountPoolMapResponse>('/admin/accounts/pool-map', {
+    params: filters,
+    signal: options?.signal
+  })
+  return data
 }
 
 /**
@@ -720,6 +784,7 @@ export async function setPrivacy(id: number): Promise<Account> {
 export const accountsAPI = {
   list,
   listWithEtag,
+  getPoolMap,
   getById,
   create,
   update,

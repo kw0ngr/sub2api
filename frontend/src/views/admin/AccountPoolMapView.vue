@@ -14,6 +14,12 @@
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
+          <p
+            v-if="generatedAt"
+            class="flex items-center rounded-xl bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500 dark:bg-dark-800 dark:text-gray-400"
+          >
+            更新 {{ formatDate(generatedAt) }}
+          </p>
           <button
             type="button"
             class="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-primary-300 hover:text-primary-600 dark:border-dark-700 dark:text-gray-300 dark:hover:border-primary-500 dark:hover:text-primary-300"
@@ -100,6 +106,21 @@
                 </button>
               </div>
             </div>
+          </div>
+          <div
+            v-if="errorMessage"
+            class="mt-3 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>{{ errorMessage }}</span>
+            <button type="button" class="text-xs font-semibold underline underline-offset-4" @click="refresh">
+              重试
+            </button>
+          </div>
+          <div
+            v-if="sourceInfo?.truncated"
+            class="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200"
+          >
+            当前仅展示前 {{ sourceInfo.returned }} / {{ sourceInfo.total }} 个账号；可以通过搜索或平台筛选缩小范围。
           </div>
         </div>
 
@@ -249,7 +270,7 @@
                   </span>
                 </div>
                 <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {{ account.error_message || account.temp_unschedulable_reason || '等待恢复或需要人工复核' }}
+                  {{ account.status_reason || account.error_message || account.temp_unschedulable_reason || '等待恢复或需要人工复核' }}
                 </p>
               </button>
               <div v-if="!attentionAccounts.length" class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
@@ -264,20 +285,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import type { Account } from '@/types'
+import type {
+  AccountPoolMapAccount,
+  AccountPoolMapPool,
+  AccountPoolMapResponse,
+  AccountPoolMapStatusKind,
+  AccountPoolMapSummary
+} from '@/api/admin/accounts'
 
 type ViewMode = 'status' | 'traffic' | 'error'
-type AccountStatusKind = 'healthy' | 'degraded' | 'rate_limited' | 'error' | 'disabled'
-
-interface AccountPool {
-  key: string
-  platform: string
-  type: string
-  accounts: Account[]
-}
+type AccountStatusKind = AccountPoolMapStatusKind
+type AccountPool = AccountPoolMapPool
 
 const MetricTile = defineComponent({
   props: {
@@ -306,9 +328,17 @@ const InspectorRow = defineComponent({
 })
 
 const router = useRouter()
-const accounts = ref<Account[]>([])
+const accounts = ref<AccountPoolMapAccount[]>([])
+const pools = ref<AccountPoolMapPool[]>([])
+const serverSummary = ref<AccountPoolMapSummary | null>(null)
+const sourceInfo = ref<AccountPoolMapResponse['source'] | null>(null)
+const generatedAt = ref('')
+const errorMessage = ref('')
+const knownPlatforms = ref<string[]>([])
 const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let refreshSeq = 0
 
 const filters = reactive<{
   search: string
@@ -328,62 +358,23 @@ const viewModes: Array<{ value: ViewMode; label: string }> = [
   { value: 'error', label: '错误' }
 ]
 
-const platformOptions = computed(() => Array.from(new Set(accounts.value.map((item) => item.platform))).sort())
+const platformOptions = computed(() => {
+  const set = new Set(knownPlatforms.value)
+  if (filters.platform !== 'all') set.add(filters.platform)
+  return Array.from(set).sort()
+})
 
 const selectedAccount = computed(() => accounts.value.find((item) => item.id === selectedAccountId.value) || null)
 
-const filteredAccounts = computed(() => {
-  const query = filters.search.toLowerCase()
-  return accounts.value.filter((account) => {
-    if (filters.platform !== 'all' && account.platform !== filters.platform) return false
-    if (filters.status !== 'all' && statusKind(account) !== filters.status) return false
-    if (!query) return true
-    const haystack = [
-      account.name,
-      account.platform,
-      account.type,
-      account.error_message || '',
-      account.temp_unschedulable_reason || '',
-      ...(account.groups || []).map((group) => group.name)
-    ].join(' ').toLowerCase()
-    return haystack.includes(query)
-  })
-})
+const visiblePools = computed<AccountPool[]>(() => pools.value)
 
-const visiblePools = computed<AccountPool[]>(() => {
-  const map = new Map<string, AccountPool>()
-  for (const account of filteredAccounts.value) {
-    const key = `${account.platform}:${account.type}`
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        platform: account.platform,
-        type: account.type,
-        accounts: []
-      })
-    }
-    map.get(key)?.accounts.push(account)
-  }
-  return Array.from(map.values())
-    .map((pool) => ({
-      ...pool,
-      accounts: pool.accounts.slice().sort((a, b) => statusWeight(a) - statusWeight(b) || a.name.localeCompare(b.name))
-    }))
-    .sort((a, b) => platformLabel(a.platform).localeCompare(platformLabel(b.platform)) || accountTypeLabel(a.type).localeCompare(accountTypeLabel(b.type)))
-})
-
-const attentionAccounts = computed(() => filteredAccounts.value
+const attentionAccounts = computed(() => accounts.value
   .filter((account) => statusKind(account) !== 'healthy')
   .sort((a, b) => statusWeight(a) - statusWeight(b))
   .slice(0, 6))
 
 const summary = computed(() => {
-  const total = filteredAccounts.value.length
-  const healthy = filteredAccounts.value.filter((item) => statusKind(item) === 'healthy').length
-  const rateLimited = filteredAccounts.value.filter((item) => statusKind(item) === 'rate_limited').length
-  const disabled = filteredAccounts.value.filter((item) => statusKind(item) === 'disabled').length
-  const attention = total - healthy
-  return { total, healthy, rateLimited, disabled, attention }
+  return serverSummary.value || buildSummary(accounts.value, pools.value)
 })
 
 const summaryCards = computed(() => [
@@ -391,7 +382,7 @@ const summaryCards = computed(() => [
     key: 'total',
     label: '账号总数',
     value: summary.value.total,
-    detail: `${visiblePools.value.length} 个池/泳道`,
+    detail: `${summary.value.pools || visiblePools.value.length} 个池/泳道`,
     dotClass: 'bg-gray-400'
   },
   {
@@ -411,13 +402,19 @@ const summaryCards = computed(() => [
   {
     key: 'limited',
     label: '限流/停用',
-    value: summary.value.rateLimited + summary.value.disabled,
-    detail: `${summary.value.rateLimited} 限流 · ${summary.value.disabled} 停用`,
-    dotClass: summary.value.rateLimited + summary.value.disabled > 0 ? 'bg-violet-500' : 'bg-gray-300'
+    value: summary.value.rate_limited + summary.value.disabled,
+    detail: `${summary.value.rate_limited} 限流 · ${summary.value.disabled} 停用`,
+    dotClass: summary.value.rate_limited + summary.value.disabled > 0 ? 'bg-violet-500' : 'bg-gray-300'
   }
 ])
 
 function statusKind(account: Account): AccountStatusKind {
+  const mappedKind = (account as Partial<AccountPoolMapAccount>).status_kind
+  if (mappedKind) return mappedKind
+  return inferStatusKind(account)
+}
+
+function inferStatusKind(account: Account): AccountStatusKind {
   if (account.status === 'inactive') return 'disabled'
   if (account.status === 'error' || account.error_message) return 'error'
   if (isFuture(account.rate_limit_reset_at)) return 'rate_limited'
@@ -437,6 +434,12 @@ function statusWeight(account: Account): number {
 }
 
 function statusLabel(account: Account): string {
+  const mappedLabel = (account as Partial<AccountPoolMapAccount>).status_label
+  if (mappedLabel) return mappedLabel
+  return statusKindLabel(statusKind(account))
+}
+
+function statusKindLabel(kind: AccountStatusKind): string {
   const labels: Record<AccountStatusKind, string> = {
     healthy: '健康',
     degraded: '降级',
@@ -444,7 +447,7 @@ function statusLabel(account: Account): string {
     error: '错误',
     disabled: '停用'
   }
-  return labels[statusKind(account)]
+  return labels[kind]
 }
 
 function statusBadgeClass(account: Account): string {
@@ -512,23 +515,23 @@ function accountTypeLabel(type: string): string {
 }
 
 function poolHealthyCount(pool: AccountPool): number {
-  return pool.accounts.filter((item) => statusKind(item) === 'healthy').length
+  return pool.summary?.healthy ?? pool.accounts.filter((item) => statusKind(item) === 'healthy').length
 }
 
 function poolAttentionCount(pool: AccountPool): number {
-  return pool.accounts.length - poolHealthyCount(pool)
+  return pool.summary?.attention ?? (pool.accounts.length - poolHealthyCount(pool))
 }
 
 function poolRPM(pool: AccountPool): number {
-  return pool.accounts.reduce((sum, item) => sum + (item.current_rpm || 0), 0)
+  return pool.summary?.rpm ?? pool.accounts.reduce((sum, item) => sum + (item.current_rpm || 0), 0)
 }
 
 function poolConcurrency(pool: AccountPool): number {
-  return pool.accounts.reduce((sum, item) => sum + (item.current_concurrency || 0), 0)
+  return pool.summary?.concurrency ?? pool.accounts.reduce((sum, item) => sum + (item.current_concurrency || 0), 0)
 }
 
 function poolFingerprintCount(pool: AccountPool): string {
-  const enabled = pool.accounts.filter((item) => item.enable_tls_fingerprint).length
+  const enabled = pool.summary?.tls_enabled ?? pool.accounts.filter((item) => item.enable_tls_fingerprint).length
   return `${enabled}/${pool.accounts.length}`
 }
 
@@ -545,24 +548,180 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString()
 }
 
-function selectAccount(account: Account) {
+function selectAccount(account: AccountPoolMapAccount) {
   selectedAccountId.value = account.id
 }
 
 async function refresh() {
+  const seq = ++refreshSeq
   loading.value = true
+  errorMessage.value = ''
   try {
-    const response = await adminAPI.accounts.list(1, 1000, {
-      sort_by: 'platform',
-      sort_order: 'asc'
+    const response = await adminAPI.accounts.getPoolMap({
+      platform: filters.platform !== 'all' ? filters.platform : undefined,
+      status: filters.status !== 'all' ? filters.status : undefined,
+      search: filters.search || undefined,
+      limit: 3000
     })
-    accounts.value = response.items || []
-    if (selectedAccountId.value && !accounts.value.some((item) => item.id === selectedAccountId.value)) {
-      selectedAccountId.value = null
+    if (seq !== refreshSeq) return
+    loadPoolMapResponse(response)
+  } catch (error) {
+    if (seq !== refreshSeq) return
+    try {
+      await loadFallbackAccounts()
+      errorMessage.value = normalizeError(error) || '账号池地图接口暂不可用，已回退到账号列表聚合。'
+    } catch (fallbackError) {
+      errorMessage.value = normalizeError(fallbackError) || normalizeError(error) || '账号池地图加载失败。'
+      accounts.value = []
+      pools.value = []
+      serverSummary.value = createEmptySummary()
+      sourceInfo.value = null
+      generatedAt.value = ''
     }
   } finally {
-    loading.value = false
+    if (seq === refreshSeq) {
+      loading.value = false
+    }
   }
+}
+
+function loadPoolMapResponse(response: AccountPoolMapResponse) {
+  const nextAccounts = response.accounts || []
+  accounts.value = nextAccounts
+  pools.value = response.pools || groupAccounts(nextAccounts)
+  serverSummary.value = response.summary || buildSummary(nextAccounts, pools.value)
+  sourceInfo.value = response.source || null
+  generatedAt.value = response.generated_at || ''
+  mergeKnownPlatforms(nextAccounts)
+  if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
+    selectedAccountId.value = null
+  }
+}
+
+async function loadFallbackAccounts() {
+  const response = await adminAPI.accounts.list(1, 1000, {
+    platform: filters.platform !== 'all' ? filters.platform : undefined,
+    search: filters.search || undefined,
+    sort_by: 'platform',
+    sort_order: 'asc'
+  })
+  const nextAccounts = (response.items || [])
+    .map(enrichFallbackAccount)
+    .filter((account) => filters.status === 'all' || statusKind(account) === filters.status)
+  accounts.value = nextAccounts
+  pools.value = groupAccounts(nextAccounts)
+  serverSummary.value = buildSummary(nextAccounts, pools.value)
+  sourceInfo.value = {
+    total: response.total,
+    returned: response.items?.length || 0,
+    limit: 1000,
+    truncated: response.total > (response.items?.length || 0)
+  }
+  generatedAt.value = new Date().toISOString()
+  mergeKnownPlatforms(nextAccounts)
+  if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
+    selectedAccountId.value = null
+  }
+}
+
+function enrichFallbackAccount(account: Account): AccountPoolMapAccount {
+  const kind = inferStatusKind(account)
+  return {
+    ...account,
+    status_kind: kind,
+    status_label: statusKindLabel(kind),
+    status_reason: account.temp_unschedulable_reason || account.error_message || '',
+    attention: kind !== 'healthy'
+  }
+}
+
+function groupAccounts(items: AccountPoolMapAccount[]): AccountPoolMapPool[] {
+  const map = new Map<string, AccountPoolMapPool>()
+  for (const account of items) {
+    const key = `${account.platform}:${account.type}`
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        platform: account.platform,
+        type: account.type,
+        summary: createEmptySummary(),
+        accounts: []
+      })
+    }
+    const pool = map.get(key)
+    if (!pool) continue
+    pool.accounts.push(account)
+    incrementSummary(pool.summary, account)
+  }
+  return Array.from(map.values())
+    .map((pool) => ({
+      ...pool,
+      summary: { ...pool.summary, pools: 1 },
+      accounts: pool.accounts.slice().sort((a, b) => statusWeight(a) - statusWeight(b) || a.name.localeCompare(b.name))
+    }))
+    .sort((a, b) => platformLabel(a.platform).localeCompare(platformLabel(b.platform)) || accountTypeLabel(a.type).localeCompare(accountTypeLabel(b.type)))
+}
+
+function buildSummary(items: AccountPoolMapAccount[], groupedPools: AccountPoolMapPool[]): AccountPoolMapSummary {
+  const next = createEmptySummary()
+  for (const account of items) {
+    incrementSummary(next, account)
+  }
+  next.pools = groupedPools.length
+  return next
+}
+
+function createEmptySummary(): AccountPoolMapSummary {
+  return {
+    total: 0,
+    healthy: 0,
+    degraded: 0,
+    rate_limited: 0,
+    error: 0,
+    disabled: 0,
+    attention: 0,
+    pools: 0,
+    tls_enabled: 0,
+    rpm: 0,
+    concurrency: 0,
+    active_sessions: 0
+  }
+}
+
+function incrementSummary(summary: AccountPoolMapSummary, account: AccountPoolMapAccount) {
+  summary.total += 1
+  if (account.status_kind === 'healthy') summary.healthy += 1
+  if (account.status_kind === 'degraded') summary.degraded += 1
+  if (account.status_kind === 'rate_limited') summary.rate_limited += 1
+  if (account.status_kind === 'error') summary.error += 1
+  if (account.status_kind === 'disabled') summary.disabled += 1
+  if (account.attention) summary.attention += 1
+  if (account.enable_tls_fingerprint) summary.tls_enabled += 1
+  summary.rpm += account.current_rpm || 0
+  summary.concurrency += account.current_concurrency || 0
+  summary.active_sessions += account.active_sessions || 0
+}
+
+function mergeKnownPlatforms(items: AccountPoolMapAccount[]) {
+  const set = new Set(knownPlatforms.value)
+  for (const account of items) {
+    if (account.platform) set.add(account.platform)
+  }
+  knownPlatforms.value = Array.from(set).sort()
+}
+
+function normalizeError(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message || '')
+  }
+  return ''
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => {
+    void refresh()
+  }, filters.search ? 280 : 0)
 }
 
 function goAccounts() {
@@ -581,8 +740,17 @@ function goUsage(account: Account) {
   router.push({ path: '/admin/usage', query: { account_id: String(account.id) } })
 }
 
+watch(
+  () => [filters.search, filters.platform, filters.status],
+  () => scheduleRefresh()
+)
+
 onMounted(() => {
   void refresh()
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearTimeout(refreshTimer)
 })
 </script>
 

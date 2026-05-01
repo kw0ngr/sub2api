@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -177,6 +178,52 @@ type AccountWithConcurrency struct {
 	CurrentRPM        *int     `json:"current_rpm,omitempty"`         // 当前分钟 RPM 计数
 }
 
+type AccountPoolMapResponse struct {
+	Summary   AccountPoolMapSummary    `json:"summary"`
+	Pools     []AccountPoolMapPool     `json:"pools"`
+	Accounts  []AccountPoolMapAccount  `json:"accounts"`
+	Generated time.Time                `json:"generated_at"`
+	Source    AccountPoolMapSourceInfo `json:"source"`
+}
+
+type AccountPoolMapSourceInfo struct {
+	Total     int64 `json:"total"`
+	Returned  int   `json:"returned"`
+	Limit     int   `json:"limit"`
+	Truncated bool  `json:"truncated"`
+}
+
+type AccountPoolMapPool struct {
+	Key      string                  `json:"key"`
+	Platform string                  `json:"platform"`
+	Type     string                  `json:"type"`
+	Summary  AccountPoolMapSummary   `json:"summary"`
+	Accounts []AccountPoolMapAccount `json:"accounts"`
+}
+
+type AccountPoolMapAccount struct {
+	AccountWithConcurrency
+	StatusKind   string `json:"status_kind"`
+	StatusLabel  string `json:"status_label"`
+	StatusReason string `json:"status_reason,omitempty"`
+	Attention    bool   `json:"attention"`
+}
+
+type AccountPoolMapSummary struct {
+	Total          int `json:"total"`
+	Healthy        int `json:"healthy"`
+	Degraded       int `json:"degraded"`
+	RateLimited    int `json:"rate_limited"`
+	Error          int `json:"error"`
+	Disabled       int `json:"disabled"`
+	Attention      int `json:"attention"`
+	Pools          int `json:"pools"`
+	TLSEnabled     int `json:"tls_enabled"`
+	RPM            int `json:"rpm"`
+	Concurrency    int `json:"concurrency"`
+	ActiveSessions int `json:"active_sessions"`
+}
+
 const accountListGroupUngroupedQueryValue = "ungrouped"
 
 func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
@@ -223,6 +270,120 @@ func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, ac
 	return item
 }
 
+func (h *AccountHandler) buildAccountResponsesWithRuntime(ctx context.Context, accounts []service.Account) []AccountWithConcurrency {
+	accountIDs := make([]int64, len(accounts))
+	for i, acc := range accounts {
+		accountIDs[i] = acc.ID
+	}
+
+	concurrencyCounts := make(map[int64]int)
+	var windowCosts map[int64]float64
+	var activeSessions map[int64]int
+	var rpmCounts map[int64]int
+
+	// 始终获取并发数（Redis ZCARD，极低开销）
+	if h.concurrencyService != nil && len(accountIDs) > 0 {
+		if cc, ccErr := h.concurrencyService.GetAccountConcurrencyBatch(ctx, accountIDs); ccErr == nil && cc != nil {
+			concurrencyCounts = cc
+		}
+	}
+
+	// 识别需要查询窗口费用、会话数和 RPM 的账号（Anthropic OAuth/SetupToken 且启用了相应功能）
+	windowCostAccountIDs := make([]int64, 0)
+	sessionLimitAccountIDs := make([]int64, 0)
+	rpmAccountIDs := make([]int64, 0)
+	sessionIdleTimeouts := make(map[int64]time.Duration)
+	for i := range accounts {
+		acc := &accounts[i]
+		if acc.IsAnthropicOAuthOrSetupToken() {
+			if acc.GetWindowCostLimit() > 0 {
+				windowCostAccountIDs = append(windowCostAccountIDs, acc.ID)
+			}
+			if acc.GetMaxSessions() > 0 {
+				sessionLimitAccountIDs = append(sessionLimitAccountIDs, acc.ID)
+				sessionIdleTimeouts[acc.ID] = time.Duration(acc.GetSessionIdleTimeoutMinutes()) * time.Minute
+			}
+			if acc.GetBaseRPM() > 0 {
+				rpmAccountIDs = append(rpmAccountIDs, acc.ID)
+			}
+		}
+	}
+
+	// 始终获取 RPM 计数（Redis GET，极低开销）
+	if len(rpmAccountIDs) > 0 && h.rpmCache != nil {
+		rpmCounts, _ = h.rpmCache.GetRPMBatch(ctx, rpmAccountIDs)
+		if rpmCounts == nil {
+			rpmCounts = make(map[int64]int)
+		}
+	}
+
+	// 始终获取活跃会话数（Redis ZCARD，低开销）
+	if len(sessionLimitAccountIDs) > 0 && h.sessionLimitCache != nil {
+		activeSessions, _ = h.sessionLimitCache.GetActiveSessionCountBatch(ctx, sessionLimitAccountIDs, sessionIdleTimeouts)
+		if activeSessions == nil {
+			activeSessions = make(map[int64]int)
+		}
+	}
+
+	// 始终获取窗口费用（PostgreSQL 聚合查询）
+	if len(windowCostAccountIDs) > 0 && h.accountUsageService != nil {
+		windowCosts = make(map[int64]float64)
+		var mu sync.Mutex
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(10)
+
+		for i := range accounts {
+			acc := &accounts[i]
+			if !acc.IsAnthropicOAuthOrSetupToken() || acc.GetWindowCostLimit() <= 0 {
+				continue
+			}
+			accCopy := acc
+			g.Go(func() error {
+				startTime := accCopy.GetCurrentWindowStartTime()
+				stats, err := h.accountUsageService.GetAccountWindowStats(gctx, accCopy.ID, startTime)
+				if err == nil && stats != nil {
+					mu.Lock()
+					windowCosts[accCopy.ID] = stats.StandardCost
+					mu.Unlock()
+				}
+				return nil
+			})
+		}
+		_ = g.Wait()
+	}
+
+	result := make([]AccountWithConcurrency, len(accounts))
+	for i := range accounts {
+		acc := &accounts[i]
+		item := AccountWithConcurrency{
+			Account:            dto.AccountFromService(acc),
+			CurrentConcurrency: concurrencyCounts[acc.ID],
+		}
+
+		if windowCosts != nil {
+			if cost, ok := windowCosts[acc.ID]; ok {
+				item.CurrentWindowCost = &cost
+			}
+		}
+
+		if activeSessions != nil {
+			if count, ok := activeSessions[acc.ID]; ok {
+				item.ActiveSessions = &count
+			}
+		}
+
+		if rpmCounts != nil {
+			if rpm, ok := rpmCounts[acc.ID]; ok {
+				item.CurrentRPM = &rpm
+			}
+		}
+
+		result[i] = item
+	}
+
+	return result
+}
+
 // List handles listing all accounts with pagination
 // GET /api/v1/admin/accounts
 func (h *AccountHandler) List(c *gin.Context) {
@@ -265,121 +426,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Get current concurrency counts for all accounts
-	accountIDs := make([]int64, len(accounts))
-	for i, acc := range accounts {
-		accountIDs[i] = acc.ID
-	}
-
-	concurrencyCounts := make(map[int64]int)
-	var windowCosts map[int64]float64
-	var activeSessions map[int64]int
-	var rpmCounts map[int64]int
-
-	// 始终获取并发数（Redis ZCARD，极低开销）
-	if h.concurrencyService != nil {
-		if cc, ccErr := h.concurrencyService.GetAccountConcurrencyBatch(c.Request.Context(), accountIDs); ccErr == nil && cc != nil {
-			concurrencyCounts = cc
-		}
-	}
-
-	// 识别需要查询窗口费用、会话数和 RPM 的账号（Anthropic OAuth/SetupToken 且启用了相应功能）
-	windowCostAccountIDs := make([]int64, 0)
-	sessionLimitAccountIDs := make([]int64, 0)
-	rpmAccountIDs := make([]int64, 0)
-	sessionIdleTimeouts := make(map[int64]time.Duration) // 各账号的会话空闲超时配置
-	for i := range accounts {
-		acc := &accounts[i]
-		if acc.IsAnthropicOAuthOrSetupToken() {
-			if acc.GetWindowCostLimit() > 0 {
-				windowCostAccountIDs = append(windowCostAccountIDs, acc.ID)
-			}
-			if acc.GetMaxSessions() > 0 {
-				sessionLimitAccountIDs = append(sessionLimitAccountIDs, acc.ID)
-				sessionIdleTimeouts[acc.ID] = time.Duration(acc.GetSessionIdleTimeoutMinutes()) * time.Minute
-			}
-			if acc.GetBaseRPM() > 0 {
-				rpmAccountIDs = append(rpmAccountIDs, acc.ID)
-			}
-		}
-	}
-
-	// 始终获取 RPM 计数（Redis GET，极低开销）
-	if len(rpmAccountIDs) > 0 && h.rpmCache != nil {
-		rpmCounts, _ = h.rpmCache.GetRPMBatch(c.Request.Context(), rpmAccountIDs)
-		if rpmCounts == nil {
-			rpmCounts = make(map[int64]int)
-		}
-	}
-
-	// 始终获取活跃会话数（Redis ZCARD，低开销）
-	if len(sessionLimitAccountIDs) > 0 && h.sessionLimitCache != nil {
-		activeSessions, _ = h.sessionLimitCache.GetActiveSessionCountBatch(c.Request.Context(), sessionLimitAccountIDs, sessionIdleTimeouts)
-		if activeSessions == nil {
-			activeSessions = make(map[int64]int)
-		}
-	}
-
-	// 始终获取窗口费用（PostgreSQL 聚合查询）
-	if len(windowCostAccountIDs) > 0 {
-		windowCosts = make(map[int64]float64)
-		var mu sync.Mutex
-		g, gctx := errgroup.WithContext(c.Request.Context())
-		g.SetLimit(10) // 限制并发数
-
-		for i := range accounts {
-			acc := &accounts[i]
-			if !acc.IsAnthropicOAuthOrSetupToken() || acc.GetWindowCostLimit() <= 0 {
-				continue
-			}
-			accCopy := acc // 闭包捕获
-			g.Go(func() error {
-				// 使用统一的窗口开始时间计算逻辑（考虑窗口过期情况）
-				startTime := accCopy.GetCurrentWindowStartTime()
-				stats, err := h.accountUsageService.GetAccountWindowStats(gctx, accCopy.ID, startTime)
-				if err == nil && stats != nil {
-					mu.Lock()
-					windowCosts[accCopy.ID] = stats.StandardCost // 使用标准费用
-					mu.Unlock()
-				}
-				return nil // 不返回错误，允许部分失败
-			})
-		}
-		_ = g.Wait()
-	}
-
-	// Build response with concurrency info
-	result := make([]AccountWithConcurrency, len(accounts))
-	for i := range accounts {
-		acc := &accounts[i]
-		item := AccountWithConcurrency{
-			Account:            dto.AccountFromService(acc),
-			CurrentConcurrency: concurrencyCounts[acc.ID],
-		}
-
-		// 添加窗口费用（仅当启用时）
-		if windowCosts != nil {
-			if cost, ok := windowCosts[acc.ID]; ok {
-				item.CurrentWindowCost = &cost
-			}
-		}
-
-		// 添加活跃会话数（仅当启用时）
-		if activeSessions != nil {
-			if count, ok := activeSessions[acc.ID]; ok {
-				item.ActiveSessions = &count
-			}
-		}
-
-		// 添加 RPM 计数（仅当启用时）
-		if rpmCounts != nil {
-			if rpm, ok := rpmCounts[acc.ID]; ok {
-				item.CurrentRPM = &rpm
-			}
-		}
-
-		result[i] = item
-	}
+	result := h.buildAccountResponsesWithRuntime(c.Request.Context(), accounts)
 
 	etag := buildAccountsListETag(result, total, page, pageSize, platform, accountType, status, search, lite)
 	if etag != "" {
@@ -392,6 +439,227 @@ func (h *AccountHandler) List(c *gin.Context) {
 	}
 
 	response.Paginated(c, result, total, page, pageSize)
+}
+
+// GetPoolMap returns a read-optimized account pool map for the Gateway Lab.
+// GET /api/v1/admin/accounts/pool-map
+func (h *AccountHandler) GetPoolMap(c *gin.Context) {
+	platform := strings.TrimSpace(c.Query("platform"))
+	accountType := strings.TrimSpace(c.Query("type"))
+	statusFilter := strings.TrimSpace(c.Query("status"))
+	search := strings.TrimSpace(c.Query("search"))
+	if len(search) > 100 {
+		search = search[:100]
+	}
+
+	limit := 2000
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_LIMIT", "invalid limit"))
+			return
+		}
+		limit = parsed
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	accounts, total, err := h.adminService.ListAccounts(c.Request.Context(), 1, limit, platform, accountType, "", search, 0, "", "platform", "asc")
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	now := time.Now()
+	runtimeAccounts := h.buildAccountResponsesWithRuntime(c.Request.Context(), accounts)
+	poolByKey := make(map[string]*AccountPoolMapPool)
+	poolOrder := make([]string, 0)
+	responseAccounts := make([]AccountPoolMapAccount, 0, len(runtimeAccounts))
+	summary := AccountPoolMapSummary{}
+
+	for _, item := range runtimeAccounts {
+		mapped := buildAccountPoolMapAccount(item, now)
+		if !accountPoolStatusMatches(mapped.StatusKind, statusFilter) {
+			continue
+		}
+
+		key := mapped.Platform + ":" + mapped.Type
+		pool, ok := poolByKey[key]
+		if !ok {
+			pool = &AccountPoolMapPool{
+				Key:      key,
+				Platform: mapped.Platform,
+				Type:     mapped.Type,
+				Accounts: make([]AccountPoolMapAccount, 0),
+			}
+			poolByKey[key] = pool
+			poolOrder = append(poolOrder, key)
+		}
+
+		pool.Accounts = append(pool.Accounts, mapped)
+		accountPoolAddSummary(&pool.Summary, mapped)
+		accountPoolAddSummary(&summary, mapped)
+		responseAccounts = append(responseAccounts, mapped)
+	}
+
+	pools := make([]AccountPoolMapPool, 0, len(poolOrder))
+	for _, key := range poolOrder {
+		pool := poolByKey[key]
+		pool.Summary.Pools = 1
+		sort.SliceStable(pool.Accounts, func(i, j int) bool {
+			left := pool.Accounts[i]
+			right := pool.Accounts[j]
+			if accountPoolStatusWeight(left.StatusKind) != accountPoolStatusWeight(right.StatusKind) {
+				return accountPoolStatusWeight(left.StatusKind) < accountPoolStatusWeight(right.StatusKind)
+			}
+			return strings.ToLower(left.Name) < strings.ToLower(right.Name)
+		})
+		pools = append(pools, *pool)
+	}
+	sort.SliceStable(pools, func(i, j int) bool {
+		if pools[i].Platform != pools[j].Platform {
+			return strings.ToLower(pools[i].Platform) < strings.ToLower(pools[j].Platform)
+		}
+		return strings.ToLower(pools[i].Type) < strings.ToLower(pools[j].Type)
+	})
+	sort.SliceStable(responseAccounts, func(i, j int) bool {
+		if responseAccounts[i].Platform != responseAccounts[j].Platform {
+			return strings.ToLower(responseAccounts[i].Platform) < strings.ToLower(responseAccounts[j].Platform)
+		}
+		if responseAccounts[i].Type != responseAccounts[j].Type {
+			return strings.ToLower(responseAccounts[i].Type) < strings.ToLower(responseAccounts[j].Type)
+		}
+		if accountPoolStatusWeight(responseAccounts[i].StatusKind) != accountPoolStatusWeight(responseAccounts[j].StatusKind) {
+			return accountPoolStatusWeight(responseAccounts[i].StatusKind) < accountPoolStatusWeight(responseAccounts[j].StatusKind)
+		}
+		return strings.ToLower(responseAccounts[i].Name) < strings.ToLower(responseAccounts[j].Name)
+	})
+
+	summary.Pools = len(pools)
+	response.Success(c, AccountPoolMapResponse{
+		Summary:   summary,
+		Pools:     pools,
+		Accounts:  responseAccounts,
+		Generated: now,
+		Source: AccountPoolMapSourceInfo{
+			Total:     total,
+			Returned:  len(accounts),
+			Limit:     limit,
+			Truncated: total > int64(len(accounts)),
+		},
+	})
+}
+
+func buildAccountPoolMapAccount(item AccountWithConcurrency, now time.Time) AccountPoolMapAccount {
+	kind, label, reason := accountPoolStatus(item, now)
+	return AccountPoolMapAccount{
+		AccountWithConcurrency: item,
+		StatusKind:             kind,
+		StatusLabel:            label,
+		StatusReason:           reason,
+		Attention:              kind != "healthy",
+	}
+}
+
+func accountPoolStatus(item AccountWithConcurrency, now time.Time) (string, string, string) {
+	account := item.Account
+	if account == nil {
+		return "disabled", "停用", "账号不存在"
+	}
+	if account.Status == service.StatusDisabled || account.Status == "inactive" {
+		return "disabled", "停用", "账号已停用"
+	}
+	if account.Status == service.StatusError || strings.TrimSpace(account.ErrorMessage) != "" {
+		if strings.TrimSpace(account.ErrorMessage) != "" {
+			return "error", "错误", account.ErrorMessage
+		}
+		return "error", "错误", "账号处于错误状态"
+	}
+	if timePtrAfter(account.RateLimitResetAt, now) {
+		return "rate_limited", "限流", "限流恢复时间 " + account.RateLimitResetAt.Format(time.RFC3339)
+	}
+	if timePtrAfter(account.OverloadUntil, now) {
+		return "degraded", "降级", "过载冷却至 " + account.OverloadUntil.Format(time.RFC3339)
+	}
+	if timePtrAfter(account.TempUnschedulableUntil, now) {
+		if strings.TrimSpace(account.TempUnschedulableReason) != "" {
+			return "degraded", "降级", account.TempUnschedulableReason
+		}
+		return "degraded", "降级", "临时摘流至 " + account.TempUnschedulableUntil.Format(time.RFC3339)
+	}
+	if account.AutoPauseOnExpired && account.ExpiresAt != nil && now.Unix() >= *account.ExpiresAt {
+		return "degraded", "降级", "账号已过期并自动暂停调度"
+	}
+	if !account.Schedulable {
+		return "degraded", "降级", "账号已被标记为不可调度"
+	}
+	return "healthy", "健康", ""
+}
+
+func timePtrAfter(value *time.Time, now time.Time) bool {
+	return value != nil && now.Before(*value)
+}
+
+func accountPoolStatusMatches(kind, filter string) bool {
+	filter = strings.TrimSpace(filter)
+	if filter == "" || filter == "all" {
+		return true
+	}
+	switch filter {
+	case "active":
+		return kind == "healthy" || kind == "degraded" || kind == "rate_limited"
+	case "inactive":
+		return kind == "disabled"
+	default:
+		return kind == filter
+	}
+}
+
+func accountPoolStatusWeight(kind string) int {
+	switch kind {
+	case "error":
+		return 0
+	case "rate_limited":
+		return 1
+	case "degraded":
+		return 2
+	case "disabled":
+		return 3
+	case "healthy":
+		return 4
+	default:
+		return 5
+	}
+}
+
+func accountPoolAddSummary(summary *AccountPoolMapSummary, account AccountPoolMapAccount) {
+	summary.Total++
+	switch account.StatusKind {
+	case "healthy":
+		summary.Healthy++
+	case "degraded":
+		summary.Degraded++
+	case "rate_limited":
+		summary.RateLimited++
+	case "error":
+		summary.Error++
+	case "disabled":
+		summary.Disabled++
+	}
+	if account.Attention {
+		summary.Attention++
+	}
+	if account.EnableTLSFingerprint != nil && *account.EnableTLSFingerprint {
+		summary.TLSEnabled++
+	}
+	if account.CurrentRPM != nil {
+		summary.RPM += *account.CurrentRPM
+	}
+	summary.Concurrency += account.CurrentConcurrency
+	if account.ActiveSessions != nil {
+		summary.ActiveSessions += *account.ActiveSessions
+	}
 }
 
 func buildAccountsListETag(
