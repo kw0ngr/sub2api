@@ -353,6 +353,7 @@ export default {
     availableChannels: 'Available Channels',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
+    accountMap: 'Account Map',
     proxies: 'Proxies',
     clientFingerprints: 'Fingerprint Strategy',
     redeemCodes: 'Redeem Codes',
@@ -1256,6 +1257,10 @@ export default {
     fingerprintStrategy: {
       title: 'Client / Tool Fingerprint Strategy',
       description: 'Centralize forwarding fingerprints, version gates, and TLS strategy for Claude Code, Codex CLI, Cline, and similar tools.'
+    },
+    accountMap: {
+      title: 'Account Pool Map',
+      description: 'Diagnose account pool health, traffic, errors, and fingerprint coverage with swimlane views.'
     },
     // Dashboard
     dashboard: {

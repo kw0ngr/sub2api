@@ -434,6 +434,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/account-map',
+    name: 'AdminAccountPoolMap',
+    component: () => import('@/views/admin/AccountPoolMapView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Account Pool Map',
+      titleKey: 'nav.accountMap',
+      descriptionKey: 'admin.accountMap.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),

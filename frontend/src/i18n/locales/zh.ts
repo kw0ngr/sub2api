@@ -353,6 +353,7 @@ export default {
     availableChannels: '可用渠道',
     subscriptions: '订阅管理',
     accounts: '账号管理',
+    accountMap: '账号池地图',
     proxies: 'IP管理',
     clientFingerprints: '指纹策略',
     redeemCodes: '兑换码',
@@ -1260,6 +1261,10 @@ export default {
     fingerprintStrategy: {
       title: '客户端 / 工具指纹策略',
       description: '集中管理 Claude Code、Codex CLI、Cline 等客户端的转发指纹、版本门禁与 TLS 策略'
+    },
+    accountMap: {
+      title: '账号池地图',
+      description: '用泳道视图诊断账号池健康、流量、错误和指纹覆盖情况'
     },
     // Dashboard
     dashboard: {

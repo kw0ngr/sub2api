@@ -115,6 +115,7 @@
         :default-sort-order="'desc'"
         @sort="handleSort"
         @userClick="handleUserClick"
+        @replay="openReplayLab"
       />
       <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
     </div>
@@ -134,10 +135,78 @@
     :hide-actions="true"
     @close="showBalanceHistoryModal = false; balanceHistoryUser = null"
   />
+  <Teleport to="body">
+    <div
+      v-if="replayLog"
+      class="fixed inset-0 z-[1000] flex justify-end bg-black/35"
+      @click.self="closeReplayLab"
+    >
+      <aside class="h-full w-full max-w-xl overflow-y-auto bg-white shadow-2xl dark:bg-dark-900">
+        <div class="border-b border-gray-100 p-5 dark:border-dark-800">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">Replay Lab</p>
+              <h2 class="mt-2 text-xl font-bold text-gray-950 dark:text-white">回放预检</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                当前版本先做低风险 dry-run 摘要，不直接重放请求体，避免误计费和敏感内容落库。
+              </p>
+            </div>
+            <button class="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-800 dark:hover:text-gray-200" @click="closeReplayLab">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-4 p-5">
+          <div class="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-dark-800 dark:bg-dark-800/60">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ replayLog.model }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Request #{{ replayLog.request_id || replayLog.id }}</p>
+              </div>
+              <span class="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
+                {{ replayLog.stream ? 'stream' : 'sync' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <ReplayTile label="用户" :value="replayLog.user?.email || `#${replayLog.user_id}`" />
+            <ReplayTile label="API Key" :value="replayLog.api_key?.name || `#${replayLog.api_key_id}`" />
+            <ReplayTile label="上游账号" :value="replayLog.account?.name || (replayLog.account_id ? `#${replayLog.account_id}` : '-')" />
+            <ReplayTile label="耗时" :value="`${replayLog.duration_ms || 0}ms`" />
+          </div>
+
+          <div class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
+            <h3 class="font-semibold text-gray-950 dark:text-white">Dry-run 结论</h3>
+            <ul class="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <li>· 可基于这条日志定位用户、Key、模型、上游账号和 endpoint。</li>
+              <li>· 当前日志没有保存原始请求体，暂不直接真实回放，避免敏感内容和重复费用。</li>
+              <li>· 下一步会接入 snapshot 后支持“原路径回放 / 换健康账号回放 / 生成 curl”。</li>
+            </ul>
+          </div>
+
+          <div class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
+            <h3 class="font-semibold text-gray-950 dark:text-white">诊断摘要</h3>
+            <pre class="mt-3 max-h-56 overflow-auto rounded-xl bg-gray-950 p-3 text-xs text-gray-100">{{ replaySummary }}</pre>
+          </div>
+
+          <div class="grid gap-2">
+            <button class="btn btn-primary" type="button" @click="copyReplaySummary">
+              复制诊断摘要
+            </button>
+            <button class="btn btn-secondary" type="button" @click="closeReplayLab">
+              关闭
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { defineComponent, h, ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import { useRoute } from 'vue-router'
@@ -158,6 +227,18 @@ import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat,
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const ReplayTile = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    value: { type: String, required: true }
+  },
+  setup(props) {
+    return () => h('div', { class: 'rounded-2xl border border-gray-100 bg-white p-4 dark:border-dark-800 dark:bg-dark-900' }, [
+      h('p', { class: 'text-xs text-gray-500 dark:text-gray-400' }, props.label),
+      h('p', { class: 'mt-1 truncate text-sm font-semibold text-gray-950 dark:text-white', title: props.value }, props.value)
+    ])
+  }
+})
 type DistributionMetric = 'tokens' | 'actual_cost'
 type EndpointSource = 'inbound' | 'upstream' | 'path'
 type ModelDistributionSource = 'requested' | 'upstream' | 'mapping'
@@ -184,11 +265,34 @@ let statsReqSeq = 0
 let modelStatsReqSeq = 0
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
+const replayLog = ref<AdminUsageLog | null>(null)
 // Balance history modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
 const showGatewaySignalPreview = computed(() => {
   return Boolean((usageStats.value?.total_requests || 0) > 0 || usageLogs.value.length > 0)
+})
+
+const replaySummary = computed(() => {
+  if (!replayLog.value) return ''
+  return JSON.stringify({
+    usage_log_id: replayLog.value.id,
+    request_id: replayLog.value.request_id,
+    user_id: replayLog.value.user_id,
+    api_key_id: replayLog.value.api_key_id,
+    account_id: replayLog.value.account_id,
+    model: replayLog.value.model,
+    upstream_model: replayLog.value.upstream_model,
+    inbound_endpoint: replayLog.value.inbound_endpoint,
+    upstream_endpoint: replayLog.value.upstream_endpoint,
+    stream: replayLog.value.stream,
+    request_type: replayLog.value.request_type,
+    duration_ms: replayLog.value.duration_ms,
+    first_token_ms: replayLog.value.first_token_ms,
+    user_agent: replayLog.value.user_agent,
+    ip_address: replayLog.value.ip_address,
+    created_at: replayLog.value.created_at
+  }, null, 2)
 })
 
 const breakdownFilters = computed(() => {
@@ -209,6 +313,23 @@ const handleUserClick = async (userId: number) => {
     showBalanceHistoryModal.value = true
   } catch {
     appStore.showError(t('admin.usage.failedToLoadUser'))
+  }
+}
+
+function openReplayLab(row: AdminUsageLog) {
+  replayLog.value = row
+}
+
+function closeReplayLab() {
+  replayLog.value = null
+}
+
+async function copyReplaySummary() {
+  try {
+    await navigator.clipboard.writeText(replaySummary.value)
+    appStore.showSuccess('Replay 诊断摘要已复制')
+  } catch {
+    appStore.showError('复制失败，请手动复制摘要')
   }
 }
 

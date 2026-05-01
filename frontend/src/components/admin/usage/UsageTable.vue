@@ -184,13 +184,22 @@
         </template>
 
         <template #cell-actions="{ row }">
-          <button
-            type="button"
-            class="inline-flex items-center rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-600 transition hover:border-sky-400/50 hover:bg-sky-500/15 dark:text-sky-300"
-            @click="openTrace(row)"
-          >
-            Trace
-          </button>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              class="inline-flex items-center rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-600 transition hover:border-sky-400/50 hover:bg-sky-500/15 dark:text-sky-300"
+              @click="openTrace(row)"
+            >
+              Trace
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center rounded-lg border border-violet-400/25 bg-violet-500/10 px-2.5 py-1.5 text-xs font-semibold text-violet-600 transition hover:border-violet-400/50 hover:bg-violet-500/15 dark:text-violet-300"
+              @click="$emit('replay', row)"
+            >
+              Replay
+            </button>
+          </div>
         </template>
 
         <template #empty><EmptyState :message="t('usage.noRecords')" /></template>
@@ -402,6 +411,7 @@ withDefaults(defineProps<Props>(), {
 defineEmits<{
   userClick: [userID: number, email?: string]
   sort: [key: string, order: 'asc' | 'desc']
+  replay: [row: AdminUsageLog]
 }>()
 const { t } = useI18n()
 

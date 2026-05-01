@@ -39,6 +39,41 @@
         </div>
       </section>
 
+      <section class="fingerprint-diagnosis-panel">
+        <div class="fingerprint-diagnosis-header">
+          <div>
+            <p class="fingerprint-eyebrow">Fingerprint Lab 2.0</p>
+            <h2>小白诊断</h2>
+            <p>不用读完整 header diff，先看状态、原因和推荐按钮。高级细节仍保留在下方折叠区。</p>
+          </div>
+          <span :class="['fingerprint-diagnosis-score', fingerprintDiagnosis.tone]">
+            {{ fingerprintDiagnosis.level }}
+          </span>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-3">
+          <article v-for="item in diagnosisCards" :key="item.title" class="fingerprint-diagnosis-card">
+            <span :class="['fingerprint-diagnosis-dot', item.tone]" />
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="fingerprint-diagnosis-actions">
+          <button class="btn btn-primary" type="button" :disabled="!recommendedHTTPFingerprint || savingHTTPFingerprint" @click="applyLatestHTTPFingerprint">
+            一键应用最近真实样本
+          </button>
+          <button class="btn btn-secondary" type="button" @click="showTLSModal = true">
+            绑定/管理 TLS 模板
+          </button>
+          <button class="btn btn-secondary" type="button" :disabled="loading" @click="loadData">
+            重新检测
+          </button>
+        </div>
+      </section>
+
       <section class="grid gap-4 lg:grid-cols-4">
         <div v-for="card in summaryCards" :key="card.label" class="fingerprint-stat">
           <span>{{ card.label }}</span>
@@ -654,6 +689,14 @@ const driftHTTPFingerprintPreview = computed<ClaudeCodeFingerprintProfile | null
 
 const referenceHTTPFingerprint = computed(() => activeHTTPFingerprint.value || driftHTTPFingerprintPreview.value || httpFingerprintProfiles.value[0] || null)
 
+const recommendedHTTPFingerprint = computed(() => {
+  if (activeHTTPFingerprint.value) return activeHTTPFingerprint.value
+  return httpFingerprintProfiles.value
+    .slice()
+    .sort((a, b) => (b.last_seen_at || b.updated_at || 0) - (a.last_seen_at || a.updated_at || 0))
+    [0] || null
+})
+
 const latestTLSCollectorFingerprint = computed(() => tlsCollectorFingerprints.value[0] || null)
 
 const driftStatus = computed(() => fingerprintDrift.value)
@@ -747,6 +790,57 @@ const driftIssueRows = computed(() => {
   }
   return rows
 })
+
+const fingerprintDiagnosis = computed(() => {
+  if (!httpFingerprintProfiles.value.length && !driftStatus.value?.outgoing_header_summary) {
+    return {
+      level: '等待真实样本',
+      tone: 'neutral',
+      detail: '还没有捕获到可复用 HTTP 指纹。'
+    }
+  }
+  if (driftStatus.value?.status === 'warning') {
+    return {
+      level: '建议修复',
+      tone: 'warn',
+      detail: '最近 outgoing 摘要和当前样本存在偏差。'
+    }
+  }
+  if (activeHTTPFingerprint.value && tlsBindingRecommendation.value.score >= 75) {
+    return {
+      level: '一致性高',
+      tone: 'good',
+      detail: 'HTTP 样本和 TLS 推荐方向比较一致。'
+    }
+  }
+  return {
+    level: '可继续优化',
+    tone: 'neutral',
+    detail: '已有样本或预览，但建议固定样本并绑定 TLS 模板。'
+  }
+})
+
+const diagnosisCards = computed(() => [
+  {
+    title: activeHTTPFingerprint.value ? 'HTTP 样本已固定' : recommendedHTTPFingerprint.value ? '有真实样本可应用' : '等待 HTTP 样本',
+    description: activeHTTPFingerprint.value
+      ? describeHTTPFingerprint(activeHTTPFingerprint.value)
+      : recommendedHTTPFingerprint.value
+        ? `推荐应用：${recommendedHTTPFingerprint.value.name}`
+        : '让真实 Claude Code 通过网关调用一次后会自动学习。',
+    tone: activeHTTPFingerprint.value ? 'good' : recommendedHTTPFingerprint.value ? 'neutral' : 'warn'
+  },
+  {
+    title: `TLS 推荐：${tlsBindingRecommendation.value.level}`,
+    description: `${tlsBindingRecommendation.value.profileName} · ${tlsBindingRecommendation.value.score}/100`,
+    tone: tlsBindingRecommendation.value.tone
+  },
+  {
+    title: `漂移检测：${driftStatusLabel.value}`,
+    description: fingerprintDiagnosis.value.detail,
+    tone: driftStatusTone.value
+  }
+])
 
 const tlsBindingRecommendation = computed(() => buildTLSBindingRecommendation(
   referenceHTTPFingerprint.value,
@@ -1188,6 +1282,16 @@ async function saveActiveHTTPFingerprint() {
   }
 }
 
+async function applyLatestHTTPFingerprint() {
+  const profile = recommendedHTTPFingerprint.value
+  if (!profile) {
+    appStore.showInfo('还没有可应用的真实 Claude Code HTTP 样本')
+    return
+  }
+  activeHTTPFingerprintID.value = profile.id
+  await saveActiveHTTPFingerprint()
+}
+
 async function deleteHTTPFingerprint(id: string) {
   savingHTTPFingerprint.value = true
   try {
@@ -1302,6 +1406,7 @@ onMounted(async () => {
 
 .fingerprint-hero,
 .fingerprint-guide,
+.fingerprint-diagnosis-panel,
 .fingerprint-panel,
 .fingerprint-stat,
 .fingerprint-strategy-card,
@@ -1314,6 +1419,7 @@ onMounted(async () => {
 
 :global(.dark) .fingerprint-hero,
 :global(.dark) .fingerprint-guide,
+:global(.dark) .fingerprint-diagnosis-panel,
 :global(.dark) .fingerprint-panel,
 :global(.dark) .fingerprint-stat,
 :global(.dark) .fingerprint-strategy-card,
@@ -1321,6 +1427,126 @@ onMounted(async () => {
   border-color: rgb(51 65 85 / 0.9);
   background: rgb(15 23 42 / 0.78);
   box-shadow: 0 18px 60px rgb(0 0 0 / 0.28);
+}
+
+.fingerprint-diagnosis-panel {
+  padding: 1.25rem;
+}
+
+.fingerprint-diagnosis-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.fingerprint-diagnosis-header h2 {
+  margin-top: 0.35rem;
+  color: rgb(15 23 42);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+:global(.dark) .fingerprint-diagnosis-header h2 {
+  color: rgb(248 250 252);
+}
+
+.fingerprint-diagnosis-header p {
+  margin-top: 0.35rem;
+  max-width: 42rem;
+  color: rgb(100 116 139);
+  font-size: 0.875rem;
+}
+
+:global(.dark) .fingerprint-diagnosis-header p {
+  color: rgb(148 163 184);
+}
+
+.fingerprint-diagnosis-score {
+  border-radius: 999px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.fingerprint-diagnosis-score.good {
+  background: rgb(220 252 231);
+  color: rgb(21 128 61);
+}
+
+.fingerprint-diagnosis-score.neutral {
+  background: rgb(239 246 255);
+  color: rgb(29 78 216);
+}
+
+.fingerprint-diagnosis-score.warn {
+  background: rgb(254 243 199);
+  color: rgb(180 83 9);
+}
+
+.fingerprint-diagnosis-card {
+  display: flex;
+  gap: 0.75rem;
+  min-height: 5.75rem;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  background: rgb(248 250 252 / 0.75);
+  padding: 0.9rem;
+}
+
+:global(.dark) .fingerprint-diagnosis-card {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42 / 0.55);
+}
+
+.fingerprint-diagnosis-card strong {
+  display: block;
+  color: rgb(15 23 42);
+  font-size: 0.92rem;
+}
+
+:global(.dark) .fingerprint-diagnosis-card strong {
+  color: rgb(248 250 252);
+}
+
+.fingerprint-diagnosis-card p {
+  margin-top: 0.3rem;
+  color: rgb(100 116 139);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+:global(.dark) .fingerprint-diagnosis-card p {
+  color: rgb(148 163 184);
+}
+
+.fingerprint-diagnosis-dot {
+  margin-top: 0.32rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.fingerprint-diagnosis-dot.good {
+  background: rgb(16 185 129);
+}
+
+.fingerprint-diagnosis-dot.neutral {
+  background: rgb(59 130 246);
+}
+
+.fingerprint-diagnosis-dot.warn {
+  background: rgb(245 158 11);
+}
+
+.fingerprint-diagnosis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .fingerprint-hero {
