@@ -699,10 +699,10 @@ const referenceHTTPFingerprint = computed(() => activeHTTPFingerprint.value || d
 
 const recommendedHTTPFingerprint = computed(() => {
   if (activeHTTPFingerprint.value) return activeHTTPFingerprint.value
-  return httpFingerprintProfiles.value
+  const sortedProfiles = httpFingerprintProfiles.value
     .slice()
     .sort((a, b) => (b.last_seen_at || b.updated_at || 0) - (a.last_seen_at || a.updated_at || 0))
-    [0] || null
+  return sortedProfiles[0] || null
 })
 
 const latestTLSCollectorFingerprint = computed(() => tlsCollectorFingerprints.value[0] || null)
@@ -2547,6 +2547,93 @@ onMounted(async () => {
 
 .fingerprint-check-item.compact {
   padding: 0.85rem;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-page {
+  color: var(--anti-ink);
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-hero,
+:global(.app-shell.app-shell-anti) .fingerprint-guide,
+:global(.app-shell.app-shell-anti) .fingerprint-diagnosis-panel,
+:global(.app-shell.app-shell-anti) .fingerprint-panel,
+:global(.app-shell.app-shell-anti) .fingerprint-stat,
+:global(.app-shell.app-shell-anti) .fingerprint-strategy-card,
+:global(.app-shell.app-shell-anti) .fingerprint-profile-card,
+:global(.app-shell.app-shell-anti) .fingerprint-diagnosis-card,
+:global(.app-shell.app-shell-anti) .fingerprint-preset-card,
+:global(.app-shell.app-shell-anti) .fingerprint-outcome,
+:global(.app-shell.app-shell-anti) .fingerprint-check-item,
+:global(.app-shell.app-shell-anti) .fingerprint-capture-step,
+:global(.app-shell.app-shell-anti) .fingerprint-command,
+:global(.app-shell.app-shell-anti) .fingerprint-tls-capture-card,
+:global(.app-shell.app-shell-anti) .fingerprint-http-card,
+:global(.app-shell.app-shell-anti) .fingerprint-switch,
+:global(.app-shell.app-shell-anti) .fingerprint-tls-box,
+:global(.app-shell.app-shell-anti) .fingerprint-empty,
+:global(.app-shell.app-shell-anti) .fingerprint-drift-card,
+:global(.app-shell.app-shell-anti) .fingerprint-binding-summary > div,
+:global(.app-shell.app-shell-anti) .fingerprint-drift-issue,
+:global(.app-shell.app-shell-anti) .fingerprint-header-summary,
+:global(.app-shell.app-shell-anti) .fingerprint-binding-meter {
+  border: 4px solid var(--anti-ink) !important;
+  border-radius: 0.35rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 7px 7px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-hero {
+  background: var(--anti-yellow) !important;
+  transform: rotate(-0.25deg);
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-diagnosis-panel {
+  background:
+    repeating-linear-gradient(135deg, rgb(5 5 5 / 0.12) 0 8px, transparent 8px 18px),
+    var(--anti-paper) !important;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-page :is(h1, h2, h3, p, span, strong, small, li, dt, dd, code, label) {
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-eyebrow,
+:global(.app-shell.app-shell-anti) .fingerprint-diagnosis-recommendations-label {
+  display: inline-flex;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-red) !important;
+  color: var(--anti-paper) !important;
+  padding: 0.2rem 0.35rem;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-page :is(.fingerprint-badge, .fingerprint-status, .fingerprint-preset-mark, .fingerprint-check, .fingerprint-step-number, .fingerprint-chevron) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.2rem !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-page :is(.btn, button, select, input, textarea) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.2rem !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  font-weight: 950;
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-page :is(.btn, button):hover {
+  background: var(--anti-green) !important;
+  transform: rotate(-1deg) translate(-1px, -1px);
+}
+
+:global(.app-shell.app-shell-anti) .fingerprint-preset-card.active,
+:global(.app-shell.app-shell-anti) .fingerprint-http-card.active,
+:global(.app-shell.app-shell-anti) .fingerprint-drift-card.ok {
+  background: var(--anti-green) !important;
+  box-shadow: 9px 9px 0 var(--anti-red) !important;
 }
 
 @media (max-width: 768px) {

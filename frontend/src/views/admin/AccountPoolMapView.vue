@@ -53,7 +53,7 @@
       </div>
     </section>
 
-    <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <section class="account-map-workspace grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
       <div class="space-y-4">
         <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
           <div class="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
@@ -199,43 +199,67 @@
         </div>
       </div>
 
-      <aside class="space-y-4">
-        <section class="sticky top-24 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+      <aside class="account-map-detail-rail">
+        <section ref="inspectorPanel" class="account-map-inspector" aria-live="polite">
           <template v-if="selectedAccount">
-            <div class="flex items-start justify-between gap-3">
+            <div class="inspector-heading">
               <div class="min-w-0">
-                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Inspector</p>
-                <h2 class="mt-2 truncate text-xl font-bold text-gray-950 dark:text-white">{{ selectedAccount.name }}</h2>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {{ platformLabel(selectedAccount.platform) }} · {{ selectedAccount.type }}
+                <p class="inspector-kicker">选中账号</p>
+                <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
+                <p class="inspector-subtitle">
+                  {{ platformLabel(selectedAccount.platform) }} · {{ accountTypeLabel(selectedAccount.type) }}
                 </p>
               </div>
+              <button type="button" class="inspector-close" aria-label="取消选择账号" @click="clearSelection">
+                ×
+              </button>
+            </div>
+
+            <div class="inspector-status-card" :class="`inspector-status-${statusKind(selectedAccount)}`">
+              <div>
+                <span class="inspector-status-label">当前状态</span>
+                <strong>{{ statusLabel(selectedAccount) }}</strong>
+                <p>{{ selectedAccount.status_reason || selectedAccount.temp_unschedulable_reason || selectedAccount.error_message || '该账号当前可按调度策略参与路由。' }}</p>
+              </div>
               <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusBadgeClass(selectedAccount)">
-                {{ statusLabel(selectedAccount) }}
+                {{ selectedAccount.schedulable ? '可调度' : '不可调度' }}
               </span>
             </div>
 
-            <div class="mt-5 grid grid-cols-2 gap-3">
+            <div class="inspector-metric-grid">
               <MetricTile label="可调度" :value="selectedAccount.schedulable ? '是' : '否'" />
               <MetricTile label="当前并发" :value="String(selectedAccount.current_concurrency ?? 0)" />
               <MetricTile label="当前 RPM" :value="String(selectedAccount.current_rpm ?? 0)" />
               <MetricTile label="活跃会话" :value="String(selectedAccount.active_sessions ?? 0)" />
             </div>
 
-            <div class="mt-5 space-y-3">
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <h3>池与路由</h3>
+                <span>{{ selectedPoolLabel }}</span>
+              </div>
+              <InspectorRow label="所在泳道" :value="selectedPoolLabel" />
               <InspectorRow label="分组" :value="groupNames(selectedAccount)" />
               <InspectorRow label="代理" :value="selectedAccount.proxy?.name || '未绑定'" />
+              <InspectorRow label="同池账号" :value="`${selectedPoolPeerCount} 个`" />
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <h3>客户端策略</h3>
+                <span>HTTP / TLS</span>
+              </div>
               <InspectorRow label="TLS 指纹" :value="selectedAccount.enable_tls_fingerprint ? `已启用 #${selectedAccount.tls_fingerprint_profile_id || '-'}` : '未启用'" />
               <InspectorRow label="缓存 TTL" :value="selectedAccount.cache_ttl_override_enabled ? `强制 ${selectedAccount.cache_ttl_override_target || '-'}` : '按上游返回'" />
               <InspectorRow label="最近使用" :value="formatDate(selectedAccount.last_used_at)" />
             </div>
 
-            <div v-if="selectedAccount.error_message || selectedAccount.temp_unschedulable_reason" class="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <div v-if="selectedAccount.error_message || selectedAccount.temp_unschedulable_reason" class="inspector-alert">
               <p class="font-semibold">最近问题</p>
               <p class="mt-1 line-clamp-4 text-xs">{{ selectedAccount.temp_unschedulable_reason || selectedAccount.error_message }}</p>
             </div>
 
-            <div class="mt-5 grid gap-2">
+            <div class="inspector-actions">
               <button type="button" class="inspector-action-primary" @click="goAccountDetail(selectedAccount)">
                 打开账号管理
               </button>
@@ -249,18 +273,37 @@
           </template>
 
           <template v-else>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Inspector</p>
-            <h2 class="mt-2 text-xl font-bold text-gray-950 dark:text-white">全局建议</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              选择左侧账号节点查看调度、TLS、缓存和错误状态。当前视图下最需要关注的账号已在下方列出。
-            </p>
+            <div class="inspector-empty-hero">
+              <p class="inspector-kicker">账号池地图</p>
+              <h2 class="inspector-title">选择一个账号节点</h2>
+              <p class="inspector-subtitle">
+                右栏会跟随当前地图展示账号调度、TLS、缓存和错误状态；未选择时展示全局巡检队列。
+              </p>
+            </div>
 
-            <div class="mt-5 space-y-2">
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <h3>地图概览</h3>
+                <span>{{ visiblePools.length }} 个泳道</span>
+              </div>
+              <div class="inspector-overview-grid">
+                <MetricTile label="账号总数" :value="String(summary.total)" />
+                <MetricTile label="健康" :value="String(summary.healthy)" />
+                <MetricTile label="需关注" :value="String(summary.attention)" />
+                <MetricTile label="TLS 覆盖" :value="`${summary.tls_enabled}/${summary.total || 0}`" />
+              </div>
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <h3>优先关注</h3>
+                <span>{{ attentionAccounts.length ? `${attentionAccounts.length} 个` : '无异常' }}</span>
+              </div>
               <button
                 v-for="account in attentionAccounts"
                 :key="account.id"
                 type="button"
-                class="w-full rounded-xl border border-gray-100 bg-gray-50 p-3 text-left transition hover:border-primary-200 hover:bg-white dark:border-dark-800 dark:bg-dark-800/70 dark:hover:border-primary-500/40"
+                class="inspector-attention-item"
                 @click="selectAccount(account)"
               >
                 <div class="flex items-center justify-between gap-2">
@@ -273,7 +316,7 @@
                   {{ account.status_reason || account.error_message || account.temp_unschedulable_reason || '等待恢复或需要人工复核' }}
                 </p>
               </button>
-              <div v-if="!attentionAccounts.length" class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+              <div v-if="!attentionAccounts.length" class="inspector-good-state">
                 当前筛选范围内没有明显异常账号。
               </div>
             </div>
@@ -285,7 +328,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import type { Account } from '@/types'
@@ -307,7 +350,7 @@ const MetricTile = defineComponent({
     value: { type: String, required: true }
   },
   setup(props) {
-    return () => h('div', { class: 'rounded-xl bg-gray-50 p-3 dark:bg-dark-800' }, [
+    return () => h('div', { class: 'inspector-metric' }, [
       h('p', { class: 'text-xs text-gray-500 dark:text-gray-400' }, props.label),
       h('p', { class: 'mt-1 text-base font-bold text-gray-950 dark:text-white' }, props.value)
     ])
@@ -320,7 +363,7 @@ const InspectorRow = defineComponent({
     value: { type: String, required: true }
   },
   setup(props) {
-    return () => h('div', { class: 'flex items-start justify-between gap-4 border-b border-gray-100 pb-2 text-sm last:border-b-0 dark:border-dark-800' }, [
+    return () => h('div', { class: 'inspector-row' }, [
       h('span', { class: 'shrink-0 text-gray-500 dark:text-gray-400' }, props.label),
       h('span', { class: 'min-w-0 text-right font-medium text-gray-900 dark:text-white' }, props.value)
     ])
@@ -337,6 +380,7 @@ const errorMessage = ref('')
 const knownPlatforms = ref<string[]>([])
 const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
+const inspectorPanel = ref<HTMLElement | null>(null)
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshSeq = 0
 
@@ -367,6 +411,23 @@ const platformOptions = computed(() => {
 const selectedAccount = computed(() => accounts.value.find((item) => item.id === selectedAccountId.value) || null)
 
 const visiblePools = computed<AccountPool[]>(() => pools.value)
+
+const selectedPool = computed(() => {
+  const selected = selectedAccount.value
+  if (!selected) return null
+  return visiblePools.value.find((pool) => pool.accounts.some((item) => item.id === selected.id)) || null
+})
+
+const selectedPoolLabel = computed(() => {
+  const pool = selectedPool.value
+  if (!pool) return '未匹配泳道'
+  return `${platformLabel(pool.platform)} · ${accountTypeLabel(pool.type)}`
+})
+
+const selectedPoolPeerCount = computed(() => {
+  const pool = selectedPool.value
+  return pool ? Math.max(0, pool.accounts.length - 1) : 0
+})
 
 const attentionAccounts = computed(() => accounts.value
   .filter((account) => statusKind(account) !== 'healthy')
@@ -550,6 +611,15 @@ function formatDate(value?: string | null): string {
 
 function selectAccount(account: AccountPoolMapAccount) {
   selectedAccountId.value = account.id
+  void nextTick(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      inspectorPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
+}
+
+function clearSelection() {
+  selectedAccountId.value = null
 }
 
 async function refresh() {
@@ -755,6 +825,394 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.account-map-detail-rail {
+  min-width: 0;
+}
+
+.account-map-inspector {
+  position: sticky;
+  top: 6rem;
+  overflow: hidden;
+  border: 1px solid rgb(229 231 235);
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(180deg, rgb(255 255 255), rgb(249 250 251 / 0.86));
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 18px 45px rgb(15 23 42 / 0.07);
+}
+
+.dark .account-map-inspector {
+  border-color: rgb(55 65 81 / 0.78);
+  background:
+    linear-gradient(180deg, rgb(17 24 39 / 0.98), rgb(15 23 42 / 0.92));
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.28);
+}
+
+.inspector-heading,
+.inspector-empty-hero {
+  padding: 1.25rem;
+}
+
+.inspector-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  border-bottom: 1px solid rgb(243 244 246);
+}
+
+.dark .inspector-heading {
+  border-bottom-color: rgb(31 41 55);
+}
+
+.inspector-kicker {
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(37 99 235);
+}
+
+.dark .inspector-kicker {
+  color: rgb(96 165 250);
+}
+
+.inspector-title {
+  margin-top: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.18rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: rgb(17 24 39);
+}
+
+.dark .inspector-title {
+  color: rgb(255 255 255);
+}
+
+.inspector-subtitle {
+  margin-top: 0.35rem;
+  font-size: 0.875rem;
+  color: rgb(107 114 128);
+}
+
+.dark .inspector-subtitle {
+  color: rgb(156 163 175);
+}
+
+.inspector-close {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgb(229 231 235);
+  color: rgb(107 114 128);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.inspector-close:hover {
+  border-color: rgb(191 219 254);
+  background: rgb(239 246 255);
+  color: rgb(29 78 216);
+}
+
+.dark .inspector-close {
+  border-color: rgb(55 65 81);
+  color: rgb(156 163 175);
+}
+
+.dark .inspector-close:hover {
+  border-color: rgb(59 130 246 / 0.7);
+  background: rgb(30 64 175 / 0.22);
+  color: rgb(191 219 254);
+}
+
+.inspector-status-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(229 231 235);
+  padding: 0.95rem;
+  background: rgb(249 250 251);
+}
+
+.inspector-status-card > div {
+  min-width: 0;
+}
+
+.inspector-status-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgb(107 114 128);
+}
+
+.inspector-status-card strong {
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
+  color: rgb(17 24 39);
+}
+
+.inspector-status-card p {
+  margin-top: 0.35rem;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgb(107 114 128);
+}
+
+.dark .inspector-status-card {
+  border-color: rgb(55 65 81 / 0.82);
+  background: rgb(31 41 55 / 0.56);
+}
+
+.dark .inspector-status-card strong {
+  color: rgb(255 255 255);
+}
+
+.dark .inspector-status-card p,
+.dark .inspector-status-label {
+  color: rgb(156 163 175);
+}
+
+.inspector-status-healthy {
+  border-color: rgb(167 243 208);
+  background: linear-gradient(135deg, rgb(236 253 245), rgb(255 255 255));
+}
+
+.inspector-status-degraded {
+  border-color: rgb(253 230 138);
+  background: linear-gradient(135deg, rgb(255 251 235), rgb(255 255 255));
+}
+
+.inspector-status-rate_limited {
+  border-color: rgb(221 214 254);
+  background: linear-gradient(135deg, rgb(245 243 255), rgb(255 255 255));
+}
+
+.inspector-status-error {
+  border-color: rgb(254 205 211);
+  background: linear-gradient(135deg, rgb(255 241 242), rgb(255 255 255));
+}
+
+.inspector-status-disabled {
+  border-color: rgb(229 231 235);
+  background: rgb(249 250 251);
+}
+
+.dark .inspector-status-healthy {
+  border-color: rgb(16 185 129 / 0.45);
+  background: rgb(6 78 59 / 0.22);
+}
+
+.dark .inspector-status-degraded {
+  border-color: rgb(245 158 11 / 0.5);
+  background: rgb(120 53 15 / 0.25);
+}
+
+.dark .inspector-status-rate_limited {
+  border-color: rgb(139 92 246 / 0.5);
+  background: rgb(76 29 149 / 0.25);
+}
+
+.dark .inspector-status-error {
+  border-color: rgb(244 63 94 / 0.5);
+  background: rgb(136 19 55 / 0.25);
+}
+
+.dark .inspector-status-disabled {
+  border-color: rgb(55 65 81);
+  background: rgb(31 41 55 / 0.72);
+}
+
+.inspector-metric-grid,
+.inspector-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0 1rem 1rem;
+}
+
+.inspector-overview-grid {
+  padding: 0;
+}
+
+.inspector-metric {
+  border-radius: 0.9rem;
+  border: 1px solid rgb(243 244 246);
+  background: rgb(255 255 255 / 0.78);
+  padding: 0.75rem;
+}
+
+.dark .inspector-metric {
+  border-color: rgb(55 65 81 / 0.74);
+  background: rgb(17 24 39 / 0.46);
+}
+
+.inspector-section {
+  margin: 0 1rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(243 244 246);
+  background: rgb(255 255 255 / 0.72);
+  padding: 0.9rem;
+}
+
+.dark .inspector-section {
+  border-color: rgb(55 65 81 / 0.7);
+  background: rgb(17 24 39 / 0.36);
+}
+
+.inspector-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.inspector-section-title h3 {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: rgb(17 24 39);
+}
+
+.inspector-section-title span {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: rgb(107 114 128);
+}
+
+.dark .inspector-section-title h3 {
+  color: rgb(255 255 255);
+}
+
+.dark .inspector-section-title span {
+  color: rgb(156 163 175);
+}
+
+.inspector-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgb(243 244 246);
+  padding-bottom: 0.55rem;
+  font-size: 0.875rem;
+}
+
+.inspector-row + .inspector-row {
+  padding-top: 0.55rem;
+}
+
+.inspector-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.dark .inspector-row {
+  border-bottom-color: rgb(31 41 55);
+}
+
+.inspector-alert {
+  margin: 0 1rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(253 230 138);
+  background: rgb(255 251 235);
+  padding: 0.85rem;
+  font-size: 0.875rem;
+  color: rgb(146 64 14);
+}
+
+.dark .inspector-alert {
+  border-color: rgb(245 158 11 / 0.38);
+  background: rgb(245 158 11 / 0.12);
+  color: rgb(253 230 138);
+}
+
+.inspector-actions {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0 1rem 1rem;
+}
+
+.inspector-empty-hero {
+  border-bottom: 1px solid rgb(243 244 246);
+}
+
+.dark .inspector-empty-hero {
+  border-bottom-color: rgb(31 41 55);
+}
+
+.inspector-attention-item {
+  width: 100%;
+  border-radius: 0.9rem;
+  border: 1px solid rgb(243 244 246);
+  background: rgb(249 250 251 / 0.9);
+  padding: 0.75rem;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.inspector-attention-item + .inspector-attention-item {
+  margin-top: 0.55rem;
+}
+
+.inspector-attention-item:hover {
+  transform: translateY(-1px);
+  border-color: rgb(191 219 254);
+  background: rgb(255 255 255);
+}
+
+.dark .inspector-attention-item {
+  border-color: rgb(55 65 81 / 0.7);
+  background: rgb(31 41 55 / 0.58);
+}
+
+.dark .inspector-attention-item:hover {
+  border-color: rgb(59 130 246 / 0.58);
+  background: rgb(31 41 55 / 0.82);
+}
+
+.inspector-good-state {
+  border-radius: 0.9rem;
+  border: 1px solid rgb(167 243 208);
+  background: rgb(236 253 245);
+  padding: 0.85rem;
+  font-size: 0.875rem;
+  color: rgb(4 120 87);
+}
+
+.dark .inspector-good-state {
+  border-color: rgb(16 185 129 / 0.35);
+  background: rgb(16 185 129 / 0.12);
+  color: rgb(167 243 208);
+}
+
 .account-node {
   min-height: 5.6rem;
   border: 1px solid rgb(229 231 235);
@@ -905,5 +1363,101 @@ onUnmounted(() => {
 .dark .inspector-action:hover {
   border-color: rgb(59 130 246 / 0.7);
   color: rgb(147 197 253);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page {
+  color: var(--anti-ink);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page :is(section, .account-pool-lane, .account-map-inspector, .account-node, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state) {
+  border: 4px solid var(--anti-ink) !important;
+  border-radius: 0.35rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 7px 7px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page > section:first-child {
+  background: var(--anti-yellow) !important;
+  transform: rotate(-0.25deg);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page :is(h1, h2, h3, p, span, label, strong, small) {
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page :is(input, select) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0 !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 4px 4px 0 var(--anti-blue) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page button {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.2rem !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  font-weight: 950;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page button:hover {
+  background: var(--anti-green) !important;
+  transform: rotate(-1deg) translate(-1px, -1px);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node:nth-child(odd) {
+  transform: rotate(-0.35deg);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node:nth-child(even) {
+  transform: rotate(0.35deg);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node:hover,
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-selected {
+  background: var(--anti-green) !important;
+  box-shadow: 9px 9px 0 var(--anti-red) !important;
+  transform: rotate(-1deg) translate(-2px, -2px);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .inspector-status-card {
+  border: 4px solid var(--anti-ink) !important;
+  border-radius: 0.35rem !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 6px 6px 0 var(--anti-blue) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .inspector-kicker {
+  display: inline-flex;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-red);
+  color: var(--anti-paper) !important;
+  padding: 0.2rem 0.35rem;
+}
+
+@media (max-width: 1279px) {
+  .account-map-inspector {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .inspector-metric-grid,
+  .inspector-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inspector-section-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .inspector-section-title span {
+    max-width: 100%;
+  }
 }
 </style>
