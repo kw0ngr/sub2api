@@ -1,67 +1,69 @@
 <template>
-  <div class="account-map-page space-y-6 pb-12">
-    <section class="account-map-toolbar">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-            <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 7a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V7zm9 0a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V7zM4 16a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1zm9 0a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2h-3a2 2 0 01-2-2v-1z"
-              />
-            </svg>
-            账号池地图
-          </h1>
-          <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <span class="flex items-center gap-1.5">
-              <span class="relative inline-flex h-2 w-2 rounded-full" :class="loading ? 'bg-gray-400' : 'bg-green-500'"></span>
-              {{ loading ? '加载中' : '就绪' }}
-            </span>
-            <span>·</span>
-            <span>按平台、状态和账号池查看调度健康度</span>
-            <template v-if="generatedAt">
+  <AppLayout>
+    <div class="account-map-page space-y-6 pb-12">
+      <section class="account-map-toolbar">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="account-map-eyebrow">Account pool map</p>
+            <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
+              <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 7a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V7zm9 0a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V7zM4 16a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1zm9 0a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2h-3a2 2 0 01-2-2v-1z"
+                />
+              </svg>
+              账号池地图
+            </h1>
+            <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span class="flex items-center gap-1.5">
+                <span class="relative inline-flex h-2 w-2 rounded-full" :class="loading ? 'bg-gray-400' : 'bg-green-500'"></span>
+                {{ loading ? '加载中' : '就绪' }}
+              </span>
               <span>·</span>
-              <span>更新 {{ formatDate(generatedAt) }}</span>
-            </template>
+              <span>按平台、状态和账号池查看调度健康度</span>
+              <template v-if="generatedAt">
+                <span>·</span>
+                <span>更新 {{ formatDate(generatedAt) }}</span>
+              </template>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="account-map-secondary-button"
+              @click="refresh"
+            >
+              {{ loading ? '刷新中...' : '刷新地图' }}
+            </button>
+            <button
+              type="button"
+              class="account-map-primary-button"
+              @click="goAccounts"
+            >
+              账号管理
+            </button>
           </div>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            class="account-map-secondary-button"
-            @click="refresh"
-          >
-            {{ loading ? '刷新中...' : '刷新地图' }}
-          </button>
-          <button
-            type="button"
-            class="account-map-primary-button"
-            @click="goAccounts"
-          >
-            账号管理
-          </button>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="account-map-summary-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <div
-        v-for="item in summaryCards"
-        :key="item.key"
-        class="account-map-stat-card"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ item.label }}</p>
-          <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
+      <section class="account-map-summary-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div
+          v-for="item in summaryCards"
+          :key="item.key"
+          class="account-map-stat-card"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ item.label }}</p>
+            <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
+          </div>
+          <p class="mt-2 text-2xl font-black text-gray-900 dark:text-white">{{ item.value }}</p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
         </div>
-        <p class="mt-2 text-2xl font-black text-gray-900 dark:text-white">{{ item.value }}</p>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
-      </div>
-    </section>
+      </section>
 
-    <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div class="account-map-main-column">
         <div class="account-map-filter-card">
           <div class="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
@@ -331,14 +333,16 @@
           </template>
         </section>
       </aside>
-    </section>
-  </div>
+      </section>
+    </div>
+  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
+import AppLayout from '@/components/layout/AppLayout.vue'
 import type { Account } from '@/types'
 import type {
   AccountPoolMapAccount,
@@ -839,6 +843,8 @@ onUnmounted(() => {
   --account-map-surface: rgb(255 255 255);
   --account-map-subtle: rgb(249 250 251);
   --account-map-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  max-width: 1480px;
+  margin: 0 auto;
 }
 
 :global(.dark) .account-map-page {
@@ -863,6 +869,15 @@ onUnmounted(() => {
 .account-map-toolbar {
   border-radius: 1.5rem;
   padding: 1.5rem;
+}
+
+.account-map-eyebrow {
+  margin-bottom: 0.35rem;
+  color: rgb(14 165 233);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .account-map-summary-grid {
@@ -1516,6 +1531,14 @@ onUnmounted(() => {
 :global(.app-shell.app-shell-anti) .account-map-page .account-map-toolbar {
   background: var(--anti-yellow) !important;
   transform: rotate(-0.25deg);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-eyebrow {
+  display: inline-flex;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-red);
+  color: var(--anti-paper) !important;
+  padding: 0.2rem 0.35rem;
 }
 
 :global(.app-shell.app-shell-anti) .account-map-page :is(h1, h2, h3, p, span, label, strong, small) {
