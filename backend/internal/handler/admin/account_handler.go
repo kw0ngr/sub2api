@@ -203,10 +203,11 @@ type AccountPoolMapPool struct {
 
 type AccountPoolMapAccount struct {
 	AccountWithConcurrency
-	StatusKind   string `json:"status_kind"`
-	StatusLabel  string `json:"status_label"`
-	StatusReason string `json:"status_reason,omitempty"`
-	Attention    bool   `json:"attention"`
+	StatusKind       string                            `json:"status_kind"`
+	StatusLabel      string                            `json:"status_label"`
+	StatusReason     string                            `json:"status_reason,omitempty"`
+	Attention        bool                              `json:"attention"`
+	APIKeyProbeQuota *service.APIKeyProbeQuotaSnapshot `json:"api_key_probe_quota,omitempty"`
 }
 
 type AccountPoolMapSummary struct {
@@ -222,6 +223,7 @@ type AccountPoolMapSummary struct {
 	RPM            int `json:"rpm"`
 	Concurrency    int `json:"concurrency"`
 	ActiveSessions int `json:"active_sessions"`
+	QuotaSignals   int `json:"quota_signals"`
 }
 
 const accountListGroupUngroupedQueryValue = "ungrouped"
@@ -559,6 +561,7 @@ func buildAccountPoolMapAccount(item AccountWithConcurrency, now time.Time) Acco
 		StatusLabel:            label,
 		StatusReason:           reason,
 		Attention:              kind != "healthy",
+		APIKeyProbeQuota:       service.APIKeyProbeQuotaSnapshotFromExtra(item.Extra),
 	}
 }
 
@@ -659,6 +662,9 @@ func accountPoolAddSummary(summary *AccountPoolMapSummary, account AccountPoolMa
 	summary.Concurrency += account.CurrentConcurrency
 	if account.ActiveSessions != nil {
 		summary.ActiveSessions += *account.ActiveSessions
+	}
+	if account.APIKeyProbeQuota != nil {
+		summary.QuotaSignals++
 	}
 }
 

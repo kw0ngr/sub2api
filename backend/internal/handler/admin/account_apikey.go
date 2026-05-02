@@ -65,14 +65,15 @@ type APIKeyHealthCheckRequest struct {
 }
 
 type APIKeyHealthCheckItem struct {
-	AccountID       int64  `json:"account_id"`
-	Name            string `json:"name"`
-	Platform        string `json:"platform"`
-	StatusCode      int    `json:"status_code,omitempty"`
-	Valid           bool   `json:"valid"`
-	InvalidDisabled bool   `json:"invalid_disabled"`
-	Error           string `json:"error,omitempty"`
-	Message         string `json:"message,omitempty"`
+	AccountID        int64                             `json:"account_id"`
+	Name             string                            `json:"name"`
+	Platform         string                            `json:"platform"`
+	StatusCode       int                               `json:"status_code,omitempty"`
+	Valid            bool                              `json:"valid"`
+	InvalidDisabled  bool                              `json:"invalid_disabled"`
+	APIKeyProbeQuota *service.APIKeyProbeQuotaSnapshot `json:"api_key_probe_quota,omitempty"`
+	Error            string                            `json:"error,omitempty"`
+	Message          string                            `json:"message,omitempty"`
 }
 
 type APIKeyHealthCheckResult struct {
@@ -456,6 +457,7 @@ func (h *AccountHandler) runHealthCheckBackground(jobID string, accounts []*serv
 				item.StatusCode = health.StatusCode
 				item.Message = health.Message
 				item.Valid = health.Valid
+				item.APIKeyProbeQuota = health.ProbeQuota
 
 				if health.Valid {
 					valid = true

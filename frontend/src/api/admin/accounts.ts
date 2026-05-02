@@ -77,6 +77,33 @@ export interface AccountPoolMapSummary {
   rpm: number
   concurrency: number
   active_sessions: number
+  quota_signals: number
+}
+
+export interface APIKeyProbeQuotaSnapshot {
+  provider: string
+  supported: boolean
+  source: string
+  updated_at: string
+  status_code?: number
+  model?: string
+  requests_limit?: string
+  requests_remaining?: string
+  requests_reset?: string
+  tokens_limit?: string
+  tokens_remaining?: string
+  tokens_reset?: string
+  input_tokens_limit?: string
+  input_tokens_remaining?: string
+  input_tokens_reset?: string
+  output_tokens_limit?: string
+  output_tokens_remaining?: string
+  output_tokens_reset?: string
+  retry_after?: string
+  rate_limit_policy?: string
+  quota_project?: string
+  note?: string
+  has_rate_limit_header_signal?: boolean
 }
 
 export interface AccountPoolMapAccount extends Account {
@@ -84,6 +111,7 @@ export interface AccountPoolMapAccount extends Account {
   status_label: string
   status_reason?: string
   attention: boolean
+  api_key_probe_quota?: APIKeyProbeQuotaSnapshot | null
 }
 
 export interface AccountPoolMapPool {
@@ -507,6 +535,7 @@ export interface APIKeyHealthCheckItem {
   status_code?: number
   valid: boolean
   invalid_disabled: boolean
+  api_key_probe_quota?: APIKeyProbeQuotaSnapshot | null
   error?: string
   message?: string
 }

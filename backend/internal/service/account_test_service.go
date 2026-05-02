@@ -303,6 +303,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
+	s.recordAPIKeyProbeQuotaSnapshot(ctx, account, testModelID, resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -549,6 +550,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
+	s.recordAPIKeyProbeQuotaSnapshot(ctx, account, testModelID, resp)
 
 	if isOAuth && s.accountRepo != nil {
 		if updates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(updates) > 0 {
@@ -643,6 +645,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
+	s.recordAPIKeyProbeQuotaSnapshot(ctx, account, testModelID, resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1551,6 +1554,23 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
 	}, nil
+}
+
+func (s *AccountTestService) recordAPIKeyProbeQuotaSnapshot(ctx context.Context, account *Account, model string, resp *http.Response) {
+	if s == nil || s.accountRepo == nil || account == nil || resp == nil || account.Type != AccountTypeAPIKey {
+		return
+	}
+	snapshot := BuildAPIKeyProbeQuotaSnapshot(account.Platform, resp.StatusCode, model, resp.Header, time.Now())
+	if snapshot == nil {
+		return
+	}
+	updates := BuildAPIKeyProbeQuotaExtraUpdates(snapshot)
+	if len(updates) == 0 {
+		return
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err == nil {
+		mergeAccountExtra(account, updates)
+	}
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

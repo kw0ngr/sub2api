@@ -182,6 +182,10 @@
                   <span>指纹</span>
                   <strong>{{ poolFingerprintCount(pool) }}</strong>
                 </div>
+                <div>
+                  <span>额度</span>
+                  <strong>{{ poolQuotaSignalCount(pool) }}</strong>
+                </div>
               </div>
             </div>
 
@@ -209,6 +213,10 @@
                   <span>并发 {{ account.current_concurrency ?? 0 }}</span>
                   <span v-if="account.enable_tls_fingerprint">TLS</span>
                   <span v-else>no TLS</span>
+                </div>
+                <div v-if="quotaBrief(account)" class="account-node-quota">
+                  <span>{{ quotaBrief(account) }}</span>
+                  <small>{{ quotaSourceLabel(quotaSnapshot(account)) }}</small>
                 </div>
               </button>
             </div>
@@ -260,6 +268,24 @@
               <MetricTile label="当前并发" :value="String(selectedAccount.current_concurrency ?? 0)" />
               <MetricTile label="当前 RPM" :value="String(selectedAccount.current_rpm ?? 0)" />
               <MetricTile label="活跃会话" :value="String(selectedAccount.active_sessions ?? 0)" />
+              <MetricTile label="额度信号" :value="quotaBrief(selectedAccount) || '未采集'" />
+            </div>
+
+            <div v-if="quotaSnapshot(selectedAccount)" class="inspector-section inspector-quota-section">
+              <div class="inspector-section-title">
+                <h3>上游额度 / 限流信号</h3>
+                <span>{{ quotaUpdatedText(quotaSnapshot(selectedAccount)) }}</span>
+              </div>
+              <InspectorRow label="来源" :value="quotaSourceLabel(quotaSnapshot(selectedAccount))" />
+              <InspectorRow label="探测模型" :value="quotaSnapshot(selectedAccount)?.model || '-'" />
+              <InspectorRow label="Token 剩余" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.tokens_remaining, quotaSnapshot(selectedAccount)?.tokens_limit)" />
+              <InspectorRow label="输入 Token" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.input_tokens_remaining, quotaSnapshot(selectedAccount)?.input_tokens_limit)" />
+              <InspectorRow label="输出 Token" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.output_tokens_remaining, quotaSnapshot(selectedAccount)?.output_tokens_limit)" />
+              <InspectorRow label="请求剩余" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.requests_remaining, quotaSnapshot(selectedAccount)?.requests_limit)" />
+              <InspectorRow label="重置/重试" :value="quotaResetText(quotaSnapshot(selectedAccount))" />
+              <p v-if="quotaSnapshot(selectedAccount)?.note" class="inspector-quota-note">
+                {{ quotaSnapshot(selectedAccount)?.note }}
+              </p>
             </div>
 
             <div class="inspector-section">
@@ -320,6 +346,7 @@
                 <MetricTile label="健康" :value="String(summary.healthy)" />
                 <MetricTile label="需关注" :value="String(summary.attention)" />
                 <MetricTile label="TLS 覆盖" :value="`${summary.tls_enabled}/${summary.total || 0}`" />
+                <MetricTile label="额度信号" :value="String(summary.quota_signals || 0)" />
               </div>
             </div>
 
@@ -368,7 +395,8 @@ import type {
   AccountPoolMapPool,
   AccountPoolMapResponse,
   AccountPoolMapStatusKind,
-  AccountPoolMapSummary
+  AccountPoolMapSummary,
+  APIKeyProbeQuotaSnapshot
 } from '@/api/admin/accounts'
 
 type ViewMode = 'status' | 'traffic' | 'error'
@@ -497,12 +525,12 @@ const summaryCards = computed(() => [
     tone: summary.value.attention > 0 ? 'warn' : 'good'
   },
   {
-    key: 'limited',
-    label: '限流/停用',
-    value: summary.value.rate_limited + summary.value.disabled,
+    key: 'quota',
+    label: '额度信号',
+    value: summary.value.quota_signals || 0,
     detail: `${summary.value.rate_limited} 限流 · ${summary.value.disabled} 停用`,
-    dotClass: summary.value.rate_limited + summary.value.disabled > 0 ? 'bg-violet-500' : 'bg-slate-300',
-    tone: summary.value.rate_limited + summary.value.disabled > 0 ? 'accent' : 'neutral'
+    dotClass: summary.value.quota_signals > 0 ? 'bg-sky-500' : 'bg-slate-300',
+    tone: summary.value.quota_signals > 0 ? 'accent' : 'neutral'
   }
 ])
 
@@ -631,6 +659,129 @@ function poolConcurrency(pool: AccountPool): number {
 function poolFingerprintCount(pool: AccountPool): string {
   const enabled = pool.summary?.tls_enabled ?? pool.accounts.filter((item) => item.enable_tls_fingerprint).length
   return `${enabled}/${pool.accounts.length}`
+}
+
+function poolQuotaSignalCount(pool: AccountPool): number {
+  return pool.summary?.quota_signals ?? pool.accounts.filter((item) => quotaSnapshot(item)).length
+}
+
+function quotaSnapshot(account: Account | AccountPoolMapAccount | null | undefined): APIKeyProbeQuotaSnapshot | null {
+  if (!account) return null
+  const direct = (account as Partial<AccountPoolMapAccount>).api_key_probe_quota
+  if (direct) return direct
+  return normalizeProbeQuota((account.extra as Record<string, unknown> | undefined)?.apikey_probe_quota)
+}
+
+function normalizeProbeQuota(raw: unknown): APIKeyProbeQuotaSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const payload = raw as Record<string, unknown>
+  const provider = stringValue(payload.provider)
+  if (!provider) return null
+  return {
+    provider,
+    supported: booleanValue(payload.supported),
+    source: stringValue(payload.source) || '',
+    updated_at: stringValue(payload.updated_at) || '',
+    status_code: numberValue(payload.status_code),
+    model: stringValue(payload.model),
+    requests_limit: stringValue(payload.requests_limit),
+    requests_remaining: stringValue(payload.requests_remaining),
+    requests_reset: stringValue(payload.requests_reset),
+    tokens_limit: stringValue(payload.tokens_limit),
+    tokens_remaining: stringValue(payload.tokens_remaining),
+    tokens_reset: stringValue(payload.tokens_reset),
+    input_tokens_limit: stringValue(payload.input_tokens_limit),
+    input_tokens_remaining: stringValue(payload.input_tokens_remaining),
+    input_tokens_reset: stringValue(payload.input_tokens_reset),
+    output_tokens_limit: stringValue(payload.output_tokens_limit),
+    output_tokens_remaining: stringValue(payload.output_tokens_remaining),
+    output_tokens_reset: stringValue(payload.output_tokens_reset),
+    retry_after: stringValue(payload.retry_after),
+    rate_limit_policy: stringValue(payload.rate_limit_policy),
+    quota_project: stringValue(payload.quota_project),
+    note: stringValue(payload.note),
+    has_rate_limit_header_signal: booleanValue(payload.has_rate_limit_header_signal)
+  }
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined
+  const next = String(value).trim()
+  return next || undefined
+}
+
+function booleanValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') return value.toLowerCase() === 'true'
+  return false
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined
+  const next = Number(value)
+  return Number.isFinite(next) ? next : undefined
+}
+
+function quotaHasHeaderSignal(snapshot: APIKeyProbeQuotaSnapshot | null): boolean {
+  if (!snapshot) return false
+  return Boolean(
+    snapshot.has_rate_limit_header_signal ||
+    snapshot.requests_limit ||
+    snapshot.requests_remaining ||
+    snapshot.requests_reset ||
+    snapshot.tokens_limit ||
+    snapshot.tokens_remaining ||
+    snapshot.tokens_reset ||
+    snapshot.input_tokens_limit ||
+    snapshot.input_tokens_remaining ||
+    snapshot.output_tokens_limit ||
+    snapshot.output_tokens_remaining ||
+    snapshot.retry_after
+  )
+}
+
+function quotaBrief(account: Account | AccountPoolMapAccount | null | undefined): string {
+  const snapshot = quotaSnapshot(account)
+  if (!snapshot) return ''
+  if (snapshot.tokens_remaining || snapshot.tokens_limit) {
+    return `Token ${formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit)}`
+  }
+  if (snapshot.input_tokens_remaining || snapshot.input_tokens_limit || snapshot.output_tokens_remaining || snapshot.output_tokens_limit) {
+    const input = formatQuotaPair(snapshot.input_tokens_remaining, snapshot.input_tokens_limit)
+    const output = formatQuotaPair(snapshot.output_tokens_remaining, snapshot.output_tokens_limit)
+    return `I/O ${input} / ${output}`
+  }
+  if (snapshot.requests_remaining || snapshot.requests_limit) {
+    return `请求 ${formatQuotaPair(snapshot.requests_remaining, snapshot.requests_limit)}`
+  }
+  if (!snapshot.supported && snapshot.provider === 'gemini') return '项目级额度'
+  if (!quotaHasHeaderSignal(snapshot)) return '未返回额度头'
+  return '已采集额度'
+}
+
+function quotaSourceLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '未采集'
+  if (snapshot.source === 'headers') return '响应头采集'
+  if (snapshot.source === 'missing_headers') return '响应头未返回'
+  if (snapshot.source === 'project_quota') return '项目级额度'
+  return snapshot.source || '探测记录'
+}
+
+function quotaUpdatedText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot?.updated_at) return '未记录时间'
+  return formatDate(snapshot.updated_at)
+}
+
+function formatQuotaPair(remaining?: string, limit?: string): string {
+  const left = remaining || '-'
+  const right = limit || '-'
+  if (left === '-' && right === '-') return '-'
+  return `${left} / ${right}`
+}
+
+function quotaResetText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '-'
+  return snapshot.tokens_reset || snapshot.input_tokens_reset || snapshot.output_tokens_reset || snapshot.requests_reset || snapshot.retry_after || '-'
 }
 
 function visiblePoolAccounts(pool: AccountPool): AccountPoolMapAccount[] {
@@ -817,7 +968,8 @@ function createEmptySummary(): AccountPoolMapSummary {
     tls_enabled: 0,
     rpm: 0,
     concurrency: 0,
-    active_sessions: 0
+    active_sessions: 0,
+    quota_signals: 0
   }
 }
 
@@ -833,6 +985,7 @@ function incrementSummary(summary: AccountPoolMapSummary, account: AccountPoolMa
   summary.rpm += account.current_rpm || 0
   summary.concurrency += account.current_concurrency || 0
   summary.active_sessions += account.active_sessions || 0
+  if (quotaSnapshot(account)) summary.quota_signals += 1
 }
 
 function mergeKnownPlatforms(items: AccountPoolMapAccount[]) {
@@ -1176,8 +1329,8 @@ onUnmounted(() => {
 
 .account-pool-mini-metrics {
   display: grid;
-  min-width: 14.5rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: min(100%, 18rem);
+  grid-template-columns: repeat(4, minmax(3.4rem, 1fr));
   gap: 0.45rem;
 }
 
@@ -1547,9 +1700,30 @@ onUnmounted(() => {
   padding: 0.9rem;
 }
 
+.inspector-quota-section {
+  background:
+    radial-gradient(circle at 0% 0%, rgb(14 165 233 / 0.12), transparent 36%),
+    var(--account-map-subtle);
+}
+
+.inspector-quota-note {
+  margin-top: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgb(255 251 235);
+  padding: 0.65rem 0.75rem;
+  color: rgb(146 64 14);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 :global(.dark) .inspector-section {
   border-color: rgb(55 65 81 / 0.7);
   background: rgb(17 24 39 / 0.36);
+}
+
+:global(.dark) .inspector-quota-note {
+  background: rgb(120 53 15 / 0.28);
+  color: rgb(253 230 138);
 }
 
 .inspector-section-title {
@@ -1871,6 +2045,43 @@ onUnmounted(() => {
   font-size: 0.72rem;
 }
 
+.account-node-quota {
+  margin-top: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-radius: 0.65rem;
+  background: rgb(240 249 255);
+  padding: 0.4rem 0.5rem;
+  color: rgb(3 105 161);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.account-node-quota small {
+  flex: none;
+  color: rgb(100 116 139);
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.account-node-quota span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.dark) .account-node-quota {
+  background: rgb(12 74 110 / 0.26);
+  color: rgb(125 211 252);
+}
+
+:global(.dark) .account-node-quota small {
+  color: rgb(148 163 184);
+}
+
 .inspector-action,
 .inspector-action-primary {
   width: 100%;
@@ -1940,7 +2151,7 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state),
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .inspector-quota-note),
 :global(.app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
@@ -2001,7 +2212,10 @@ onUnmounted(() => {
 
 :global(.app-shell.app-shell-anti) .account-map-page .account-node p:first-child,
 :global(.app-shell.app-shell-anti) .account-map-page .account-node-meta,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-subtitle {
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-subtitle,
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-quota,
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-quota small,
+:global(.app-shell.app-shell-anti) .account-map-page .inspector-quota-note {
   color: var(--anti-ink) !important;
 }
 
@@ -2087,6 +2301,10 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
+  .account-pool-mini-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .inspector-metric-grid,
   .inspector-overview-grid {
     grid-template-columns: 1fr;

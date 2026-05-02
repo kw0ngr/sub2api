@@ -14,11 +14,12 @@ import (
 const apiKeyProbeCooldown = 72 * time.Hour
 
 type APIKeyHealthCheckResult struct {
-	Platform   string `json:"platform"`
-	StatusCode int    `json:"status_code"`
-	Valid      bool   `json:"valid"`
-	Invalid    bool   `json:"invalid"`
-	Message    string `json:"message,omitempty"`
+	Platform   string                    `json:"platform"`
+	StatusCode int                       `json:"status_code"`
+	Valid      bool                      `json:"valid"`
+	Invalid    bool                      `json:"invalid"`
+	Message    string                    `json:"message,omitempty"`
+	ProbeQuota *APIKeyProbeQuotaSnapshot `json:"probe_quota,omitempty"`
 }
 
 type APIKeyStatusAction int
@@ -325,13 +326,21 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 		return nil, err
 	}
 
-	return buildAPIKeyHealthCheckResultFromScheduledResult(account, result), nil
+	resultAccount := account
+	if s.accountRepo != nil {
+		if refreshed, refreshErr := s.accountRepo.GetByID(ctx, account.ID); refreshErr == nil && refreshed != nil {
+			resultAccount = refreshed
+		}
+	}
+
+	return buildAPIKeyHealthCheckResultFromScheduledResult(resultAccount, result), nil
 }
 
 func buildAPIKeyHealthCheckResultFromScheduledResult(account *Account, result *ScheduledTestResult) *APIKeyHealthCheckResult {
 	health := &APIKeyHealthCheckResult{}
 	if account != nil {
 		health.Platform = account.Platform
+		health.ProbeQuota = APIKeyProbeQuotaSnapshotFromExtra(account.Extra)
 	}
 	if result == nil {
 		health.Message = "empty test result"
