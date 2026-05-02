@@ -1,61 +1,69 @@
 <template>
-  <div class="account-map-page space-y-5">
-    <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
-      <div class="flex flex-col gap-4 border-b border-gray-100 p-5 dark:border-dark-800 lg:flex-row lg:items-center lg:justify-between">
+  <div class="account-map-page space-y-6 pb-12">
+    <section class="account-map-toolbar">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary-600 dark:text-primary-400">
-            Gateway Lab
-          </p>
-          <h1 class="mt-2 text-2xl font-bold text-gray-950 dark:text-white">
+          <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
+            <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 7a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V7zm9 0a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V7zM4 16a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1zm9 0a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2h-3a2 2 0 01-2-2v-1z"
+              />
+            </svg>
             账号池地图
           </h1>
-          <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-            用泳道地图查看账号池健康、调度状态和指纹覆盖情况。默认隐藏空泳道，右侧始终给出选中账号或全局建议，避免控制台留白。
-          </p>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span class="flex items-center gap-1.5">
+              <span class="relative inline-flex h-2 w-2 rounded-full" :class="loading ? 'bg-gray-400' : 'bg-green-500'"></span>
+              {{ loading ? '加载中' : '就绪' }}
+            </span>
+            <span>·</span>
+            <span>按平台、状态和账号池查看调度健康度</span>
+            <template v-if="generatedAt">
+              <span>·</span>
+              <span>更新 {{ formatDate(generatedAt) }}</span>
+            </template>
+          </div>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <p
-            v-if="generatedAt"
-            class="flex items-center rounded-xl bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500 dark:bg-dark-800 dark:text-gray-400"
-          >
-            更新 {{ formatDate(generatedAt) }}
-          </p>
+        <div class="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            class="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-primary-300 hover:text-primary-600 dark:border-dark-700 dark:text-gray-300 dark:hover:border-primary-500 dark:hover:text-primary-300"
+            class="account-map-secondary-button"
             @click="refresh"
           >
             {{ loading ? '刷新中...' : '刷新地图' }}
           </button>
           <button
             type="button"
-            class="rounded-xl bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
+            class="account-map-primary-button"
             @click="goAccounts"
           >
             账号管理
           </button>
         </div>
       </div>
+    </section>
 
-      <div class="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div
-          v-for="item in summaryCards"
-          :key="item.key"
-          class="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 dark:border-dark-800 dark:bg-dark-800/50"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ item.label }}</p>
-            <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
-          </div>
-          <p class="mt-3 text-2xl font-bold text-gray-950 dark:text-white">{{ item.value }}</p>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
+    <section class="account-map-summary-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div
+        v-for="item in summaryCards"
+        :key="item.key"
+        class="account-map-stat-card"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ item.label }}</p>
+          <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
         </div>
+        <p class="mt-2 text-2xl font-black text-gray-900 dark:text-white">{{ item.value }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
       </div>
     </section>
 
-    <section class="account-map-workspace grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
-      <div class="space-y-4">
-        <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+    <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div class="account-map-main-column">
+        <div class="account-map-filter-card">
           <div class="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
             <label class="block">
               <span class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">搜索账号</span>
@@ -128,7 +136,7 @@
           <div v-for="idx in 3" :key="idx" class="h-32 animate-pulse rounded-2xl bg-gray-100 dark:bg-dark-800"></div>
         </div>
 
-        <div v-else-if="!visiblePools.length" class="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center dark:border-dark-700 dark:bg-dark-900">
+        <div v-else-if="!visiblePools.length" class="account-map-empty-state">
           <p class="text-base font-semibold text-gray-900 dark:text-white">没有匹配的账号池</p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">调整筛选条件，或者先在账号管理中导入/创建上游账号。</p>
         </div>
@@ -204,7 +212,7 @@
           <template v-if="selectedAccount">
             <div class="inspector-heading">
               <div class="min-w-0">
-                <p class="inspector-kicker">选中账号</p>
+                <p class="inspector-kicker">账号详情</p>
                 <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
                 <p class="inspector-subtitle">
                   {{ platformLabel(selectedAccount.platform) }} · {{ accountTypeLabel(selectedAccount.type) }}
@@ -273,11 +281,11 @@
           </template>
 
           <template v-else>
-            <div class="inspector-empty-hero">
-              <p class="inspector-kicker">账号池地图</p>
-              <h2 class="inspector-title">选择一个账号节点</h2>
+            <div class="inspector-empty-header">
+              <p class="inspector-kicker">详情栏</p>
+              <h2 class="inspector-title">选择账号查看调度状态</h2>
               <p class="inspector-subtitle">
-                右栏会跟随当前地图展示账号调度、TLS、缓存和错误状态；未选择时展示全局巡检队列。
+                未选择时展示当前筛选范围的账号池概览和优先关注项。
               </p>
             </div>
 
@@ -825,33 +833,139 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.account-map-page {
+  --account-map-border: rgb(17 24 39 / 0.06);
+  --account-map-border-strong: rgb(229 231 235);
+  --account-map-surface: rgb(255 255 255);
+  --account-map-subtle: rgb(249 250 251);
+  --account-map-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+}
+
+:global(.dark) .account-map-page {
+  --account-map-border: rgb(55 65 81);
+  --account-map-border-strong: rgb(75 85 99);
+  --account-map-surface: rgb(31 41 55);
+  --account-map-subtle: rgb(17 24 39 / 0.58);
+  --account-map-shadow: none;
+}
+
+.account-map-toolbar,
+.account-map-stat-card,
+.account-map-filter-card,
+.account-map-empty-state,
+.account-pool-lane,
+.account-map-inspector {
+  border: 1px solid var(--account-map-border);
+  background: var(--account-map-surface);
+  box-shadow: var(--account-map-shadow);
+}
+
+.account-map-toolbar {
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+}
+
+.account-map-summary-grid {
+  align-items: stretch;
+}
+
+.account-map-stat-card {
+  display: flex;
+  min-height: 6.8rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 1.25rem;
+  padding: 1rem;
+}
+
+.account-map-main-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.account-map-filter-card {
+  border-radius: 1.25rem;
+  padding: 1rem;
+}
+
+.account-map-empty-state {
+  border-style: dashed;
+  border-radius: 1.25rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.account-map-workspace {
+  align-items: start;
+}
+
+.account-pool-lane {
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.account-map-primary-button,
+.account-map-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.account-map-primary-button {
+  background: rgb(37 99 235);
+  color: white;
+  box-shadow: 0 1px 2px rgb(37 99 235 / 0.18);
+}
+
+.account-map-primary-button:hover {
+  background: rgb(29 78 216);
+}
+
+.account-map-secondary-button {
+  border: 1px solid rgb(229 231 235);
+  color: rgb(55 65 81);
+}
+
+.account-map-secondary-button:hover {
+  border-color: rgb(191 219 254);
+  color: rgb(37 99 235);
+}
+
+:global(.dark) .account-map-secondary-button {
+  border-color: rgb(75 85 99);
+  color: rgb(209 213 219);
+}
+
+:global(.dark) .account-map-secondary-button:hover {
+  border-color: rgb(59 130 246 / 0.7);
+  color: rgb(147 197 253);
+}
+
 .account-map-detail-rail {
   min-width: 0;
 }
 
 .account-map-inspector {
   position: sticky;
-  top: 6rem;
+  top: 5.5rem;
   overflow: hidden;
-  border: 1px solid rgb(229 231 235);
   border-radius: 1.25rem;
-  background:
-    linear-gradient(180deg, rgb(255 255 255), rgb(249 250 251 / 0.86));
-  box-shadow:
-    0 1px 2px rgb(15 23 42 / 0.04),
-    0 18px 45px rgb(15 23 42 / 0.07);
-}
-
-.dark .account-map-inspector {
-  border-color: rgb(55 65 81 / 0.78);
-  background:
-    linear-gradient(180deg, rgb(17 24 39 / 0.98), rgb(15 23 42 / 0.92));
-  box-shadow: 0 20px 60px rgb(0 0 0 / 0.28);
 }
 
 .inspector-heading,
-.inspector-empty-hero {
-  padding: 1.25rem;
+.inspector-empty-header {
+  padding: 1rem;
 }
 
 .inspector-heading {
@@ -862,44 +976,44 @@ onUnmounted(() => {
   border-bottom: 1px solid rgb(243 244 246);
 }
 
-.dark .inspector-heading {
+:global(.dark) .inspector-heading {
   border-bottom-color: rgb(31 41 55);
 }
 
 .inspector-kicker {
   font-size: 0.7rem;
-  font-weight: 750;
-  letter-spacing: 0.16em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgb(37 99 235);
+  color: rgb(107 114 128);
 }
 
-.dark .inspector-kicker {
-  color: rgb(96 165 250);
+:global(.dark) .inspector-kicker {
+  color: rgb(156 163 175);
 }
 
 .inspector-title {
-  margin-top: 0.4rem;
+  margin-top: 0.35rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 1.18rem;
+  font-size: 1.05rem;
   font-weight: 800;
   line-height: 1.2;
   color: rgb(17 24 39);
 }
 
-.dark .inspector-title {
+:global(.dark) .inspector-title {
   color: rgb(255 255 255);
 }
 
 .inspector-subtitle {
-  margin-top: 0.35rem;
-  font-size: 0.875rem;
+  margin-top: 0.3rem;
+  font-size: 0.8125rem;
   color: rgb(107 114 128);
 }
 
-.dark .inspector-subtitle {
+:global(.dark) .inspector-subtitle {
   color: rgb(156 163 175);
 }
 
@@ -925,12 +1039,12 @@ onUnmounted(() => {
   color: rgb(29 78 216);
 }
 
-.dark .inspector-close {
+:global(.dark) .inspector-close {
   border-color: rgb(55 65 81);
   color: rgb(156 163 175);
 }
 
-.dark .inspector-close:hover {
+:global(.dark) .inspector-close:hover {
   border-color: rgb(59 130 246 / 0.7);
   background: rgb(30 64 175 / 0.22);
   color: rgb(191 219 254);
@@ -942,10 +1056,10 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 1rem;
   margin: 1rem;
-  border-radius: 1rem;
-  border: 1px solid rgb(229 231 235);
-  padding: 0.95rem;
-  background: rgb(249 250 251);
+  border-radius: 0.9rem;
+  border: 1px solid var(--account-map-border-strong);
+  padding: 0.85rem;
+  background: var(--account-map-subtle);
 }
 
 .inspector-status-card > div {
@@ -978,17 +1092,17 @@ onUnmounted(() => {
   color: rgb(107 114 128);
 }
 
-.dark .inspector-status-card {
+:global(.dark) .inspector-status-card {
   border-color: rgb(55 65 81 / 0.82);
   background: rgb(31 41 55 / 0.56);
 }
 
-.dark .inspector-status-card strong {
+:global(.dark) .inspector-status-card strong {
   color: rgb(255 255 255);
 }
 
-.dark .inspector-status-card p,
-.dark .inspector-status-label {
+:global(.dark) .inspector-status-card p,
+:global(.dark) .inspector-status-label {
   color: rgb(156 163 175);
 }
 
@@ -1017,27 +1131,27 @@ onUnmounted(() => {
   background: rgb(249 250 251);
 }
 
-.dark .inspector-status-healthy {
+:global(.dark) .inspector-status-healthy {
   border-color: rgb(16 185 129 / 0.45);
   background: rgb(6 78 59 / 0.22);
 }
 
-.dark .inspector-status-degraded {
+:global(.dark) .inspector-status-degraded {
   border-color: rgb(245 158 11 / 0.5);
   background: rgb(120 53 15 / 0.25);
 }
 
-.dark .inspector-status-rate_limited {
+:global(.dark) .inspector-status-rate_limited {
   border-color: rgb(139 92 246 / 0.5);
   background: rgb(76 29 149 / 0.25);
 }
 
-.dark .inspector-status-error {
+:global(.dark) .inspector-status-error {
   border-color: rgb(244 63 94 / 0.5);
   background: rgb(136 19 55 / 0.25);
 }
 
-.dark .inspector-status-disabled {
+:global(.dark) .inspector-status-disabled {
   border-color: rgb(55 65 81);
   background: rgb(31 41 55 / 0.72);
 }
@@ -1056,12 +1170,12 @@ onUnmounted(() => {
 
 .inspector-metric {
   border-radius: 0.9rem;
-  border: 1px solid rgb(243 244 246);
-  background: rgb(255 255 255 / 0.78);
+  border: 1px solid var(--account-map-border);
+  background: rgb(255 255 255 / 0.72);
   padding: 0.75rem;
 }
 
-.dark .inspector-metric {
+:global(.dark) .inspector-metric {
   border-color: rgb(55 65 81 / 0.74);
   background: rgb(17 24 39 / 0.46);
 }
@@ -1069,12 +1183,12 @@ onUnmounted(() => {
 .inspector-section {
   margin: 0 1rem 1rem;
   border-radius: 1rem;
-  border: 1px solid rgb(243 244 246);
+  border: 1px solid var(--account-map-border);
   background: rgb(255 255 255 / 0.72);
   padding: 0.9rem;
 }
 
-.dark .inspector-section {
+:global(.dark) .inspector-section {
   border-color: rgb(55 65 81 / 0.7);
   background: rgb(17 24 39 / 0.36);
 }
@@ -1104,11 +1218,11 @@ onUnmounted(() => {
   color: rgb(107 114 128);
 }
 
-.dark .inspector-section-title h3 {
+:global(.dark) .inspector-section-title h3 {
   color: rgb(255 255 255);
 }
 
-.dark .inspector-section-title span {
+:global(.dark) .inspector-section-title span {
   color: rgb(156 163 175);
 }
 
@@ -1131,7 +1245,7 @@ onUnmounted(() => {
   padding-bottom: 0;
 }
 
-.dark .inspector-row {
+:global(.dark) .inspector-row {
   border-bottom-color: rgb(31 41 55);
 }
 
@@ -1145,7 +1259,7 @@ onUnmounted(() => {
   color: rgb(146 64 14);
 }
 
-.dark .inspector-alert {
+:global(.dark) .inspector-alert {
   border-color: rgb(245 158 11 / 0.38);
   background: rgb(245 158 11 / 0.12);
   color: rgb(253 230 138);
@@ -1157,19 +1271,19 @@ onUnmounted(() => {
   padding: 0 1rem 1rem;
 }
 
-.inspector-empty-hero {
+.inspector-empty-header {
   border-bottom: 1px solid rgb(243 244 246);
 }
 
-.dark .inspector-empty-hero {
+:global(.dark) .inspector-empty-header {
   border-bottom-color: rgb(31 41 55);
 }
 
 .inspector-attention-item {
   width: 100%;
   border-radius: 0.9rem;
-  border: 1px solid rgb(243 244 246);
-  background: rgb(249 250 251 / 0.9);
+  border: 1px solid var(--account-map-border);
+  background: var(--account-map-subtle);
   padding: 0.75rem;
   text-align: left;
   transition:
@@ -1188,12 +1302,12 @@ onUnmounted(() => {
   background: rgb(255 255 255);
 }
 
-.dark .inspector-attention-item {
+:global(.dark) .inspector-attention-item {
   border-color: rgb(55 65 81 / 0.7);
   background: rgb(31 41 55 / 0.58);
 }
 
-.dark .inspector-attention-item:hover {
+:global(.dark) .inspector-attention-item:hover {
   border-color: rgb(59 130 246 / 0.58);
   background: rgb(31 41 55 / 0.82);
 }
@@ -1207,18 +1321,20 @@ onUnmounted(() => {
   color: rgb(4 120 87);
 }
 
-.dark .inspector-good-state {
+:global(.dark) .inspector-good-state {
   border-color: rgb(16 185 129 / 0.35);
   background: rgb(16 185 129 / 0.12);
   color: rgb(167 243 208);
 }
 
 .account-node {
+  position: relative;
   min-height: 5.6rem;
+  overflow: hidden;
   border: 1px solid rgb(229 231 235);
   border-radius: 1rem;
   padding: 0.85rem;
-  background: rgb(249 250 251);
+  background: rgb(255 255 255);
   color: rgb(17 24 39);
   transition:
     border-color 0.15s ease,
@@ -1227,43 +1343,63 @@ onUnmounted(() => {
     background-color 0.15s ease;
 }
 
-.account-node:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 30px rgb(15 23 42 / 0.08);
+.account-node::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: currentColor;
+  opacity: 0.45;
 }
 
-.dark .account-node {
+.account-node > * {
+  position: relative;
+}
+
+.account-node:hover {
+  transform: translateY(-1px);
+  background: rgb(249 250 251);
+  box-shadow: 0 10px 24px rgb(15 23 42 / 0.07);
+}
+
+:global(.dark) .account-node {
   border-color: rgb(31 41 55);
   background: rgb(17 24 39 / 0.72);
   color: rgb(243 244 246);
 }
 
+:global(.dark) .account-node:hover {
+  background: rgb(31 41 55 / 0.82);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
+}
+
 .account-node-selected {
   border-color: rgb(37 99 235) !important;
-  box-shadow: 0 0 0 4px rgb(59 130 246 / 0.13), 0 14px 34px rgb(15 23 42 / 0.12);
+  background: rgb(239 246 255);
+  box-shadow: 0 0 0 4px rgb(59 130 246 / 0.13), 0 12px 28px rgb(15 23 42 / 0.1);
 }
 
 .account-node-healthy {
   border-color: rgb(167 243 208);
-  background: linear-gradient(135deg, rgb(236 253 245), rgb(255 255 255));
+  background: rgb(255 255 255);
   color: rgb(6 95 70);
 }
 
 .account-node-degraded {
   border-color: rgb(253 230 138);
-  background: linear-gradient(135deg, rgb(255 251 235), rgb(255 255 255));
+  background: rgb(255 255 255);
   color: rgb(146 64 14);
 }
 
 .account-node-limited {
   border-color: rgb(221 214 254);
-  background: linear-gradient(135deg, rgb(245 243 255), rgb(255 255 255));
+  background: rgb(255 255 255);
   color: rgb(109 40 217);
 }
 
 .account-node-error {
   border-color: rgb(254 205 211);
-  background: linear-gradient(135deg, rgb(255 241 242), rgb(255 255 255));
+  background: rgb(255 255 255);
   color: rgb(190 18 60);
 }
 
@@ -1275,48 +1411,48 @@ onUnmounted(() => {
 
 .account-node-blue {
   border-color: rgb(191 219 254);
-  background: linear-gradient(135deg, rgb(239 246 255), rgb(255 255 255));
+  background: rgb(255 255 255);
   color: rgb(29 78 216);
 }
 
 .account-node-blue-strong {
   border-color: rgb(96 165 250);
-  background: linear-gradient(135deg, rgb(219 234 254), rgb(239 246 255));
+  background: rgb(239 246 255);
   color: rgb(30 64 175);
 }
 
-.dark .account-node-healthy {
+:global(.dark) .account-node-healthy {
   border-color: rgb(16 185 129 / 0.45);
   background: rgb(6 78 59 / 0.22);
   color: rgb(167 243 208);
 }
 
-.dark .account-node-degraded {
+:global(.dark) .account-node-degraded {
   border-color: rgb(245 158 11 / 0.5);
   background: rgb(120 53 15 / 0.25);
   color: rgb(253 230 138);
 }
 
-.dark .account-node-limited {
+:global(.dark) .account-node-limited {
   border-color: rgb(139 92 246 / 0.5);
   background: rgb(76 29 149 / 0.25);
   color: rgb(221 214 254);
 }
 
-.dark .account-node-error {
+:global(.dark) .account-node-error {
   border-color: rgb(244 63 94 / 0.5);
   background: rgb(136 19 55 / 0.25);
   color: rgb(254 205 211);
 }
 
-.dark .account-node-muted {
+:global(.dark) .account-node-muted {
   border-color: rgb(55 65 81);
   background: rgb(31 41 55 / 0.72);
   color: rgb(156 163 175);
 }
 
-.dark .account-node-blue,
-.dark .account-node-blue-strong {
+:global(.dark) .account-node-blue,
+:global(.dark) .account-node-blue-strong {
   border-color: rgb(59 130 246 / 0.5);
   background: rgb(30 64 175 / 0.25);
   color: rgb(191 219 254);
@@ -1355,12 +1491,12 @@ onUnmounted(() => {
   color: rgb(37 99 235);
 }
 
-.dark .inspector-action {
+:global(.dark) .inspector-action {
   border-color: rgb(55 65 81);
   color: rgb(209 213 219);
 }
 
-.dark .inspector-action:hover {
+:global(.dark) .inspector-action:hover {
   border-color: rgb(59 130 246 / 0.7);
   color: rgb(147 197 253);
 }
@@ -1369,7 +1505,7 @@ onUnmounted(() => {
   color: var(--anti-ink);
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(section, .account-pool-lane, .account-map-inspector, .account-node, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .account-node, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state) {
   border: 4px solid var(--anti-ink) !important;
   border-radius: 0.35rem !important;
   background: var(--anti-paper) !important;
@@ -1377,7 +1513,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page > section:first-child {
+:global(.app-shell.app-shell-anti) .account-map-page .account-map-toolbar {
   background: var(--anti-yellow) !important;
   transform: rotate(-0.25deg);
 }
