@@ -643,7 +643,7 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 	}
 
 	if useMixed {
-		platforms := []string{bucket.Platform, PlatformAntigravity}
+		platforms := mixedSchedulingPlatformsForGateway(bucket.Platform)
 		var accounts []Account
 		var err error
 		if groupID > 0 {
@@ -658,7 +658,7 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 		}
 		filtered := make([]Account, 0, len(accounts))
 		for _, acc := range accounts {
-			if acc.Platform == PlatformAntigravity && !acc.IsMixedSchedulingEnabled() {
+			if !shouldIncludeMixedSchedulingAccount(bucket.Platform, &acc) {
 				continue
 			}
 			filtered = append(filtered, acc)

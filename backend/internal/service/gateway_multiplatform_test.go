@@ -885,6 +885,60 @@ func TestGatewayService_SelectAccountForModelWithPlatform_NoModelSupport(t *test
 	require.Contains(t, err.Error(), "supporting model")
 }
 
+func TestGatewayService_SelectAccountWithLoadAwareness_AnthropicGroupCanUseDeepSeekMappedModel(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(61)
+	requestedModel := "deepseek-v4-flash"
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{
+				ID:          9,
+				Platform:    PlatformDeepSeek,
+				Type:        AccountTypeAPIKey,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"api_key":       "sk-deepseek-test",
+					"base_url":      "https://api.deepseek.com",
+					"model_mapping": map[string]any{requestedModel: requestedModel},
+				},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	groupRepo := &mockGroupRepoForGateway{
+		groups: map[int64]*Group{
+			groupID: {
+				ID:       groupID,
+				Name:     "anthropic-with-deepseek",
+				Platform: PlatformAnthropic,
+				Status:   StatusActive,
+				Hydrated: true,
+			},
+		},
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cfg:         testConfig(),
+		groupRepo:   groupRepo,
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, "", requestedModel, nil, "", 0)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(9), selection.Account.ID)
+	require.Equal(t, PlatformDeepSeek, selection.Account.Platform)
+}
+
 func TestGatewayService_SelectAccountForModelWithPlatform_GeminiPreferOAuth(t *testing.T) {
 	ctx := context.Background()
 

@@ -535,6 +535,48 @@ func TestGetAvailableModels_UsesShortCacheAndSupportsInvalidation(t *testing.T) 
 	require.Equal(t, int64(2), store)
 }
 
+func TestGetAvailableModels_AnthropicPlatformIncludesMappedDeepSeekModels(t *testing.T) {
+	groupID := int64(19)
+	repo := &modelsListAccountRepoStub{
+		byGroup: map[int64][]Account{
+			groupID: {
+				{
+					ID:       1,
+					Platform: PlatformAnthropic,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"claude-3-5-sonnet": "claude-3-5-sonnet",
+						},
+					},
+				},
+				{
+					ID:       2,
+					Platform: PlatformDeepSeek,
+					Type:     AccountTypeAPIKey,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"deepseek-v4-flash": "deepseek-v4-flash",
+						},
+					},
+				},
+				{
+					ID:       3,
+					Platform: PlatformGemini,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"gemini-2.5-pro": "gemini-2.5-pro",
+						},
+					},
+				},
+			},
+		},
+	}
+	svc := &GatewayService{accountRepo: repo}
+
+	models := svc.GetAvailableModels(context.Background(), &groupID, PlatformAnthropic)
+	require.Equal(t, []string{"claude-3-5-sonnet", "deepseek-v4-flash"}, models)
+}
+
 func TestGetAvailableModels_ErrorAndGlobalListBranches(t *testing.T) {
 	resetGatewayHotpathStatsForTest()
 

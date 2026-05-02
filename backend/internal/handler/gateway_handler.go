@@ -889,8 +889,8 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
-	// Get available models from account configurations (without platform filter)
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	// Get available models from account configurations for the effective routing platform.
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 
 	if len(availableModels) > 0 {
 		// Build model list from whitelist

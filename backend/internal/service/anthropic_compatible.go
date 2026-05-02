@@ -67,3 +67,39 @@ func setAnthropicCompatibleAPIKeyAuthHeader(header http.Header, platform string,
 	}
 	setHeaderRaw(header, "x-api-key", token)
 }
+
+func mixedSchedulingPlatformsForGateway(platform string) []string {
+	switch strings.TrimSpace(platform) {
+	case PlatformAnthropic:
+		return []string{PlatformAnthropic, PlatformAntigravity, PlatformOpenRouter, PlatformDeepSeek}
+	case PlatformGemini:
+		return []string{PlatformGemini, PlatformAntigravity}
+	default:
+		return []string{platform}
+	}
+}
+
+func isAnthropicCompatibleMixedAPIKeyAccount(account *Account) bool {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	switch account.Platform {
+	case PlatformOpenRouter, PlatformDeepSeek:
+		return len(account.GetModelMapping()) > 0
+	default:
+		return false
+	}
+}
+
+func shouldIncludeMixedSchedulingAccount(basePlatform string, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform == basePlatform {
+		return true
+	}
+	if account.Platform == PlatformAntigravity {
+		return account.IsMixedSchedulingEnabled()
+	}
+	return strings.TrimSpace(basePlatform) == PlatformAnthropic && isAnthropicCompatibleMixedAPIKeyAccount(account)
+}
