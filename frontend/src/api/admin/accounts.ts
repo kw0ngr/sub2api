@@ -84,6 +84,7 @@ export interface APIKeyProbeQuotaSnapshot {
   provider: string
   supported: boolean
   source: string
+  scope?: string
   updated_at: string
   status_code?: number
   model?: string
@@ -102,8 +103,14 @@ export interface APIKeyProbeQuotaSnapshot {
   retry_after?: string
   rate_limit_policy?: string
   quota_project?: string
+  balance?: string
+  credits_total?: string
+  credits_used?: string
+  credits_remaining?: string
+  currency?: string
   note?: string
   has_rate_limit_header_signal?: boolean
+  has_balance_signal?: boolean
 }
 
 export interface AccountPoolMapAccount extends Account {

@@ -23,6 +23,7 @@ func TestBuildAccountPoolMapAccountIncludesAPIKeyProbeQuota(t *testing.T) {
 					"provider":           service.PlatformAnthropic,
 					"supported":          true,
 					"source":             "headers",
+					"scope":              "response_headers",
 					"updated_at":         "2026-05-02T10:30:00Z",
 					"status_code":        200,
 					"model":              "claude-sonnet-4-5",
@@ -43,5 +44,67 @@ func TestBuildAccountPoolMapAccountIncludesAPIKeyProbeQuota(t *testing.T) {
 
 	var summary AccountPoolMapSummary
 	accountPoolAddSummary(&summary, mapped)
+	require.Equal(t, 1, summary.QuotaSignals)
+}
+
+func TestAccountPoolMapSummaryDoesNotCountGeminiProjectPlaceholderAsQuotaSignal(t *testing.T) {
+	account := AccountPoolMapAccount{
+		AccountWithConcurrency: AccountWithConcurrency{
+			Account: &dto.Account{
+				ID:          43,
+				Name:        "gemini-apikey",
+				Platform:    service.PlatformGemini,
+				Type:        service.AccountTypeAPIKey,
+				Status:      service.StatusActive,
+				Schedulable: true,
+			},
+		},
+		StatusKind:  "healthy",
+		StatusLabel: "健康",
+		APIKeyProbeQuota: &service.APIKeyProbeQuotaSnapshot{
+			Provider:                 service.PlatformGemini,
+			Supported:                false,
+			Source:                   "project_quota",
+			Scope:                    "project",
+			UpdatedAt:                "2026-05-02T10:30:00Z",
+			StatusCode:               200,
+			Model:                    "gemini-2.0-flash",
+			HasRateLimitHeaderSignal: false,
+		},
+	}
+
+	var summary AccountPoolMapSummary
+	accountPoolAddSummary(&summary, account)
+	require.Equal(t, 0, summary.QuotaSignals)
+}
+
+func TestAccountPoolMapSummaryCountsBalanceSignal(t *testing.T) {
+	account := AccountPoolMapAccount{
+		AccountWithConcurrency: AccountWithConcurrency{
+			Account: &dto.Account{
+				ID:          44,
+				Name:        "openrouter-apikey",
+				Platform:    service.PlatformOpenRouter,
+				Type:        service.AccountTypeAPIKey,
+				Status:      service.StatusActive,
+				Schedulable: true,
+			},
+		},
+		StatusKind:  "healthy",
+		StatusLabel: "健康",
+		APIKeyProbeQuota: &service.APIKeyProbeQuotaSnapshot{
+			Provider:         service.PlatformOpenRouter,
+			Supported:        true,
+			Source:           "balance_api",
+			Scope:            "account",
+			UpdatedAt:        "2026-05-02T10:30:00Z",
+			StatusCode:       200,
+			Balance:          "$12.3400 remaining",
+			HasBalanceSignal: true,
+		},
+	}
+
+	var summary AccountPoolMapSummary
+	accountPoolAddSummary(&summary, account)
 	require.Equal(t, 1, summary.QuotaSignals)
 }

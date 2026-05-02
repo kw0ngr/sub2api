@@ -663,7 +663,7 @@ func accountPoolAddSummary(summary *AccountPoolMapSummary, account AccountPoolMa
 	if account.ActiveSessions != nil {
 		summary.ActiveSessions += *account.ActiveSessions
 	}
-	if account.APIKeyProbeQuota != nil {
+	if account.APIKeyProbeQuota != nil && (account.APIKeyProbeQuota.HasRateLimitHeaderSignal || account.APIKeyProbeQuota.HasBalanceSignal) {
 		summary.QuotaSignals++
 	}
 }

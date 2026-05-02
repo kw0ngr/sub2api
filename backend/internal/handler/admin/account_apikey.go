@@ -541,7 +541,7 @@ func filterSupportedAPIKeyAccounts(accounts []*service.Account) []*service.Accou
 			continue
 		}
 		switch account.Platform {
-		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini:
+		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformOpenRouter, service.PlatformDeepSeek:
 			result = append(result, account)
 		}
 	}
@@ -563,9 +563,7 @@ func (h *AccountHandler) loadExistingAPIKeyIndex(ctx context.Context) (map[strin
 			if account.Type != service.AccountTypeAPIKey {
 				continue
 			}
-			switch account.Platform {
-			case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini:
-			default:
+			if !service.SupportedAPIKeyProbePlatform(account.Platform) {
 				continue
 			}
 			accCopy := account
@@ -600,19 +598,37 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 		}
 		total++
 
-		parts := strings.SplitN(line, ",", 3)
-		if len(parts) > 2 {
+		parts := splitRawAPIKeyImportLine(line)
+		if len(parts) == 0 || len(parts) > 3 {
 			results = append(results, RawAPIKeyImportLineResult{
 				Line:  lineNo,
-				Error: "invalid line format, expected key or key,base_url",
+				Error: "invalid line format, expected key, key,base_url, platform,key, or platform,key,base_url",
 			})
 			continue
 		}
 
+		platform := ""
 		key := strings.TrimSpace(parts[0])
 		baseURL := ""
 		if len(parts) == 2 {
-			baseURL = strings.TrimSpace(parts[1])
+			if explicitPlatform, ok := service.NormalizeAPIKeyPlatform(parts[0]); ok {
+				platform = explicitPlatform
+				key = strings.TrimSpace(parts[1])
+			} else {
+				baseURL = strings.TrimSpace(parts[1])
+			}
+		} else if len(parts) == 3 {
+			explicitPlatform, ok := service.NormalizeAPIKeyPlatform(parts[0])
+			if !ok {
+				results = append(results, RawAPIKeyImportLineResult{
+					Line:  lineNo,
+					Error: "invalid platform, expected openai, anthropic, gemini, openrouter, or deepseek",
+				})
+				continue
+			}
+			platform = explicitPlatform
+			key = strings.TrimSpace(parts[1])
+			baseURL = strings.TrimSpace(parts[2])
 		}
 		if key == "" {
 			results = append(results, RawAPIKeyImportLineResult{
@@ -622,12 +638,24 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 			continue
 		}
 
-		platform, ok := service.DetectAPIKeyPlatform(key)
-		if !ok {
+		if platform == "" {
+			var ok bool
+			platform, ok = service.DetectAPIKeyPlatform(key)
+			if !ok {
+				results = append(results, RawAPIKeyImportLineResult{
+					Line:       lineNo,
+					KeyPreview: maskRawAPIKey(key),
+					Error:      "unsupported key format, could not detect platform",
+				})
+				continue
+			}
+		}
+		if !service.SupportedAPIKeyProbePlatform(platform) {
 			results = append(results, RawAPIKeyImportLineResult{
 				Line:       lineNo,
 				KeyPreview: maskRawAPIKey(key),
-				Error:      "unsupported key format, could not detect platform",
+				Platform:   platform,
+				Error:      "unsupported API key platform",
 			})
 			continue
 		}
@@ -641,6 +669,15 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 	}
 
 	return total, lines, results, nil
+}
+
+func splitRawAPIKeyImportLine(line string) []string {
+	rawParts := strings.Split(line, ",")
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		parts = append(parts, strings.TrimSpace(part))
+	}
+	return parts
 }
 
 func buildRawAPIKeyAccountName(platform, key string) string {

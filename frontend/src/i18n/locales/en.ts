@@ -882,7 +882,9 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      openrouter: 'OpenRouter',
+      deepseek: 'DeepSeek'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
@@ -2036,6 +2038,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        openrouter: 'OpenRouter',
+        deepseek: 'DeepSeek',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2576,10 +2580,10 @@ export default {
       dataImportCompletedWithErrors: 'Import completed with errors: account failed {account_failed}, proxy failed {proxy_failed}',
       rawKeyImport: 'Import Raw Keys',
       rawKeyImportTitle: 'Import Raw API Keys',
-      rawKeyImportHint: 'Paste raw API keys and the system will auto-detect OpenAI, Anthropic, and Gemini platforms to create apikey accounts.',
-      rawKeyImportFormatHint: 'Supported formats: one key per line, or key,base_url. Comment lines starting with # or // are ignored. Only OpenAI, Anthropic, and Gemini apikey accounts are supported.',
+      rawKeyImportHint: 'Paste raw API keys and the system will auto-detect OpenAI, Anthropic, Gemini, and OpenRouter. Use deepseek,key for explicit DeepSeek imports.',
+      rawKeyImportFormatHint: 'Supported formats: key, key,base_url, platform,key, or platform,key,base_url. Comment lines starting with # or // are ignored. OpenRouter/DeepSeek balance will be filled by health checks.',
       rawKeyImportLabel: 'Key List',
-      rawKeyImportPlaceholder: 'sk-proj-xxx\nsk-ant-xxx,https://api.anthropic.com\nAIzaSyxxxx,https://generativelanguage.googleapis.com',
+      rawKeyImportPlaceholder: 'sk-proj-xxx\nsk-ant-xxx,https://api.anthropic.com\nAIzaSyxxxx,https://generativelanguage.googleapis.com\nsk-or-v1-xxx\nopenrouter,sk-or-v1-xxx,https://openrouter.ai/api/v1\ndeepseek,sk-xxx',
       rawKeyImportValidateAfterImport: 'Validate imported keys immediately and auto-disable invalid keys',
       rawKeyImportButton: 'Start Import',
       rawKeyImportSubmitting: 'Importing...',
@@ -2662,6 +2666,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        openrouter: 'OpenRouter',
+        deepseek: 'DeepSeek',
       },
       types: {
         oauth: 'OAuth',

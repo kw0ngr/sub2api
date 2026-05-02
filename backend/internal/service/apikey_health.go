@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,10 +40,38 @@ func DetectAPIKeyPlatform(rawKey string) (string, bool) {
 		return PlatformAnthropic, true
 	case strings.HasPrefix(key, "AIza"):
 		return PlatformGemini, true
+	case strings.HasPrefix(strings.ToLower(key), "sk-or-"):
+		return PlatformOpenRouter, true
 	case strings.HasPrefix(strings.ToLower(key), "sk-"):
 		return PlatformOpenAI, true
 	default:
 		return "", false
+	}
+}
+
+func NormalizeAPIKeyPlatform(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case PlatformAnthropic, "claude":
+		return PlatformAnthropic, true
+	case PlatformOpenAI:
+		return PlatformOpenAI, true
+	case PlatformGemini, "google":
+		return PlatformGemini, true
+	case PlatformOpenRouter:
+		return PlatformOpenRouter, true
+	case PlatformDeepSeek:
+		return PlatformDeepSeek, true
+	default:
+		return "", false
+	}
+}
+
+func SupportedAPIKeyProbePlatform(platform string) bool {
+	switch strings.TrimSpace(platform) {
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -53,6 +83,10 @@ func DefaultAPIKeyBaseURL(platform string) string {
 		return "https://api.openai.com"
 	case PlatformGemini:
 		return "https://generativelanguage.googleapis.com"
+	case PlatformOpenRouter:
+		return "https://openrouter.ai/api/v1"
+	case PlatformDeepSeek:
+		return "https://api.deepseek.com"
 	default:
 		return ""
 	}
@@ -262,6 +296,19 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			}
 			return APIKeyStatusActionTemporaryCooldown
 		}
+	case PlatformOpenRouter, PlatformDeepSeek:
+		switch statusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return APIKeyStatusActionPermanentDisable
+		case http.StatusPaymentRequired, http.StatusTooManyRequests:
+			return APIKeyStatusActionTemporaryCooldown
+		case http.StatusBadRequest:
+			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error") ||
+				containsAny(msg, "invalid api key", "incorrect api key", "no api key provided", "authentication failed", "invalid token") {
+				return APIKeyStatusActionPermanentDisable
+			}
+			return APIKeyStatusActionTemporaryCooldown
+		}
 	}
 
 	// All other non-200 status codes (404, 405, 422, etc.) that are not explicitly handled above:
@@ -288,7 +335,7 @@ func ClassifyAPIKeyProbeResponse(account *Account, statusCode int, responseBody 
 	message = sanitizeUpstreamErrorMessage(message)
 
 	switch account.Platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek:
 		switch ClassifyAPIKeyStatusAction(account, statusCode, responseBody) {
 		case APIKeyStatusActionValid:
 			return true, false, false, message
@@ -317,6 +364,12 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 	if s == nil || s.httpUpstream == nil {
 		return nil, fmt.Errorf("account test service is not configured")
 	}
+	switch account.Platform {
+	case PlatformOpenRouter:
+		return s.checkOpenRouterAPIKey(ctx, account)
+	case PlatformDeepSeek:
+		return s.checkDeepSeekAPIKey(ctx, account)
+	}
 
 	// Run the same real chat completions test used by single-account "test connection".
 	// Account state (SetError, SetSchedulable, SetTempUnschedulable, etc.) is written
@@ -334,6 +387,263 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 	}
 
 	return buildAPIKeyHealthCheckResultFromScheduledResult(resultAccount, result), nil
+}
+
+func (s *AccountTestService) checkOpenRouterAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
+	baseURL := openRouterProbeBaseURL(account.GetCredential("base_url"))
+
+	statusCode, body, err := s.getAPIKeyProbe(ctx, account, baseURL+"/credits", map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
+		"Accept":        "application/json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if statusCode == http.StatusOK {
+		balance, total, used, remaining := parseOpenRouterCredits(body)
+		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformOpenRouter, statusCode, balance, total, used, remaining, "", time.Now())
+		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
+		return &APIKeyHealthCheckResult{
+			Platform:   PlatformOpenRouter,
+			StatusCode: statusCode,
+			Valid:      true,
+			Message:    balanceMessage(balance),
+			ProbeQuota: snapshot,
+		}, nil
+	}
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, body), nil
+	}
+
+	// Some OpenRouter keys cannot access /credits but can still be used for inference.
+	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformOpenRouter, baseURL+"/models")
+}
+
+func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
+	baseURL := deepSeekProbeBaseURL(account.GetCredential("base_url"))
+
+	statusCode, body, err := s.getAPIKeyProbe(ctx, account, baseURL+"/user/balance", map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
+		"Accept":        "application/json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if statusCode == http.StatusOK {
+		balance, currency := parseDeepSeekBalance(body)
+		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformDeepSeek, statusCode, balance, "", "", "", currency, time.Now())
+		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
+		return &APIKeyHealthCheckResult{
+			Platform:   PlatformDeepSeek,
+			StatusCode: statusCode,
+			Valid:      true,
+			Message:    balanceMessage(balance),
+			ProbeQuota: snapshot,
+		}, nil
+	}
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, body), nil
+	}
+
+	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformDeepSeek, baseURL+"/models")
+}
+
+func (s *AccountTestService) checkAPIKeyModelsEndpoint(ctx context.Context, account *Account, platform, endpoint string) (*APIKeyHealthCheckResult, error) {
+	statusCode, body, err := s.getAPIKeyProbe(ctx, account, endpoint, map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
+		"Accept":        "application/json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	health := buildAPIKeyHealthCheckResultFromProbe(account, statusCode, body)
+	health.Platform = platform
+	if health.Valid && strings.TrimSpace(health.Message) == "" {
+		health.Message = "models endpoint available"
+	}
+	return health, nil
+}
+
+func (s *AccountTestService) getAPIKeyProbe(ctx context.Context, account *Account, endpoint string, headers map[string]string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	for key, value := range headers {
+		if strings.TrimSpace(value) != "" {
+			req.Header.Set(key, value)
+		}
+	}
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	var resp *http.Response
+	if s.tlsFPProfileService != nil {
+		resp, err = s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	} else {
+		resp, err = s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	if resp == nil {
+		return 0, nil, fmt.Errorf("empty probe response")
+	}
+	if resp.Body == nil {
+		return resp.StatusCode, nil, nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, body, nil
+}
+
+func (s *AccountTestService) persistAPIKeyProbeQuotaSnapshot(ctx context.Context, account *Account, snapshot *APIKeyProbeQuotaSnapshot) {
+	if s == nil || s.accountRepo == nil || account == nil || snapshot == nil {
+		return
+	}
+	updates := BuildAPIKeyProbeQuotaExtraUpdates(snapshot)
+	if len(updates) == 0 {
+		return
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err == nil {
+		mergeAccountExtra(account, updates)
+	}
+}
+
+func buildAPIKeyHealthCheckResultFromProbe(account *Account, statusCode int, body []byte) *APIKeyHealthCheckResult {
+	valid, invalid, _, message := ClassifyAPIKeyProbeResponse(account, statusCode, body)
+	return &APIKeyHealthCheckResult{
+		Platform:   account.Platform,
+		StatusCode: statusCode,
+		Valid:      valid,
+		Invalid:    invalid,
+		Message:    message,
+	}
+}
+
+func openRouterProbeBaseURL(raw string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if baseURL == "" || baseURL == "https://openrouter.ai" {
+		return "https://openrouter.ai/api/v1"
+	}
+	if strings.HasSuffix(baseURL, "/api") {
+		return baseURL + "/v1"
+	}
+	return baseURL
+}
+
+func deepSeekProbeBaseURL(raw string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if baseURL == "" {
+		return "https://api.deepseek.com"
+	}
+	if strings.HasSuffix(baseURL, "/v1") && strings.Contains(baseURL, "api.deepseek.com") {
+		return strings.TrimSuffix(baseURL, "/v1")
+	}
+	return baseURL
+}
+
+func parseOpenRouterCredits(body []byte) (balance, total, used, remaining string) {
+	var payload struct {
+		Data struct {
+			TotalCredits any `json:"total_credits"`
+			TotalUsage   any `json:"total_usage"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "available", "", "", ""
+	}
+	total = apiKeyProbeNumberString(payload.Data.TotalCredits)
+	used = apiKeyProbeNumberString(payload.Data.TotalUsage)
+	totalFloat, totalOK := apiKeyProbeFloat(payload.Data.TotalCredits)
+	usedFloat, usedOK := apiKeyProbeFloat(payload.Data.TotalUsage)
+	if totalOK && usedOK {
+		remaining = strconv.FormatFloat(totalFloat-usedFloat, 'f', 4, 64)
+		balance = "$" + remaining + " remaining"
+		return balance, total, used, remaining
+	}
+	if total != "" {
+		balance = "$" + total + " total"
+		return balance, total, used, remaining
+	}
+	return "available", total, used, remaining
+}
+
+func parseDeepSeekBalance(body []byte) (balance, currency string) {
+	var payload struct {
+		BalanceInfos []struct {
+			TotalBalance any    `json:"total_balance"`
+			Currency     string `json:"currency"`
+		} `json:"balance_infos"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "available", ""
+	}
+	parts := make([]string, 0, len(payload.BalanceInfos))
+	currencies := make([]string, 0, len(payload.BalanceInfos))
+	for _, info := range payload.BalanceInfos {
+		amount := apiKeyProbeNumberString(info.TotalBalance)
+		if amount == "" {
+			amount = "?"
+		}
+		cur := strings.TrimSpace(info.Currency)
+		if cur != "" {
+			currencies = append(currencies, cur)
+		}
+		parts = append(parts, strings.TrimSpace(amount+" "+cur))
+	}
+	if len(parts) == 0 {
+		return "available", ""
+	}
+	return strings.Join(parts, "; "), strings.Join(currencies, ";")
+}
+
+func apiKeyProbeNumberString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return typed.String()
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func apiKeyProbeFloat(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return parsed, err == nil
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func balanceMessage(balance string) string {
+	if strings.TrimSpace(balance) == "" {
+		return "balance available"
+	}
+	return "balance: " + strings.TrimSpace(balance)
 }
 
 func buildAPIKeyHealthCheckResultFromScheduledResult(account *Account, result *ScheduledTestResult) *APIKeyHealthCheckResult {

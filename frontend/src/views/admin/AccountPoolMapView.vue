@@ -33,6 +33,14 @@
             <button
               type="button"
               class="account-map-secondary-button"
+              :disabled="checkingHealth || loading"
+              @click="runHealthCheck"
+            >
+              {{ checkingHealth ? '巡检中...' : '健康检测' }}
+            </button>
+            <button
+              type="button"
+              class="account-map-secondary-button"
               @click="refresh"
             >
               {{ loading ? '刷新中...' : '刷新地图' }}
@@ -64,7 +72,7 @@
         </div>
       </section>
 
-      <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div class="account-map-main-column">
         <div class="account-map-filter-card">
           <div class="account-map-filter-header">
@@ -239,74 +247,97 @@
       <aside class="account-map-detail-rail">
         <section ref="inspectorPanel" class="account-map-inspector" aria-live="polite">
           <template v-if="selectedAccount">
-            <div class="inspector-heading">
-              <div class="min-w-0">
-                <p class="inspector-kicker">账号详情</p>
-                <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
-                <p class="inspector-subtitle">
-                  {{ platformLabel(selectedAccount.platform) }} · {{ accountTypeLabel(selectedAccount.type) }}
-                </p>
-              </div>
+            <div class="inspector-profile-card">
               <button type="button" class="inspector-close" aria-label="取消选择账号" @click="clearSelection">
                 ×
               </button>
-            </div>
-
-            <div class="inspector-status-card" :class="`inspector-status-${statusKind(selectedAccount)}`">
-              <div>
-                <span class="inspector-status-label">当前状态</span>
-                <strong>{{ statusLabel(selectedAccount) }}</strong>
-                <p>{{ selectedAccount.status_reason || selectedAccount.temp_unschedulable_reason || selectedAccount.error_message || '该账号当前可按调度策略参与路由。' }}</p>
+              <p class="inspector-kicker">账号详情</p>
+              <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
+              <div class="inspector-profile-meta">
+                <span>{{ platformLabel(selectedAccount.platform) }}</span>
+                <span>{{ accountTypeLabel(selectedAccount.type) }}</span>
+                <span>{{ selectedPoolPeerCount + 1 }} 个同池账号</span>
               </div>
-              <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusBadgeClass(selectedAccount)">
-                {{ selectedAccount.schedulable ? '可调度' : '不可调度' }}
-              </span>
+
+              <div class="inspector-status-card" :class="`inspector-status-${statusKind(selectedAccount)}`">
+                <div>
+                  <span class="inspector-status-label">调度判断</span>
+                  <strong>{{ statusLabel(selectedAccount) }}</strong>
+                  <p>{{ selectedAccount.status_reason || selectedAccount.temp_unschedulable_reason || selectedAccount.error_message || '当前可按调度策略参与路由。' }}</p>
+                </div>
+                <span class="inspector-status-pill" :class="statusBadgeClass(selectedAccount)">
+                  {{ selectedAccount.schedulable ? '可调度' : '暂停' }}
+                </span>
+              </div>
             </div>
 
-            <div class="inspector-metric-grid">
-              <MetricTile label="可调度" :value="selectedAccount.schedulable ? '是' : '否'" />
-              <MetricTile label="当前并发" :value="String(selectedAccount.current_concurrency ?? 0)" />
-              <MetricTile label="当前 RPM" :value="String(selectedAccount.current_rpm ?? 0)" />
-              <MetricTile label="活跃会话" :value="String(selectedAccount.active_sessions ?? 0)" />
-              <MetricTile label="额度信号" :value="quotaBrief(selectedAccount) || '未采集'" />
+            <div class="inspector-snapshot-grid">
+              <MetricTile label="并发" :value="String(selectedAccount.current_concurrency ?? 0)" />
+              <MetricTile label="RPM" :value="String(selectedAccount.current_rpm ?? 0)" />
+              <MetricTile label="会话" :value="String(selectedAccount.active_sessions ?? 0)" />
+              <MetricTile label="额度" :value="quotaBrief(selectedAccount) || '未探测'" />
             </div>
 
-            <div v-if="quotaSnapshot(selectedAccount)" class="inspector-section inspector-quota-section">
+            <div class="inspector-section inspector-quota-section" :class="quotaPanelClass(quotaSnapshot(selectedAccount))">
               <div class="inspector-section-title">
-                <h3>上游额度 / 限流信号</h3>
+                <div>
+                  <h3>额度探测</h3>
+                  <p>{{ quotaSummaryText(quotaSnapshot(selectedAccount)) }}</p>
+                </div>
                 <span>{{ quotaUpdatedText(quotaSnapshot(selectedAccount)) }}</span>
               </div>
-              <InspectorRow label="来源" :value="quotaSourceLabel(quotaSnapshot(selectedAccount))" />
-              <InspectorRow label="探测模型" :value="quotaSnapshot(selectedAccount)?.model || '-'" />
-              <InspectorRow label="Token 剩余" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.tokens_remaining, quotaSnapshot(selectedAccount)?.tokens_limit)" />
-              <InspectorRow label="输入 Token" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.input_tokens_remaining, quotaSnapshot(selectedAccount)?.input_tokens_limit)" />
-              <InspectorRow label="输出 Token" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.output_tokens_remaining, quotaSnapshot(selectedAccount)?.output_tokens_limit)" />
-              <InspectorRow label="请求剩余" :value="formatQuotaPair(quotaSnapshot(selectedAccount)?.requests_remaining, quotaSnapshot(selectedAccount)?.requests_limit)" />
-              <InspectorRow label="重置/重试" :value="quotaResetText(quotaSnapshot(selectedAccount))" />
-              <p v-if="quotaSnapshot(selectedAccount)?.note" class="inspector-quota-note">
-                {{ quotaSnapshot(selectedAccount)?.note }}
-              </p>
+
+              <div v-if="quotaStatItems(quotaSnapshot(selectedAccount)).length" class="quota-stat-grid">
+                <div
+                  v-for="item in quotaStatItems(quotaSnapshot(selectedAccount))"
+                  :key="item.label"
+                  class="quota-stat-card"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                  <small>{{ item.hint }}</small>
+                </div>
+              </div>
+              <div v-else class="quota-empty-state">
+                <span>{{ quotaCapabilityLabel(quotaSnapshot(selectedAccount)) }}</span>
+                <strong>{{ quotaEmptyTitle(quotaSnapshot(selectedAccount)) }}</strong>
+                <p>{{ quotaGuidance(quotaSnapshot(selectedAccount)) }}</p>
+              </div>
+
+              <div v-if="quotaDetailRows(quotaSnapshot(selectedAccount)).length" class="quota-fact-list">
+                <InspectorRow
+                  v-for="row in quotaDetailRows(quotaSnapshot(selectedAccount))"
+                  :key="row.label"
+                  :label="row.label"
+                  :value="row.value"
+                />
+              </div>
             </div>
 
-            <div class="inspector-section">
-              <div class="inspector-section-title">
-                <h3>池与路由</h3>
-                <span>{{ selectedPoolLabel }}</span>
+            <div class="inspector-section-grid">
+              <div class="inspector-section">
+                <div class="inspector-section-title">
+                  <div>
+                    <h3>池与路由</h3>
+                    <p>{{ selectedPoolLabel }}</p>
+                  </div>
+                </div>
+                <InspectorRow label="分组" :value="groupNames(selectedAccount)" />
+                <InspectorRow label="代理" :value="selectedAccount.proxy?.name || '未绑定'" />
+                <InspectorRow label="同池账号" :value="`${selectedPoolPeerCount} 个`" />
               </div>
-              <InspectorRow label="所在泳道" :value="selectedPoolLabel" />
-              <InspectorRow label="分组" :value="groupNames(selectedAccount)" />
-              <InspectorRow label="代理" :value="selectedAccount.proxy?.name || '未绑定'" />
-              <InspectorRow label="同池账号" :value="`${selectedPoolPeerCount} 个`" />
-            </div>
 
-            <div class="inspector-section">
-              <div class="inspector-section-title">
-                <h3>客户端策略</h3>
-                <span>HTTP / TLS</span>
+              <div class="inspector-section">
+                <div class="inspector-section-title">
+                  <div>
+                    <h3>客户端策略</h3>
+                    <p>HTTP / TLS</p>
+                  </div>
+                </div>
+                <InspectorRow label="TLS 指纹" :value="selectedAccount.enable_tls_fingerprint ? `已启用 #${selectedAccount.tls_fingerprint_profile_id || '-'}` : '未启用'" />
+                <InspectorRow label="缓存 TTL" :value="selectedAccount.cache_ttl_override_enabled ? `强制 ${selectedAccount.cache_ttl_override_target || '-'}` : '按上游返回'" />
+                <InspectorRow label="最近使用" :value="formatDate(selectedAccount.last_used_at)" />
               </div>
-              <InspectorRow label="TLS 指纹" :value="selectedAccount.enable_tls_fingerprint ? `已启用 #${selectedAccount.tls_fingerprint_profile_id || '-'}` : '未启用'" />
-              <InspectorRow label="缓存 TTL" :value="selectedAccount.cache_ttl_override_enabled ? `强制 ${selectedAccount.cache_ttl_override_target || '-'}` : '按上游返回'" />
-              <InspectorRow label="最近使用" :value="formatDate(selectedAccount.last_used_at)" />
             </div>
 
             <div v-if="selectedAccount.error_message || selectedAccount.temp_unschedulable_reason" class="inspector-alert">
@@ -402,6 +433,8 @@ import type {
 type ViewMode = 'status' | 'traffic' | 'error'
 type AccountStatusKind = AccountPoolMapStatusKind
 type AccountPool = AccountPoolMapPool
+type DetailRow = { label: string; value: string }
+type QuotaStatItem = { label: string; value: string; hint: string }
 
 const MetricTile = defineComponent({
   props: {
@@ -441,7 +474,9 @@ const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
 const inspectorPanel = ref<HTMLElement | null>(null)
 const expandedPoolKeys = ref<Set<string>>(new Set())
+const checkingHealth = ref(false)
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let healthPollTimer: ReturnType<typeof setTimeout> | null = null
 let refreshSeq = 0
 const POOL_PREVIEW_LIMIT = 12
 
@@ -624,6 +659,8 @@ function platformLabel(platform: string): string {
     openai: 'OpenAI',
     gemini: 'Gemini',
     antigravity: 'Antigravity',
+    openrouter: 'OpenRouter',
+    deepseek: 'DeepSeek',
     bedrock: 'Bedrock'
   }
   return labels[platform] || platform || 'Unknown'
@@ -662,7 +699,7 @@ function poolFingerprintCount(pool: AccountPool): string {
 }
 
 function poolQuotaSignalCount(pool: AccountPool): number {
-  return pool.summary?.quota_signals ?? pool.accounts.filter((item) => quotaSnapshot(item)).length
+  return pool.summary?.quota_signals ?? pool.accounts.filter((item) => quotaHasAnySignal(quotaSnapshot(item))).length
 }
 
 function quotaSnapshot(account: Account | AccountPoolMapAccount | null | undefined): APIKeyProbeQuotaSnapshot | null {
@@ -681,6 +718,7 @@ function normalizeProbeQuota(raw: unknown): APIKeyProbeQuotaSnapshot | null {
     provider,
     supported: booleanValue(payload.supported),
     source: stringValue(payload.source) || '',
+    scope: stringValue(payload.scope),
     updated_at: stringValue(payload.updated_at) || '',
     status_code: numberValue(payload.status_code),
     model: stringValue(payload.model),
@@ -699,8 +737,14 @@ function normalizeProbeQuota(raw: unknown): APIKeyProbeQuotaSnapshot | null {
     retry_after: stringValue(payload.retry_after),
     rate_limit_policy: stringValue(payload.rate_limit_policy),
     quota_project: stringValue(payload.quota_project),
+    balance: stringValue(payload.balance),
+    credits_total: stringValue(payload.credits_total),
+    credits_used: stringValue(payload.credits_used),
+    credits_remaining: stringValue(payload.credits_remaining),
+    currency: stringValue(payload.currency),
     note: stringValue(payload.note),
-    has_rate_limit_header_signal: booleanValue(payload.has_rate_limit_header_signal)
+    has_rate_limit_header_signal: booleanValue(payload.has_rate_limit_header_signal),
+    has_balance_signal: booleanValue(payload.has_balance_signal)
   }
 }
 
@@ -734,15 +778,36 @@ function quotaHasHeaderSignal(snapshot: APIKeyProbeQuotaSnapshot | null): boolea
     snapshot.tokens_reset ||
     snapshot.input_tokens_limit ||
     snapshot.input_tokens_remaining ||
+    snapshot.input_tokens_reset ||
     snapshot.output_tokens_limit ||
     snapshot.output_tokens_remaining ||
+    snapshot.output_tokens_reset ||
+    snapshot.rate_limit_policy ||
     snapshot.retry_after
   )
+}
+
+function quotaHasBalanceSignal(snapshot: APIKeyProbeQuotaSnapshot | null): boolean {
+  if (!snapshot) return false
+  return Boolean(
+    snapshot.has_balance_signal ||
+    snapshot.balance ||
+    snapshot.credits_remaining ||
+    snapshot.credits_total ||
+    snapshot.credits_used ||
+    snapshot.currency
+  )
+}
+
+function quotaHasAnySignal(snapshot: APIKeyProbeQuotaSnapshot | null): boolean {
+  return quotaHasHeaderSignal(snapshot) || quotaHasBalanceSignal(snapshot)
 }
 
 function quotaBrief(account: Account | AccountPoolMapAccount | null | undefined): string {
   const snapshot = quotaSnapshot(account)
   if (!snapshot) return ''
+  if (snapshot.balance) return `余额 ${snapshot.balance}`
+  if (snapshot.credits_remaining) return `余额 $${snapshot.credits_remaining}`
   if (snapshot.tokens_remaining || snapshot.tokens_limit) {
     return `Token ${formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit)}`
   }
@@ -755,16 +820,71 @@ function quotaBrief(account: Account | AccountPoolMapAccount | null | undefined)
     return `请求 ${formatQuotaPair(snapshot.requests_remaining, snapshot.requests_limit)}`
   }
   if (!snapshot.supported && snapshot.provider === 'gemini') return '项目级额度'
-  if (!quotaHasHeaderSignal(snapshot)) return '未返回额度头'
+  if (!quotaHasAnySignal(snapshot)) return '未返回额度'
   return '已采集额度'
 }
 
 function quotaSourceLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '未采集'
   if (snapshot.source === 'headers') return '响应头采集'
+  if (snapshot.source === 'balance_api') return '余额接口'
+  if (snapshot.source === 'missing_balance') return '余额未返回'
   if (snapshot.source === 'missing_headers') return '响应头未返回'
   if (snapshot.source === 'project_quota') return '项目级额度'
   return snapshot.source || '探测记录'
+}
+
+function quotaScopeLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '未采集'
+  if (snapshot.scope === 'account') return '账号余额'
+  if (snapshot.scope === 'project') return 'Project'
+  if (snapshot.scope === 'response_headers') return '响应头'
+  return snapshot.scope || '上游'
+}
+
+function quotaCapabilityLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '尚未探测'
+  if (quotaHasBalanceSignal(snapshot)) return '已查询余额'
+  if (quotaHasHeaderSignal(snapshot)) return '已捕获响应头'
+  if (snapshot.provider === 'gemini') return '项目级限额'
+  return '无实时额度头'
+}
+
+function quotaEmptyTitle(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '等待健康检查'
+  if (snapshot.provider === 'gemini') return 'Gemini 未返回每 Key 剩余额度'
+  if (snapshot.source === 'missing_balance') return '余额接口未返回明细'
+  return '上游未返回可读额度'
+}
+
+function quotaGuidance(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '运行一次 API Key 健康检查后，这里会显示最近一次真实上游探测结果。'
+  if (quotaHasBalanceSignal(snapshot)) return '已通过上游余额接口获取可读余额，可用于账号池地图判断剩余额度。'
+  if (snapshot.provider === 'gemini' && !quotaHasHeaderSignal(snapshot)) {
+    return 'Gemini API 的限额主要按 Google Cloud Project 与模型维度管控。当前探测请求已记录，但本次响应没有可读的剩余请求或剩余 Token 响应头。'
+  }
+  if (!quotaHasHeaderSignal(snapshot)) {
+    return '本次探测已完成，但上游没有返回 rate-limit header；后续健康检查如果捕获到响应头会自动补齐。'
+  }
+  return '已从最近一次真实上游响应中捕获 rate-limit header。'
+}
+
+function quotaSummaryText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return '运行健康检查后显示上游返回的额度信号。'
+  const source = quotaSourceLabel(snapshot)
+  const scope = quotaScopeLabel(snapshot)
+  if (quotaHasBalanceSignal(snapshot)) return `${source} · ${scope}`
+  if (quotaHasHeaderSignal(snapshot)) return `${source} · ${scope} · ${snapshot.model || '未记录模型'}`
+  if (snapshot.provider === 'gemini') return `Gemini ${scope} 级探测 · 无每 Key 剩余量`
+  return `${source} · ${snapshot.model || '未记录模型'}`
+}
+
+function quotaPanelClass(snapshot: APIKeyProbeQuotaSnapshot | null): string {
+  if (!snapshot) return 'quota-panel-missing'
+  if (quotaHasBalanceSignal(snapshot)) return 'quota-panel-balance'
+  if (quotaHasHeaderSignal(snapshot)) return 'quota-panel-live'
+  if (snapshot.provider === 'gemini') return 'quota-panel-project'
+  return 'quota-panel-muted'
 }
 
 function quotaUpdatedText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
@@ -782,6 +902,74 @@ function formatQuotaPair(remaining?: string, limit?: string): string {
 function quotaResetText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '-'
   return snapshot.tokens_reset || snapshot.input_tokens_reset || snapshot.output_tokens_reset || snapshot.requests_reset || snapshot.retry_after || '-'
+}
+
+function quotaStatItems(snapshot: APIKeyProbeQuotaSnapshot | null): QuotaStatItem[] {
+  if (!snapshot) return []
+  const items: QuotaStatItem[] = []
+  if (snapshot.balance || snapshot.credits_remaining) {
+    items.push({
+      label: '余额',
+      value: snapshot.balance || `$${snapshot.credits_remaining}`,
+      hint: snapshot.provider === 'openrouter' ? 'OpenRouter credits' : '账户余额'
+    })
+  }
+  if (snapshot.credits_total || snapshot.credits_used) {
+    items.push({
+      label: 'Credits',
+      value: formatQuotaPair(snapshot.credits_remaining, snapshot.credits_total),
+      hint: snapshot.credits_used ? `已用 ${snapshot.credits_used}` : 'OpenRouter credit 窗口'
+    })
+  }
+  if (snapshot.tokens_remaining || snapshot.tokens_limit) {
+    items.push({
+      label: 'Token',
+      value: formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit),
+      hint: snapshot.tokens_reset ? `重置 ${snapshot.tokens_reset}` : '总 Token 窗口'
+    })
+  }
+  if (snapshot.requests_remaining || snapshot.requests_limit) {
+    items.push({
+      label: '请求',
+      value: formatQuotaPair(snapshot.requests_remaining, snapshot.requests_limit),
+      hint: snapshot.requests_reset ? `重置 ${snapshot.requests_reset}` : '请求窗口'
+    })
+  }
+  if (snapshot.input_tokens_remaining || snapshot.input_tokens_limit) {
+    items.push({
+      label: '输入',
+      value: formatQuotaPair(snapshot.input_tokens_remaining, snapshot.input_tokens_limit),
+      hint: snapshot.input_tokens_reset ? `重置 ${snapshot.input_tokens_reset}` : '输入 Token'
+    })
+  }
+  if (snapshot.output_tokens_remaining || snapshot.output_tokens_limit) {
+    items.push({
+      label: '输出',
+      value: formatQuotaPair(snapshot.output_tokens_remaining, snapshot.output_tokens_limit),
+      hint: snapshot.output_tokens_reset ? `重置 ${snapshot.output_tokens_reset}` : '输出 Token'
+    })
+  }
+  return items
+}
+
+function quotaDetailRows(snapshot: APIKeyProbeQuotaSnapshot | null): DetailRow[] {
+  if (!snapshot) return []
+  const rows: DetailRow[] = [
+    { label: '来源', value: quotaSourceLabel(snapshot) },
+    { label: '范围', value: quotaScopeLabel(snapshot) }
+  ]
+  if (snapshot.model) rows.push({ label: '模型', value: snapshot.model })
+  if (snapshot.status_code) rows.push({ label: '状态码', value: String(snapshot.status_code) })
+  if (snapshot.quota_project) rows.push({ label: 'Quota Project', value: snapshot.quota_project })
+  if (snapshot.balance) rows.push({ label: '余额', value: snapshot.balance })
+  if (snapshot.currency) rows.push({ label: '币种', value: snapshot.currency })
+  if (snapshot.credits_total) rows.push({ label: 'Credits 总量', value: snapshot.credits_total })
+  if (snapshot.credits_used) rows.push({ label: 'Credits 已用', value: snapshot.credits_used })
+  if (snapshot.credits_remaining) rows.push({ label: 'Credits 剩余', value: snapshot.credits_remaining })
+  if (snapshot.rate_limit_policy) rows.push({ label: '策略', value: snapshot.rate_limit_policy })
+  const reset = quotaResetText(snapshot)
+  if (reset !== '-') rows.push({ label: '重置/重试', value: reset })
+  return rows
 }
 
 function visiblePoolAccounts(pool: AccountPool): AccountPoolMapAccount[] {
@@ -866,6 +1054,60 @@ async function refresh() {
     if (seq === refreshSeq) {
       loading.value = false
     }
+  }
+}
+
+function clearHealthPollTimer() {
+  if (healthPollTimer) {
+    clearTimeout(healthPollTimer)
+    healthPollTimer = null
+  }
+}
+
+async function runHealthCheck() {
+  if (checkingHealth.value) return
+  checkingHealth.value = true
+  clearHealthPollTimer()
+  try {
+    const started = await adminAPI.accounts.startAPIKeysHealthCheck()
+    errorMessage.value = `健康检测已启动：${started.total} 个原始 Key 账号`
+    await pollHealthCheckStatus()
+  } catch (error) {
+    checkingHealth.value = false
+    errorMessage.value = normalizeError(error) || '健康检测启动失败。'
+  }
+}
+
+async function pollHealthCheckStatus() {
+  try {
+    const status = await adminAPI.accounts.getAPIKeysHealthStatus()
+    if (status.status === 'running') {
+      const checked = status.result?.checked ?? 0
+      const total = status.result?.total ?? 0
+      errorMessage.value = total > 0 ? `健康检测中：${checked}/${total}` : '健康检测中...'
+      healthPollTimer = setTimeout(() => {
+        void pollHealthCheckStatus()
+      }, 1500)
+      return
+    }
+
+    checkingHealth.value = false
+    clearHealthPollTimer()
+    if (status.status === 'completed') {
+      const result = status.result
+      errorMessage.value = result
+        ? `健康检测完成：有效 ${result.valid}，禁用 ${result.invalid_disabled}，失败 ${result.failed}`
+        : '健康检测完成。'
+      await refresh()
+      return
+    }
+    if (status.status === 'failed') {
+      errorMessage.value = status.error || '健康检测失败。'
+    }
+  } catch (error) {
+    checkingHealth.value = false
+    clearHealthPollTimer()
+    errorMessage.value = normalizeError(error) || '健康检测状态获取失败。'
   }
 }
 
@@ -985,7 +1227,7 @@ function incrementSummary(summary: AccountPoolMapSummary, account: AccountPoolMa
   summary.rpm += account.current_rpm || 0
   summary.concurrency += account.current_concurrency || 0
   summary.active_sessions += account.active_sessions || 0
-  if (quotaSnapshot(account)) summary.quota_signals += 1
+  if (quotaHasAnySignal(quotaSnapshot(account))) summary.quota_signals += 1
 }
 
 function mergeKnownPlatforms(items: AccountPoolMapAccount[]) {
@@ -1037,6 +1279,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (refreshTimer) clearTimeout(refreshTimer)
+  clearHealthPollTimer()
 })
 </script>
 
@@ -1066,10 +1309,24 @@ onUnmounted(() => {
   --account-map-ink: rgb(248 250 252);
   --account-map-muted: rgb(148 163 184);
   --account-map-faint: rgb(100 116 139);
-  --account-map-surface: rgb(15 23 42 / 0.84);
-  --account-map-subtle: rgb(15 23 42 / 0.58);
-  --account-map-soft: rgb(30 41 59 / 0.72);
+  --account-map-surface: rgb(15 23 42 / 0.94);
+  --account-map-subtle: rgb(30 41 59 / 0.7);
+  --account-map-soft: rgb(30 41 59 / 0.82);
   --account-map-shadow: none;
+}
+
+:global(.dark) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+  border-color: rgb(51 65 85);
+  background: var(--account-map-surface);
+  color: var(--account-map-ink);
+}
+
+:global(.dark) .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-lane p, .account-node-meta, .account-map-meta) {
+  color: var(--account-map-muted);
+}
+
+:global(.dark) .account-map-page :is(.account-map-stat-card strong, .account-pool-lane h2, .account-node p:first-child, .inspector-title) {
+  color: var(--account-map-ink);
 }
 
 .account-map-toolbar,
@@ -1442,6 +1699,12 @@ onUnmounted(() => {
   color: var(--account-map-accent-strong);
 }
 
+.account-map-primary-button:disabled,
+.account-map-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 :global(.dark) .account-map-secondary-button {
   border-color: var(--account-map-border);
   color: var(--account-map-ink);
@@ -1461,6 +1724,41 @@ onUnmounted(() => {
   top: 5.5rem;
   overflow: hidden;
   border-radius: 1.15rem;
+}
+
+.inspector-profile-card {
+  position: relative;
+  border-bottom: 1px solid var(--account-map-border);
+  padding: 1.05rem;
+}
+
+.inspector-profile-card .inspector-close {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+
+.inspector-profile-card > .inspector-kicker,
+.inspector-profile-card > .inspector-title,
+.inspector-profile-card > .inspector-profile-meta {
+  padding-right: 2.75rem;
+}
+
+.inspector-profile-meta {
+  margin-top: 0.65rem;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.inspector-profile-meta span {
+  border-radius: 999px;
+  background: var(--account-map-soft);
+  padding: 0.24rem 0.5rem;
+  color: var(--account-map-muted);
+  font-size: 0.7rem;
+  font-weight: 750;
 }
 
 .inspector-heading,
@@ -1555,7 +1853,7 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin: 1rem;
+  margin-top: 0.95rem;
   border-radius: 0.9rem;
   border: 1px solid var(--account-map-border-strong);
   padding: 0.85rem;
@@ -1590,6 +1888,14 @@ onUnmounted(() => {
   font-size: 0.78rem;
   line-height: 1.45;
   color: rgb(107 114 128);
+}
+
+.inspector-status-pill {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.34rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 :global(.dark) .inspector-status-card {
@@ -1657,11 +1963,16 @@ onUnmounted(() => {
 }
 
 .inspector-metric-grid,
-.inspector-overview-grid {
+.inspector-overview-grid,
+.inspector-snapshot-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
   padding: 0 1rem 1rem;
+}
+
+.inspector-snapshot-grid {
+  padding-top: 1rem;
 }
 
 .inspector-overview-grid {
@@ -1700,35 +2011,39 @@ onUnmounted(() => {
   padding: 0.9rem;
 }
 
+.inspector-section-grid {
+  display: grid;
+  gap: 0;
+}
+
 .inspector-quota-section {
-  background:
-    radial-gradient(circle at 0% 0%, rgb(14 165 233 / 0.12), transparent 36%),
-    var(--account-map-subtle);
+  overflow: hidden;
+  background: var(--account-map-subtle);
 }
 
-.inspector-quota-note {
-  margin-top: 0.75rem;
-  border-radius: 0.75rem;
-  background: rgb(255 251 235);
-  padding: 0.65rem 0.75rem;
-  color: rgb(146 64 14);
-  font-size: 0.76rem;
-  line-height: 1.45;
+.quota-panel-live {
+  border-color: rgb(14 165 233 / 0.28);
+  background: linear-gradient(135deg, rgb(240 249 255), rgb(255 255 255));
 }
 
-:global(.dark) .inspector-section {
-  border-color: rgb(55 65 81 / 0.7);
-  background: rgb(17 24 39 / 0.36);
+.quota-panel-balance {
+  border-color: rgb(16 185 129 / 0.3);
+  background: linear-gradient(135deg, rgb(236 253 245), rgb(255 255 255));
 }
 
-:global(.dark) .inspector-quota-note {
-  background: rgb(120 53 15 / 0.28);
-  color: rgb(253 230 138);
+.quota-panel-project {
+  border-color: rgb(251 191 36 / 0.32);
+  background: linear-gradient(135deg, rgb(255 251 235), rgb(255 255 255));
+}
+
+.quota-panel-muted,
+.quota-panel-missing {
+  border-color: var(--account-map-border);
 }
 
 .inspector-section-title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.8rem;
@@ -1738,6 +2053,13 @@ onUnmounted(() => {
   font-size: 0.9rem;
   font-weight: 800;
   color: var(--account-map-ink);
+}
+
+.inspector-section-title p {
+  margin-top: 0.24rem;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .inspector-section-title span {
@@ -1755,8 +2077,107 @@ onUnmounted(() => {
   color: rgb(255 255 255);
 }
 
+:global(.dark) .inspector-section-title p,
 :global(.dark) .inspector-section-title span {
   color: rgb(156 163 175);
+}
+
+.quota-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.quota-stat-card {
+  border-radius: 0.85rem;
+  border: 1px solid rgb(186 230 253);
+  background: rgb(255 255 255 / 0.74);
+  padding: 0.72rem;
+}
+
+.quota-stat-card span,
+.quota-empty-state span {
+  display: block;
+  color: var(--account-map-muted);
+  font-size: 0.7rem;
+  font-weight: 780;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.quota-stat-card strong,
+.quota-empty-state strong {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--account-map-ink);
+  font-size: 0.98rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.quota-stat-card small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--account-map-muted);
+  font-size: 0.7rem;
+}
+
+.quota-empty-state {
+  border-radius: 0.95rem;
+  border: 1px dashed rgb(251 191 36 / 0.65);
+  background: rgb(255 251 235 / 0.78);
+  padding: 0.85rem;
+}
+
+.quota-empty-state p {
+  margin-top: 0.4rem;
+  color: rgb(146 64 14);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.quota-fact-list {
+  margin-top: 0.85rem;
+  border-top: 1px solid rgb(226 232 240 / 0.9);
+  padding-top: 0.2rem;
+}
+
+:global(.dark) .inspector-section {
+  border-color: rgb(55 65 81 / 0.7);
+  background: rgb(17 24 39 / 0.36);
+}
+
+:global(.dark) .quota-panel-live {
+  border-color: rgb(56 189 248 / 0.38);
+  background: rgb(12 74 110 / 0.18);
+}
+
+:global(.dark) .quota-panel-balance {
+  border-color: rgb(52 211 153 / 0.4);
+  background: rgb(6 78 59 / 0.22);
+}
+
+:global(.dark) .quota-panel-project {
+  border-color: rgb(245 158 11 / 0.38);
+  background: rgb(120 53 15 / 0.18);
+}
+
+:global(.dark) .quota-stat-card {
+  border-color: rgb(56 189 248 / 0.28);
+  background: rgb(15 23 42 / 0.5);
+}
+
+:global(.dark) .quota-empty-state {
+  border-color: rgb(245 158 11 / 0.45);
+  background: rgb(120 53 15 / 0.24);
+}
+
+:global(.dark) .quota-empty-state p {
+  color: rgb(253 230 138);
+}
+
+:global(.dark) .quota-fact-list {
+  border-top-color: rgb(51 65 85);
 }
 
 .inspector-row {
@@ -2142,7 +2563,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -2151,7 +2572,7 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .inspector-quota-note),
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
 :global(.app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
@@ -2215,7 +2636,9 @@ onUnmounted(() => {
 :global(.app-shell.app-shell-anti) .account-map-page .account-node-subtitle,
 :global(.app-shell.app-shell-anti) .account-map-page .account-node-quota,
 :global(.app-shell.app-shell-anti) .account-map-page .account-node-quota small,
-:global(.app-shell.app-shell-anti) .account-map-page .inspector-quota-note {
+:global(.app-shell.app-shell-anti) .account-map-page .quota-empty-state p,
+:global(.app-shell.app-shell-anti) .account-map-page .quota-stat-card small,
+:global(.app-shell.app-shell-anti) .account-map-page .inspector-profile-meta span {
   color: var(--anti-ink) !important;
 }
 
@@ -2269,6 +2692,93 @@ onUnmounted(() => {
   padding: 0.2rem 0.35rem;
 }
 
+:global(.dark .app-shell.app-shell-anti) .account-map-page {
+  --anti-paper: #0b1020;
+  --anti-ink: #f8fafc;
+  --anti-muted: #94a3b8;
+  --account-map-border: #e2e8f0;
+  --account-map-border-strong: #f8fafc;
+  --account-map-ink: #f8fafc;
+  --account-map-muted: #cbd5e1;
+  --account-map-faint: #94a3b8;
+  --account-map-surface: #0f172a;
+  --account-map-subtle: #111827;
+  --account-map-soft: #1e293b;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+  background: linear-gradient(135deg, #101827, #0b1020) !important;
+  box-shadow: 6px 6px 0 #334155 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
+  background: #111827 !important;
+  box-shadow: 3px 3px 0 #334155 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-toolbar {
+  background:
+    linear-gradient(90deg, rgb(250 204 21 / 0.22), transparent 46%),
+    linear-gradient(135deg, #111827, #0b1020) !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-eyebrow, .inspector-kicker) {
+  border-color: #f8fafc;
+  background: #ef4444;
+  color: #ffffff !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(input, select) {
+  background: #0f172a !important;
+  box-shadow: 4px 4px 0 #2563eb !important;
+  color: #f8fafc !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(input, select)::placeholder {
+  color: #94a3b8 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-secondary-button,
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-segmented button,
+:global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-action {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-primary-button,
+:global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-action-primary {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-segmented button.active {
+  background: #facc15 !important;
+  color: #111827 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node {
+  background: #101827 !important;
+  box-shadow: 3px 3px 0 #334155 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node:hover,
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node-selected {
+  background: #172554 !important;
+  box-shadow: 5px 5px 0 #facc15 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node-status {
+  border-color: #f8fafc;
+  background: #facc15 !important;
+  color: #111827 !important;
+}
+
+:global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-status-card {
+  background: #111827 !important;
+  box-shadow: 4px 4px 0 #2563eb !important;
+}
+
 @media (max-width: 1279px) {
   .account-map-inspector {
     position: static;
@@ -2319,5 +2829,378 @@ onUnmounted(() => {
   .inspector-section-title span {
     max-width: 100%;
   }
+}
+</style>
+
+<style>
+/* Keep account-map theme selectors unscoped: Vue scoped :global() drops the local tail. */
+.dark .account-map-page {
+  --account-map-border: rgb(51 65 85);
+  --account-map-border-strong: rgb(71 85 105);
+  --account-map-ink: rgb(248 250 252);
+  --account-map-muted: rgb(148 163 184);
+  --account-map-faint: rgb(100 116 139);
+  --account-map-surface: rgb(15 23 42 / 0.94);
+  --account-map-subtle: rgb(30 41 59 / 0.7);
+  --account-map-soft: rgb(30 41 59 / 0.82);
+  --account-map-shadow: none;
+}
+
+.dark .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+  border-color: rgb(51 65 85);
+  background: var(--account-map-surface);
+  color: var(--account-map-ink);
+}
+
+.dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-lane p, .account-node-meta, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span) {
+  color: var(--account-map-muted);
+}
+
+.dark .account-map-page :is(.account-map-stat-card strong, .account-pool-lane h2, .account-node p:first-child, .account-map-filter-header h2, .inspector-title, .inspector-section-title h3, .inspector-metric p:last-child) {
+  color: var(--account-map-ink);
+}
+
+.dark .account-map-page :is(.account-map-control, .account-map-segmented, .account-pool-mini-metrics div, .inspector-metric, .inspector-section, .inspector-attention-item) {
+  border-color: rgb(55 65 81 / 0.74);
+  background: var(--account-map-subtle);
+  color: var(--account-map-ink);
+}
+
+.dark .account-map-page .account-map-control:focus {
+  background: rgb(15 23 42 / 0.98);
+}
+
+.dark .account-map-page .account-map-secondary-button {
+  border-color: var(--account-map-border);
+  background: rgb(15 23 42 / 0.92);
+  color: var(--account-map-ink);
+}
+
+.dark .account-map-page .account-map-secondary-button:hover {
+  border-color: rgb(59 130 246 / 0.7);
+  color: rgb(147 197 253);
+}
+
+.dark .account-map-page .account-map-segmented button.active {
+  background: rgb(15 23 42 / 0.96);
+  color: rgb(147 197 253);
+}
+
+.dark .account-map-page .account-node {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42 / 0.72);
+  color: var(--account-map-ink);
+}
+
+.dark .account-map-page .account-node:hover {
+  background: rgb(30 41 59 / 0.82);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
+}
+
+.dark .account-map-page .account-node-status {
+  background: rgb(51 65 85);
+  color: rgb(203 213 225);
+}
+
+.dark .account-map-page .account-node-healthy .account-node-status {
+  background: rgb(6 78 59 / 0.55);
+  color: rgb(167 243 208);
+}
+
+.dark .account-map-page .account-node-degraded .account-node-status {
+  background: rgb(120 53 15 / 0.5);
+  color: rgb(253 230 138);
+}
+
+.dark .account-map-page .account-node-limited .account-node-status {
+  background: rgb(76 29 149 / 0.5);
+  color: rgb(221 214 254);
+}
+
+.dark .account-map-page .account-node-error .account-node-status {
+  background: rgb(136 19 55 / 0.5);
+  color: rgb(254 205 211);
+}
+
+.dark .account-map-page .account-node-quota {
+  background: rgb(12 74 110 / 0.26);
+  color: rgb(125 211 252);
+}
+
+.dark .account-map-page .account-node-quota small {
+  color: rgb(148 163 184);
+}
+
+.dark .account-map-page :is(.inspector-heading, .inspector-empty-header, .account-pool-lane-header, .quota-fact-list, .inspector-row) {
+  border-color: rgb(51 65 85);
+}
+
+.dark .account-map-page .inspector-status-card {
+  border-color: rgb(55 65 81 / 0.82);
+  background: rgb(31 41 55 / 0.56);
+}
+
+.dark .account-map-page .inspector-status-card strong {
+  color: rgb(255 255 255);
+}
+
+.dark .account-map-page :is(.inspector-status-card p, .inspector-status-label, .inspector-kicker, .inspector-metric p:first-child) {
+  color: rgb(156 163 175);
+}
+
+.dark .account-map-page .inspector-status-healthy {
+  border-color: rgb(16 185 129 / 0.45);
+  background: rgb(6 78 59 / 0.22);
+}
+
+.dark .account-map-page .inspector-status-degraded {
+  border-color: rgb(245 158 11 / 0.5);
+  background: rgb(120 53 15 / 0.25);
+}
+
+.dark .account-map-page .inspector-status-rate_limited {
+  border-color: rgb(139 92 246 / 0.5);
+  background: rgb(76 29 149 / 0.25);
+}
+
+.dark .account-map-page .inspector-status-error {
+  border-color: rgb(244 63 94 / 0.5);
+  background: rgb(136 19 55 / 0.25);
+}
+
+.dark .account-map-page .inspector-status-disabled {
+  border-color: rgb(55 65 81);
+  background: rgb(31 41 55 / 0.72);
+}
+
+.dark .account-map-page .quota-panel-live {
+  border-color: rgb(56 189 248 / 0.38);
+  background: rgb(12 74 110 / 0.18);
+}
+
+.dark .account-map-page .quota-panel-balance {
+  border-color: rgb(52 211 153 / 0.4);
+  background: rgb(6 78 59 / 0.22);
+}
+
+.dark .account-map-page .quota-panel-project {
+  border-color: rgb(245 158 11 / 0.38);
+  background: rgb(120 53 15 / 0.18);
+}
+
+.dark .account-map-page .quota-stat-card {
+  border-color: rgb(56 189 248 / 0.28);
+  background: rgb(15 23 42 / 0.5);
+}
+
+.dark .account-map-page .quota-empty-state {
+  border-color: rgb(245 158 11 / 0.45);
+  background: rgb(120 53 15 / 0.24);
+}
+
+.dark .account-map-page .quota-empty-state p {
+  color: rgb(253 230 138);
+}
+
+.dark .account-map-page .inspector-alert {
+  border-color: rgb(245 158 11 / 0.38);
+  background: rgb(245 158 11 / 0.12);
+  color: rgb(253 230 138);
+}
+
+.dark .account-map-page .inspector-good-state {
+  border-color: rgb(16 185 129 / 0.35);
+  background: rgb(16 185 129 / 0.12);
+  color: rgb(167 243 208);
+}
+
+.dark .account-map-page .inspector-action {
+  border-color: rgb(55 65 81);
+  color: rgb(209 213 219);
+}
+
+.dark .account-map-page .inspector-action:hover {
+  border-color: rgb(59 130 246 / 0.7);
+  color: rgb(147 197 253);
+}
+
+.app-shell.app-shell-anti {
+  display: block !important;
+  width: auto !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background:
+    radial-gradient(circle at 10% 10%, rgb(255 0 0 / 0.16) 0 7rem, transparent 7.2rem),
+    radial-gradient(circle at 88% 8%, rgb(0 255 0 / 0.16) 0 7.5rem, transparent 7.7rem),
+    repeating-linear-gradient(135deg, rgb(5 5 5 / 0.055) 0 10px, transparent 10px 24px),
+    linear-gradient(135deg, #fff038 0%, #ffffff 52%, #eaffff 100%) !important;
+}
+
+.dark .app-shell.app-shell-anti {
+  background:
+    radial-gradient(circle at 10% 10%, rgb(255 0 0 / 0.22) 0 7rem, transparent 7.2rem),
+    radial-gradient(circle at 88% 8%, rgb(0 255 0 / 0.20) 0 7.5rem, transparent 7.7rem),
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.08) 0 10px, transparent 10px 24px),
+    linear-gradient(135deg, #160016 0%, #2d0a3d 52%, #3b3300 100%) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page {
+  color: var(--anti-ink);
+  width: 100%;
+  max-width: min(1480px, 100%);
+  margin-inline: auto;
+  transform: none !important;
+  --account-map-border: var(--anti-ink);
+  --account-map-border-strong: var(--anti-ink);
+  --account-map-ink: var(--anti-ink);
+  --account-map-muted: #334155;
+  --account-map-faint: #475569;
+  --account-map-surface: var(--anti-paper);
+  --account-map-subtle: #fffef2;
+  --account-map-soft: #fff9b8;
+  --account-map-shadow: none;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.55rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 6px 6px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  transform: none !important;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
+.app-shell.app-shell-anti .account-map-page .account-pool-mini-metrics div {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0.45rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 3px 3px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page .account-map-toolbar {
+  background: var(--anti-yellow) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(.account-map-eyebrow, .inspector-kicker) {
+  display: inline-flex;
+  border: 3px solid var(--anti-ink);
+  background: var(--anti-red);
+  color: var(--anti-paper) !important;
+  padding: 0.2rem 0.35rem;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(h1, h2, h3, p, label, strong, small),
+.app-shell.app-shell-anti .account-map-page :is(.account-node-meta, .account-node-subtitle, .inspector-profile-meta span) {
+  color: var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(input, select) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0 !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 4px 4px 0 var(--anti-blue) !important;
+  color: var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.2rem !important;
+  box-shadow: 4px 4px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  font-weight: 950;
+}
+
+.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close):hover {
+  background: var(--anti-green) !important;
+  transform: rotate(-1deg) translate(-1px, -1px);
+}
+
+.app-shell.app-shell-anti .account-map-page .account-node {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0.5rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 3px 3px 0 var(--anti-ink) !important;
+  transform: none !important;
+}
+
+.app-shell.app-shell-anti .account-map-page .account-node-status {
+  border: 2px solid var(--anti-ink);
+  border-radius: 0.2rem;
+  background: var(--anti-yellow) !important;
+  color: var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(.account-node:hover, .account-node-selected) {
+  background: #f6ff57 !important;
+  box-shadow: 5px 5px 0 var(--anti-red) !important;
+  transform: translate(-1px, -1px) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page .inspector-status-card {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.5rem !important;
+  background: var(--anti-yellow) !important;
+  box-shadow: 4px 4px 0 var(--anti-blue) !important;
+  color: var(--anti-ink) !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page {
+  --anti-paper: #0b1020;
+  --anti-ink: #f8fafc;
+  --anti-muted: #94a3b8;
+  --account-map-border: #e2e8f0;
+  --account-map-border-strong: #f8fafc;
+  --account-map-ink: #f8fafc;
+  --account-map-muted: #cbd5e1;
+  --account-map-faint: #94a3b8;
+  --account-map-surface: #0f172a;
+  --account-map-subtle: #111827;
+  --account-map-soft: #1e293b;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+  background: linear-gradient(135deg, #101827, #0b1020) !important;
+  box-shadow: 6px 6px 0 #334155 !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
+.dark .app-shell.app-shell-anti .account-map-page .account-pool-mini-metrics div {
+  background: #111827 !important;
+  box-shadow: 3px 3px 0 #334155 !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page .account-map-toolbar {
+  background:
+    linear-gradient(90deg, rgb(250 204 21 / 0.22), transparent 46%),
+    linear-gradient(135deg, #111827, #0b1020) !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page .account-node {
+  background: #101827 !important;
+  box-shadow: 3px 3px 0 #334155 !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-node:hover, .account-node-selected) {
+  background: #172554 !important;
+  box-shadow: 5px 5px 0 #facc15 !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page .account-node-status {
+  border-color: #f8fafc;
+  background: #facc15 !important;
+  color: #111827 !important;
+}
+
+.dark .app-shell.app-shell-anti .account-map-page .account-map-segmented button.active {
+  background: #facc15 !important;
+  color: #111827 !important;
 }
 </style>

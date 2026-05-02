@@ -43,15 +43,22 @@ func TestParseRawAPIKeyImportLines(t *testing.T) {
 sk-proj-123
 sk-ant-456,https://api.anthropic.com
 AIzaSy789
+sk-or-v1-abc
+deepseek,sk-deepseek-123
+openrouter,sk-or-v1-custom,https://openrouter.ai/api/v1
 bad-key
 `)
 	require.NoError(t, err)
-	require.Equal(t, 4, total)
-	require.Len(t, lines, 3)
+	require.Equal(t, 7, total)
+	require.Len(t, lines, 6)
 	require.Len(t, results, 1)
 	require.Equal(t, service.PlatformOpenAI, lines[0].Platform)
 	require.Equal(t, service.PlatformAnthropic, lines[1].Platform)
 	require.Equal(t, service.PlatformGemini, lines[2].Platform)
+	require.Equal(t, service.PlatformOpenRouter, lines[3].Platform)
+	require.Equal(t, service.PlatformDeepSeek, lines[4].Platform)
+	require.Equal(t, service.PlatformOpenRouter, lines[5].Platform)
+	require.Equal(t, "https://openrouter.ai/api/v1", lines[5].BaseURL)
 	require.Contains(t, results[0].Error, "could not detect platform")
 }
 

@@ -17,6 +17,7 @@ type APIKeyProbeQuotaSnapshot struct {
 	Provider                 string `json:"provider"`
 	Supported                bool   `json:"supported"`
 	Source                   string `json:"source"`
+	Scope                    string `json:"scope,omitempty"`
 	UpdatedAt                string `json:"updated_at"`
 	StatusCode               int    `json:"status_code,omitempty"`
 	Model                    string `json:"model,omitempty"`
@@ -35,8 +36,14 @@ type APIKeyProbeQuotaSnapshot struct {
 	RetryAfter               string `json:"retry_after,omitempty"`
 	RateLimitPolicy          string `json:"rate_limit_policy,omitempty"`
 	QuotaProject             string `json:"quota_project,omitempty"`
+	Balance                  string `json:"balance,omitempty"`
+	CreditsTotal             string `json:"credits_total,omitempty"`
+	CreditsUsed              string `json:"credits_used,omitempty"`
+	CreditsRemaining         string `json:"credits_remaining,omitempty"`
+	Currency                 string `json:"currency,omitempty"`
 	Note                     string `json:"note,omitempty"`
 	HasRateLimitHeaderSignal bool   `json:"has_rate_limit_header_signal"`
+	HasBalanceSignal         bool   `json:"has_balance_signal,omitempty"`
 }
 
 func BuildAPIKeyProbeQuotaSnapshot(platform string, statusCode int, model string, headers http.Header, now time.Time) *APIKeyProbeQuotaSnapshot {
@@ -58,6 +65,7 @@ func BuildAPIKeyProbeQuotaSnapshot(platform string, statusCode int, model string
 	switch provider {
 	case PlatformAnthropic:
 		snapshot.Supported = true
+		snapshot.Scope = "response_headers"
 		snapshot.RequestsLimit = headerValue(headers, "anthropic-ratelimit-requests-limit")
 		snapshot.RequestsRemaining = headerValue(headers, "anthropic-ratelimit-requests-remaining")
 		snapshot.RequestsReset = headerValue(headers, "anthropic-ratelimit-requests-reset")
@@ -73,6 +81,7 @@ func BuildAPIKeyProbeQuotaSnapshot(platform string, statusCode int, model string
 		snapshot.RetryAfter = headerValue(headers, "retry-after")
 	case PlatformOpenAI:
 		snapshot.Supported = true
+		snapshot.Scope = "response_headers"
 		snapshot.RequestsLimit = headerValue(headers, "x-ratelimit-limit-requests")
 		snapshot.RequestsRemaining = headerValue(headers, "x-ratelimit-remaining-requests")
 		snapshot.RequestsReset = headerValue(headers, "x-ratelimit-reset-requests")
@@ -82,6 +91,7 @@ func BuildAPIKeyProbeQuotaSnapshot(platform string, statusCode int, model string
 		snapshot.RetryAfter = headerValue(headers, "retry-after")
 	case PlatformGemini:
 		snapshot.Supported = false
+		snapshot.Scope = "project"
 		snapshot.RequestsLimit = firstHeaderValue(headers, "x-ratelimit-limit-requests", "x-ratelimit-limit")
 		snapshot.RequestsRemaining = firstHeaderValue(headers, "x-ratelimit-remaining-requests", "x-ratelimit-remaining")
 		snapshot.RequestsReset = firstHeaderValue(headers, "x-ratelimit-reset-requests", "x-ratelimit-reset")
@@ -104,6 +114,36 @@ func BuildAPIKeyProbeQuotaSnapshot(platform string, statusCode int, model string
 	} else {
 		snapshot.Source = "missing_headers"
 		snapshot.Note = "The upstream response did not include rate-limit quota headers for this probe."
+	}
+	return snapshot
+}
+
+func BuildAPIKeyProbeBalanceSnapshot(platform string, statusCode int, balance, creditsTotal, creditsUsed, creditsRemaining, currency string, now time.Time) *APIKeyProbeQuotaSnapshot {
+	provider := strings.TrimSpace(platform)
+	if provider == "" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	snapshot := &APIKeyProbeQuotaSnapshot{
+		Provider:         provider,
+		Supported:        true,
+		Source:           "balance_api",
+		Scope:            "account",
+		UpdatedAt:        now.Format(time.RFC3339),
+		StatusCode:       statusCode,
+		Balance:          strings.TrimSpace(balance),
+		CreditsTotal:     strings.TrimSpace(creditsTotal),
+		CreditsUsed:      strings.TrimSpace(creditsUsed),
+		CreditsRemaining: strings.TrimSpace(creditsRemaining),
+		Currency:         strings.TrimSpace(currency),
+	}
+	snapshot.HasBalanceSignal = snapshot.hasBalanceSignal()
+	if !snapshot.HasBalanceSignal {
+		snapshot.Source = "missing_balance"
+		snapshot.Note = "The upstream balance endpoint was reachable but did not return a readable balance."
 	}
 	return snapshot
 }
@@ -177,13 +217,26 @@ func (s *APIKeyProbeQuotaSnapshot) hasHeaderSignal() bool {
 		strings.TrimSpace(s.RateLimitPolicy) != ""
 }
 
+func (s *APIKeyProbeQuotaSnapshot) hasBalanceSignal() bool {
+	if s == nil {
+		return false
+	}
+	return strings.TrimSpace(s.Balance) != "" ||
+		strings.TrimSpace(s.CreditsTotal) != "" ||
+		strings.TrimSpace(s.CreditsUsed) != "" ||
+		strings.TrimSpace(s.CreditsRemaining) != "" ||
+		strings.TrimSpace(s.Currency) != ""
+}
+
 func (s *APIKeyProbeQuotaSnapshot) toMap() map[string]any {
 	payload := map[string]any{
 		"provider":                     s.Provider,
 		"supported":                    s.Supported,
 		"source":                       s.Source,
+		"scope":                        s.Scope,
 		"updated_at":                   s.UpdatedAt,
 		"has_rate_limit_header_signal": s.HasRateLimitHeaderSignal,
+		"has_balance_signal":           s.HasBalanceSignal,
 	}
 	setMapValue(payload, "status_code", s.StatusCode)
 	setMapValue(payload, "model", s.Model)
@@ -202,6 +255,11 @@ func (s *APIKeyProbeQuotaSnapshot) toMap() map[string]any {
 	setMapValue(payload, "retry_after", s.RetryAfter)
 	setMapValue(payload, "rate_limit_policy", s.RateLimitPolicy)
 	setMapValue(payload, "quota_project", s.QuotaProject)
+	setMapValue(payload, "balance", s.Balance)
+	setMapValue(payload, "credits_total", s.CreditsTotal)
+	setMapValue(payload, "credits_used", s.CreditsUsed)
+	setMapValue(payload, "credits_remaining", s.CreditsRemaining)
+	setMapValue(payload, "currency", s.Currency)
 	setMapValue(payload, "note", s.Note)
 	return payload
 }
@@ -211,6 +269,7 @@ func apiKeyProbeQuotaSnapshotFromMap(raw map[string]any) *APIKeyProbeQuotaSnapsh
 		Provider:                 mapString(raw, "provider"),
 		Supported:                mapBool(raw, "supported"),
 		Source:                   mapString(raw, "source"),
+		Scope:                    mapString(raw, "scope"),
 		UpdatedAt:                mapString(raw, "updated_at"),
 		StatusCode:               mapInt(raw, "status_code"),
 		Model:                    mapString(raw, "model"),
@@ -229,8 +288,14 @@ func apiKeyProbeQuotaSnapshotFromMap(raw map[string]any) *APIKeyProbeQuotaSnapsh
 		RetryAfter:               mapString(raw, "retry_after"),
 		RateLimitPolicy:          mapString(raw, "rate_limit_policy"),
 		QuotaProject:             mapString(raw, "quota_project"),
+		Balance:                  mapString(raw, "balance"),
+		CreditsTotal:             mapString(raw, "credits_total"),
+		CreditsUsed:              mapString(raw, "credits_used"),
+		CreditsRemaining:         mapString(raw, "credits_remaining"),
+		Currency:                 mapString(raw, "currency"),
 		Note:                     mapString(raw, "note"),
 		HasRateLimitHeaderSignal: mapBool(raw, "has_rate_limit_header_signal"),
+		HasBalanceSignal:         mapBool(raw, "has_balance_signal"),
 	}
 	if strings.TrimSpace(snapshot.Provider) == "" {
 		return nil
@@ -241,6 +306,19 @@ func apiKeyProbeQuotaSnapshotFromMap(raw map[string]any) *APIKeyProbeQuotaSnapsh
 		} else {
 			snapshot.Source = "unknown"
 		}
+	}
+	if snapshot.Scope == "" {
+		if snapshot.Provider == PlatformGemini {
+			snapshot.Scope = "project"
+		} else {
+			snapshot.Scope = "response_headers"
+		}
+	}
+	if !snapshot.HasRateLimitHeaderSignal && snapshot.hasHeaderSignal() {
+		snapshot.HasRateLimitHeaderSignal = true
+	}
+	if !snapshot.HasBalanceSignal && snapshot.hasBalanceSignal() {
+		snapshot.HasBalanceSignal = true
 	}
 	return snapshot
 }

@@ -41,11 +41,13 @@ const (
 	PlatformOpenAI      = "openai"
 	PlatformGemini      = "gemini"
 	PlatformAntigravity = "antigravity"
+	PlatformOpenRouter  = "openrouter"
+	PlatformDeepSeek    = "deepseek"
 )
 
 // AllPlatforms 返回所有支持的平台列表
 func AllPlatforms() []string {
-	return []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity}
+	return []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformOpenRouter, PlatformDeepSeek}
 }
 
 // NormalizeDeprecatedFields clears legacy fields that remain only for historical

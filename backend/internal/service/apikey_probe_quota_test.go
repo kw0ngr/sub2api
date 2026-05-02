@@ -59,8 +59,31 @@ func TestBuildAPIKeyProbeQuotaSnapshot_GeminiNoHeadersKeepsProbeContext(t *testi
 	require.NotNil(t, snapshot)
 	require.Equal(t, PlatformGemini, snapshot.Provider)
 	require.False(t, snapshot.Supported)
+	require.Equal(t, "project", snapshot.Scope)
+	require.Equal(t, "project_quota", snapshot.Source)
+	require.False(t, snapshot.HasRateLimitHeaderSignal)
 	require.Equal(t, http.StatusOK, snapshot.StatusCode)
 	require.NotEmpty(t, snapshot.Note)
+}
+
+func TestBuildAPIKeyProbeQuotaSnapshot_GeminiHeadersAreRealSignal(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("x-ratelimit-limit-requests", "60")
+	headers.Set("x-ratelimit-remaining-requests", "42")
+	headers.Set("x-ratelimit-reset-requests", "30s")
+	headers.Set("x-goog-quota-project", "team-project")
+
+	snapshot := BuildAPIKeyProbeQuotaSnapshot(PlatformGemini, http.StatusOK, "gemini-2.0-flash", headers, time.Unix(0, 0).UTC())
+
+	require.NotNil(t, snapshot)
+	require.Equal(t, PlatformGemini, snapshot.Provider)
+	require.True(t, snapshot.Supported)
+	require.Equal(t, "project", snapshot.Scope)
+	require.Equal(t, "headers", snapshot.Source)
+	require.True(t, snapshot.HasRateLimitHeaderSignal)
+	require.Equal(t, "60", snapshot.RequestsLimit)
+	require.Equal(t, "42", snapshot.RequestsRemaining)
+	require.Equal(t, "team-project", snapshot.QuotaProject)
 }
 
 func TestAPIKeyProbeQuotaExtraRoundTrip(t *testing.T) {
@@ -68,6 +91,7 @@ func TestAPIKeyProbeQuotaExtraRoundTrip(t *testing.T) {
 		Provider:          PlatformAnthropic,
 		Supported:         true,
 		Source:            "headers",
+		Scope:             "response_headers",
 		UpdatedAt:         "2026-05-02T10:30:00Z",
 		StatusCode:        http.StatusOK,
 		Model:             "claude-sonnet-4-5",
@@ -86,4 +110,21 @@ func TestAPIKeyProbeQuotaExtraRoundTrip(t *testing.T) {
 	require.Equal(t, snapshot.Provider, roundTrip.Provider)
 	require.Equal(t, snapshot.TokensRemaining, roundTrip.TokensRemaining)
 	require.Equal(t, snapshot.RequestsRemaining, roundTrip.RequestsRemaining)
+}
+
+func TestBuildAPIKeyProbeBalanceSnapshotRoundTrip(t *testing.T) {
+	now := time.Date(2026, 5, 2, 10, 30, 0, 0, time.UTC)
+	snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformOpenRouter, http.StatusOK, "$12.3400 remaining", "20", "7.66", "12.3400", "", now)
+
+	require.NotNil(t, snapshot)
+	require.Equal(t, PlatformOpenRouter, snapshot.Provider)
+	require.Equal(t, "balance_api", snapshot.Source)
+	require.Equal(t, "account", snapshot.Scope)
+	require.True(t, snapshot.HasBalanceSignal)
+	require.Equal(t, "$12.3400 remaining", snapshot.Balance)
+
+	roundTrip := APIKeyProbeQuotaSnapshotFromExtra(BuildAPIKeyProbeQuotaExtraUpdates(snapshot))
+	require.NotNil(t, roundTrip)
+	require.True(t, roundTrip.HasBalanceSignal)
+	require.Equal(t, "12.3400", roundTrip.CreditsRemaining)
 }

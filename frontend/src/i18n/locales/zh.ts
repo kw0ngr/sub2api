@@ -886,7 +886,9 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      openrouter: 'OpenRouter',
+      deepseek: 'DeepSeek'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -2062,6 +2064,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        openrouter: 'OpenRouter',
+        deepseek: 'DeepSeek',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2650,10 +2654,10 @@ export default {
       dataImportCompletedWithErrors: '导入完成但有错误：账号失败 {account_failed}，代理失败 {proxy_failed}',
       rawKeyImport: '导入原始 Key',
       rawKeyImportTitle: '导入原始 API Key',
-      rawKeyImportHint: '粘贴原始 API Key，系统会自动识别 OpenAI、Anthropic、Gemini 平台并创建 apikey 账号。',
-      rawKeyImportFormatHint: '支持每行一个 key，或 key,base_url。支持 # / // 注释行。当前仅支持 OpenAI、Anthropic、Gemini 的 apikey 账号。',
+      rawKeyImportHint: '粘贴原始 API Key，系统会自动识别 OpenAI、Anthropic、Gemini、OpenRouter 平台；DeepSeek 可用 deepseek,key 显式导入。',
+      rawKeyImportFormatHint: '支持每行一个 key、key,base_url、platform,key 或 platform,key,base_url。支持 # / // 注释行。OpenRouter/DeepSeek 会在健康检查中补充余额信息。',
       rawKeyImportLabel: 'Key 列表',
-      rawKeyImportPlaceholder: 'sk-proj-xxx\nsk-ant-xxx,https://api.anthropic.com\nAIzaSyxxxx,https://generativelanguage.googleapis.com',
+      rawKeyImportPlaceholder: 'sk-proj-xxx\nsk-ant-xxx,https://api.anthropic.com\nAIzaSyxxxx,https://generativelanguage.googleapis.com\nsk-or-v1-xxx\nopenrouter,sk-or-v1-xxx,https://openrouter.ai/api/v1\ndeepseek,sk-xxx',
       rawKeyImportValidateAfterImport: '导入后立即检测 key 有效性，并自动禁用失效 key',
       rawKeyImportButton: '开始导入',
       rawKeyImportSubmitting: '导入中...',
@@ -2845,6 +2849,8 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        openrouter: 'OpenRouter',
+        deepseek: 'DeepSeek',
       },
       types: {
         oauth: 'OAuth',

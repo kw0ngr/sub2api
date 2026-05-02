@@ -17,6 +17,7 @@ func TestDetectAPIKeyPlatform(t *testing.T) {
 	}{
 		{key: "sk-ant-api03-abc", platform: PlatformAnthropic, ok: true},
 		{key: "AIzaSyD-example", platform: PlatformGemini, ok: true},
+		{key: "sk-or-v1-example", platform: PlatformOpenRouter, ok: true},
 		{key: "sk-proj-123", platform: PlatformOpenAI, ok: true},
 		{key: "unknown-key", platform: "", ok: false},
 	}
@@ -32,6 +33,8 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 	openAI := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	anthropic := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
 	gemini := &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}
+	openRouter := &Account{Platform: PlatformOpenRouter, Type: AccountTypeAPIKey}
+	deepSeek := &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}
 
 	require.Equal(t, APIKeyStatusActionValid, ClassifyAPIKeyStatusAction(openAI, http.StatusOK, []byte(`{}`)))
 	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(openAI, http.StatusForbidden, []byte(`{"error":{"message":"organization has been disabled","code":"account_deactivated"}}`)))
@@ -39,12 +42,15 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(anthropic, http.StatusMethodNotAllowed, []byte(`method not allowed`)))
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(gemini, http.StatusTooManyRequests, []byte(`{"error":{"message":"quota exceeded"}}`)))
 	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(gemini, http.StatusBadRequest, []byte(`{"error":{"message":"API key not valid. Please pass a valid API key.","status":"API_KEY_INVALID"}}`)))
+	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(openRouter, http.StatusUnauthorized, []byte(`{"error":{"message":"invalid token"}}`)))
+	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(deepSeek, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limited"}}`)))
 }
 
 func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 	openAIAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	geminiAccount := &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}
 	anthropicAccount := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	openRouterAccount := &Account{Platform: PlatformOpenRouter, Type: AccountTypeAPIKey}
 
 	valid, invalid, cooldown, _ := ClassifyAPIKeyProbeResponse(openAIAccount, http.StatusOK, []byte(`{}`))
 	require.True(t, valid)
@@ -77,6 +83,16 @@ func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 	require.False(t, valid)
 	require.False(t, invalid)
 	require.True(t, cooldown)
+
+	valid, invalid, cooldown, _ = ClassifyAPIKeyProbeResponse(openRouterAccount, http.StatusOK, []byte(`{}`))
+	require.True(t, valid)
+	require.False(t, invalid)
+	require.False(t, cooldown)
+}
+
+func TestDefaultAPIKeyBaseURL_OpenRouterAndDeepSeek(t *testing.T) {
+	require.Equal(t, "https://openrouter.ai/api/v1", DefaultAPIKeyBaseURL(PlatformOpenRouter))
+	require.Equal(t, "https://api.deepseek.com", DefaultAPIKeyBaseURL(PlatformDeepSeek))
 }
 
 func TestBuildAPIKeyHealthCheckResultFromScheduledResult_InvalidFailure(t *testing.T) {
