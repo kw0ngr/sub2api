@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <div class="account-map-page space-y-6 pb-12">
+    <div class="account-map-page space-y-5 pb-12">
       <section class="account-map-toolbar">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+        <div class="account-map-toolbar-copy">
+          <div class="min-w-0">
             <p class="account-map-eyebrow">Account pool map</p>
-            <h1 class="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-              <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <h1>
+              <svg class="h-5 w-5 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -16,7 +16,7 @@
               </svg>
               账号池地图
             </h1>
-            <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <div class="account-map-meta">
               <span class="flex items-center gap-1.5">
                 <span class="relative inline-flex h-2 w-2 rounded-full" :class="loading ? 'bg-gray-400' : 'bg-green-500'"></span>
                 {{ loading ? '加载中' : '就绪' }}
@@ -29,7 +29,7 @@
               </template>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="account-map-toolbar-actions">
             <button
               type="button"
               class="account-map-secondary-button"
@@ -53,34 +53,41 @@
           v-for="item in summaryCards"
           :key="item.key"
           class="account-map-stat-card"
+          :class="`account-map-stat-${item.tone}`"
         >
           <div class="flex items-center justify-between gap-3">
-            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ item.label }}</p>
+            <p>{{ item.label }}</p>
             <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
           </div>
-          <p class="mt-2 text-2xl font-black text-gray-900 dark:text-white">{{ item.value }}</p>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
+          <strong>{{ item.value }}</strong>
+          <small>{{ item.detail }}</small>
         </div>
       </section>
 
       <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div class="account-map-main-column">
+        <div class="account-map-main-column">
         <div class="account-map-filter-card">
+          <div class="account-map-filter-header">
+            <div>
+              <h2>筛选账号池</h2>
+              <p>先缩小范围，再展开查看具体账号，避免异常账号一次性淹没页面。</p>
+            </div>
+          </div>
           <div class="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
-            <label class="block">
-              <span class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">搜索账号</span>
+            <label class="account-map-field">
+              <span>搜索账号</span>
               <input
                 v-model.trim="filters.search"
                 type="search"
-                class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-primary-400 focus:ring-4 focus:ring-primary-500/10 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
+                class="account-map-control"
                 placeholder="名称、平台、分组、错误信息"
               />
             </label>
-            <label class="block">
-              <span class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">平台</span>
+            <label class="account-map-field">
+              <span>平台</span>
               <select
                 v-model="filters.platform"
-                class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-primary-400 focus:ring-4 focus:ring-primary-500/10 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
+                class="account-map-control"
               >
                 <option value="all">全部平台</option>
                 <option v-for="platform in platformOptions" :key="platform" :value="platform">
@@ -88,11 +95,11 @@
                 </option>
               </select>
             </label>
-            <label class="block">
-              <span class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">状态</span>
+            <label class="account-map-field">
+              <span>状态</span>
               <select
                 v-model="filters.status"
-                class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-primary-400 focus:ring-4 focus:ring-primary-500/10 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
+                class="account-map-control"
               >
                 <option value="all">全部状态</option>
                 <option value="healthy">健康</option>
@@ -103,13 +110,12 @@
               </select>
             </label>
             <div class="flex items-end">
-              <div class="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-800">
+              <div class="account-map-segmented">
                 <button
                   v-for="mode in viewModes"
                   :key="mode.value"
                   type="button"
-                  class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-                  :class="filters.view === mode.value ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-700 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+                  :class="{ active: filters.view === mode.value }"
                   @click="filters.view = mode.value"
                 >
                   {{ mode.label }}
@@ -147,41 +153,41 @@
           <article
             v-for="pool in visiblePools"
             :key="pool.key"
-            class="account-pool-lane rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900"
+            class="account-pool-lane"
           >
-            <div class="flex flex-col gap-3 border-b border-gray-100 pb-4 dark:border-dark-800 md:flex-row md:items-center md:justify-between">
+            <div class="account-pool-lane-header">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-dark-800 dark:text-gray-300">
+                  <span class="account-pool-platform">
                     {{ platformLabel(pool.platform) }}
                   </span>
-                  <h2 class="truncate text-lg font-bold text-gray-950 dark:text-white">
+                  <h2>
                     {{ accountTypeLabel(pool.type) }}
                   </h2>
                 </div>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <p>
                   {{ pool.accounts.length }} 个账号 · 健康 {{ poolHealthyCount(pool) }} · 需关注 {{ poolAttentionCount(pool) }}
                 </p>
               </div>
-              <div class="grid grid-cols-3 gap-2 text-right text-xs">
-                <div class="rounded-xl bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                  <p class="text-gray-400">RPM</p>
-                  <p class="font-semibold text-gray-900 dark:text-white">{{ poolRPM(pool) }}</p>
+              <div class="account-pool-mini-metrics">
+                <div>
+                  <span>RPM</span>
+                  <strong>{{ poolRPM(pool) }}</strong>
                 </div>
-                <div class="rounded-xl bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                  <p class="text-gray-400">并发</p>
-                  <p class="font-semibold text-gray-900 dark:text-white">{{ poolConcurrency(pool) }}</p>
+                <div>
+                  <span>并发</span>
+                  <strong>{{ poolConcurrency(pool) }}</strong>
                 </div>
-                <div class="rounded-xl bg-gray-50 px-3 py-2 dark:bg-dark-800">
-                  <p class="text-gray-400">指纹</p>
-                  <p class="font-semibold text-gray-900 dark:text-white">{{ poolFingerprintCount(pool) }}</p>
+                <div>
+                  <span>指纹</span>
+                  <strong>{{ poolFingerprintCount(pool) }}</strong>
                 </div>
               </div>
             </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            <div class="account-node-grid">
               <button
-                v-for="account in pool.accounts"
+                v-for="account in visiblePoolAccounts(pool)"
                 :key="account.id"
                 type="button"
                 class="account-node group text-left"
@@ -191,18 +197,31 @@
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
                     <p class="truncate text-sm font-bold">{{ account.name }}</p>
-                    <p class="mt-0.5 text-[11px] opacity-75">
-                      {{ statusLabel(account) }} · {{ account.type }}
+                    <p class="account-node-subtitle">
+                      <span class="account-node-status">{{ statusLabel(account) }}</span>
+                      <span>{{ account.type }}</span>
                     </p>
                   </div>
                   <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-current opacity-70"></span>
                 </div>
-                <div class="mt-3 flex items-center justify-between gap-2 text-[11px] opacity-80">
+                <div class="account-node-meta">
                   <span>RPM {{ account.current_rpm ?? 0 }}</span>
                   <span>并发 {{ account.current_concurrency ?? 0 }}</span>
                   <span v-if="account.enable_tls_fingerprint">TLS</span>
                   <span v-else>no TLS</span>
                 </div>
+              </button>
+            </div>
+
+            <div v-if="poolHiddenCount(pool) > 0 || isPoolExpanded(pool)" class="account-pool-footer">
+              <span v-if="poolHiddenCount(pool) > 0">
+                已优先显示 {{ visiblePoolAccounts(pool).length }} 个账号，剩余 {{ poolHiddenCount(pool) }} 个折叠。
+              </span>
+              <span v-else>
+                已展开全部 {{ pool.accounts.length }} 个账号。
+              </span>
+              <button type="button" class="account-map-link-button" @click="togglePoolExpanded(pool)">
+                {{ isPoolExpanded(pool) ? '收起' : '展开全部' }}
               </button>
             </div>
           </article>
@@ -393,8 +412,10 @@ const knownPlatforms = ref<string[]>([])
 const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
 const inspectorPanel = ref<HTMLElement | null>(null)
+const expandedPoolKeys = ref<Set<string>>(new Set())
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshSeq = 0
+const POOL_PREVIEW_LIMIT = 12
 
 const filters = reactive<{
   search: string
@@ -456,28 +477,32 @@ const summaryCards = computed(() => [
     label: '账号总数',
     value: summary.value.total,
     detail: `${summary.value.pools || visiblePools.value.length} 个池/泳道`,
-    dotClass: 'bg-gray-400'
+    dotClass: 'bg-slate-400',
+    tone: 'neutral'
   },
   {
     key: 'healthy',
     label: '健康可调度',
     value: summary.value.healthy,
     detail: summary.value.total ? `${Math.round((summary.value.healthy / summary.value.total) * 100)}% 可用` : '无账号',
-    dotClass: 'bg-emerald-500'
+    dotClass: 'bg-emerald-500',
+    tone: 'good'
   },
   {
     key: 'attention',
     label: '需要关注',
     value: summary.value.attention,
     detail: '错误、冷却、限流或停用',
-    dotClass: summary.value.attention > 0 ? 'bg-amber-500' : 'bg-emerald-500'
+    dotClass: summary.value.attention > 0 ? 'bg-amber-500' : 'bg-emerald-500',
+    tone: summary.value.attention > 0 ? 'warn' : 'good'
   },
   {
     key: 'limited',
     label: '限流/停用',
     value: summary.value.rate_limited + summary.value.disabled,
     detail: `${summary.value.rate_limited} 限流 · ${summary.value.disabled} 停用`,
-    dotClass: summary.value.rate_limited + summary.value.disabled > 0 ? 'bg-violet-500' : 'bg-gray-300'
+    dotClass: summary.value.rate_limited + summary.value.disabled > 0 ? 'bg-violet-500' : 'bg-slate-300',
+    tone: summary.value.rate_limited + summary.value.disabled > 0 ? 'accent' : 'neutral'
   }
 ])
 
@@ -606,6 +631,32 @@ function poolConcurrency(pool: AccountPool): number {
 function poolFingerprintCount(pool: AccountPool): string {
   const enabled = pool.summary?.tls_enabled ?? pool.accounts.filter((item) => item.enable_tls_fingerprint).length
   return `${enabled}/${pool.accounts.length}`
+}
+
+function visiblePoolAccounts(pool: AccountPool): AccountPoolMapAccount[] {
+  if (isPoolExpanded(pool) || pool.accounts.length <= POOL_PREVIEW_LIMIT) {
+    return pool.accounts
+  }
+  return pool.accounts.slice(0, POOL_PREVIEW_LIMIT)
+}
+
+function poolHiddenCount(pool: AccountPool): number {
+  if (isPoolExpanded(pool)) return 0
+  return Math.max(0, pool.accounts.length - POOL_PREVIEW_LIMIT)
+}
+
+function isPoolExpanded(pool: AccountPool): boolean {
+  return expandedPoolKeys.value.has(pool.key)
+}
+
+function togglePoolExpanded(pool: AccountPool) {
+  const next = new Set(expandedPoolKeys.value)
+  if (next.has(pool.key)) {
+    next.delete(pool.key)
+  } else {
+    next.add(pool.key)
+  }
+  expandedPoolKeys.value = next
 }
 
 function groupNames(account: Account): string {
@@ -838,20 +889,33 @@ onUnmounted(() => {
 
 <style scoped>
 .account-map-page {
-  --account-map-border: rgb(17 24 39 / 0.06);
-  --account-map-border-strong: rgb(229 231 235);
+  --account-map-border: rgb(226 232 240);
+  --account-map-border-strong: rgb(203 213 225);
+  --account-map-ink: rgb(15 23 42);
+  --account-map-muted: rgb(100 116 139);
+  --account-map-faint: rgb(148 163 184);
   --account-map-surface: rgb(255 255 255);
-  --account-map-subtle: rgb(249 250 251);
-  --account-map-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  --account-map-subtle: rgb(248 250 252);
+  --account-map-soft: rgb(241 245 249);
+  --account-map-accent: rgb(14 165 233);
+  --account-map-accent-strong: rgb(37 99 235);
+  --account-map-good: rgb(16 185 129);
+  --account-map-warn: rgb(245 158 11);
+  --account-map-danger: rgb(225 29 72);
+  --account-map-shadow: 0 10px 30px rgb(15 23 42 / 0.05);
   max-width: 1480px;
   margin: 0 auto;
 }
 
 :global(.dark) .account-map-page {
-  --account-map-border: rgb(55 65 81);
-  --account-map-border-strong: rgb(75 85 99);
-  --account-map-surface: rgb(31 41 55);
-  --account-map-subtle: rgb(17 24 39 / 0.58);
+  --account-map-border: rgb(51 65 85);
+  --account-map-border-strong: rgb(71 85 105);
+  --account-map-ink: rgb(248 250 252);
+  --account-map-muted: rgb(148 163 184);
+  --account-map-faint: rgb(100 116 139);
+  --account-map-surface: rgb(15 23 42 / 0.84);
+  --account-map-subtle: rgb(15 23 42 / 0.58);
+  --account-map-soft: rgb(30 41 59 / 0.72);
   --account-map-shadow: none;
 }
 
@@ -867,17 +931,53 @@ onUnmounted(() => {
 }
 
 .account-map-toolbar {
-  border-radius: 1.5rem;
-  padding: 1.5rem;
+  border-radius: 1.25rem;
+  padding: 1.15rem 1.25rem;
+}
+
+.account-map-toolbar-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.account-map-toolbar h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--account-map-ink);
+  font-size: 1.35rem;
+  font-weight: 850;
+  line-height: 1.2;
 }
 
 .account-map-eyebrow {
-  margin-bottom: 0.35rem;
-  color: rgb(14 165 233);
+  margin-bottom: 0.3rem;
+  color: var(--account-map-accent);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.account-map-meta {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--account-map-muted);
+  font-size: 0.78rem;
+}
+
+.account-map-toolbar-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .account-map-summary-grid {
@@ -886,11 +986,47 @@ onUnmounted(() => {
 
 .account-map-stat-card {
   display: flex;
-  min-height: 6.8rem;
+  min-height: 5.85rem;
   flex-direction: column;
   justify-content: space-between;
-  border-radius: 1.25rem;
-  padding: 1rem;
+  border-radius: 1.15rem;
+  padding: 0.95rem 1rem;
+}
+
+.account-map-stat-card p {
+  color: var(--account-map-faint);
+  font-size: 0.72rem;
+  font-weight: 780;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.account-map-stat-card strong {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--account-map-ink);
+  font-size: 1.55rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.account-map-stat-card small {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--account-map-muted);
+  font-size: 0.76rem;
+}
+
+.account-map-stat-good {
+  border-color: rgb(16 185 129 / 0.24);
+}
+
+.account-map-stat-warn {
+  border-color: rgb(245 158 11 / 0.25);
+}
+
+.account-map-stat-accent {
+  border-color: rgb(139 92 246 / 0.24);
 }
 
 .account-map-main-column {
@@ -901,8 +1037,91 @@ onUnmounted(() => {
 }
 
 .account-map-filter-card {
-  border-radius: 1.25rem;
+  border-radius: 1.15rem;
   padding: 1rem;
+}
+
+.account-map-filter-header {
+  margin-bottom: 0.9rem;
+}
+
+.account-map-filter-header h2 {
+  color: var(--account-map-ink);
+  font-size: 0.98rem;
+  font-weight: 850;
+}
+
+.account-map-filter-header p {
+  margin-top: 0.25rem;
+  color: var(--account-map-muted);
+  font-size: 0.78rem;
+}
+
+.account-map-field {
+  display: block;
+}
+
+.account-map-field > span {
+  margin-bottom: 0.35rem;
+  display: block;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.account-map-control {
+  width: 100%;
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.85rem;
+  background: var(--account-map-subtle);
+  padding: 0.68rem 0.8rem;
+  color: var(--account-map-ink);
+  font-size: 0.88rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.account-map-control::placeholder {
+  color: var(--account-map-faint);
+}
+
+.account-map-control:focus {
+  border-color: rgb(14 165 233 / 0.62);
+  background: var(--account-map-surface);
+  box-shadow: 0 0 0 4px rgb(14 165 233 / 0.11);
+}
+
+.account-map-segmented {
+  display: inline-flex;
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.9rem;
+  background: var(--account-map-subtle);
+  padding: 0.25rem;
+}
+
+.account-map-segmented button {
+  border-radius: 0.68rem;
+  padding: 0.48rem 0.75rem;
+  color: var(--account-map-muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.account-map-segmented button:hover {
+  color: var(--account-map-ink);
+}
+
+.account-map-segmented button.active {
+  background: var(--account-map-surface);
+  color: var(--account-map-accent-strong);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
 .account-map-empty-state {
@@ -918,7 +1137,119 @@ onUnmounted(() => {
 
 .account-pool-lane {
   overflow: hidden;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  border-radius: 1.15rem;
+  padding: 1rem;
+}
+
+.account-pool-lane-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--account-map-border);
+  padding-bottom: 0.95rem;
+}
+
+.account-pool-platform {
+  border-radius: 999px;
+  background: var(--account-map-soft);
+  padding: 0.34rem 0.62rem;
+  color: var(--account-map-ink);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.account-pool-lane h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--account-map-ink);
+  font-size: 1.02rem;
+  font-weight: 850;
+}
+
+.account-pool-lane-header p {
+  margin-top: 0.45rem;
+  color: var(--account-map-muted);
+  font-size: 0.82rem;
+}
+
+.account-pool-mini-metrics {
+  display: grid;
+  min-width: 14.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.account-pool-mini-metrics div {
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.85rem;
+  background: var(--account-map-subtle);
+  padding: 0.55rem 0.65rem;
+  text-align: right;
+}
+
+.account-pool-mini-metrics span {
+  display: block;
+  color: var(--account-map-faint);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.account-pool-mini-metrics strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--account-map-ink);
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.account-node-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .account-node-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .account-node-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .account-node-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.account-pool-footer {
+  margin-top: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--account-map-border);
+  padding-top: 0.85rem;
+  color: var(--account-map-muted);
+  font-size: 0.78rem;
+}
+
+.account-map-link-button {
+  color: var(--account-map-accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.account-map-link-button:hover {
+  color: var(--account-map-accent);
 }
 
 .account-map-primary-button,
@@ -938,7 +1269,7 @@ onUnmounted(() => {
 }
 
 .account-map-primary-button {
-  background: rgb(37 99 235);
+  background: var(--account-map-accent-strong);
   color: white;
   box-shadow: 0 1px 2px rgb(37 99 235 / 0.18);
 }
@@ -948,18 +1279,19 @@ onUnmounted(() => {
 }
 
 .account-map-secondary-button {
-  border: 1px solid rgb(229 231 235);
-  color: rgb(55 65 81);
+  border: 1px solid var(--account-map-border);
+  background: var(--account-map-surface);
+  color: var(--account-map-ink);
 }
 
 .account-map-secondary-button:hover {
-  border-color: rgb(191 219 254);
-  color: rgb(37 99 235);
+  border-color: rgb(14 165 233 / 0.45);
+  color: var(--account-map-accent-strong);
 }
 
 :global(.dark) .account-map-secondary-button {
-  border-color: rgb(75 85 99);
-  color: rgb(209 213 219);
+  border-color: var(--account-map-border);
+  color: var(--account-map-ink);
 }
 
 :global(.dark) .account-map-secondary-button:hover {
@@ -975,7 +1307,7 @@ onUnmounted(() => {
   position: sticky;
   top: 5.5rem;
   overflow: hidden;
-  border-radius: 1.25rem;
+  border-radius: 1.15rem;
 }
 
 .inspector-heading,
@@ -988,11 +1320,11 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.85rem;
-  border-bottom: 1px solid rgb(243 244 246);
+  border-bottom: 1px solid var(--account-map-border);
 }
 
 :global(.dark) .inspector-heading {
-  border-bottom-color: rgb(31 41 55);
+  border-bottom-color: var(--account-map-border);
 }
 
 .inspector-kicker {
@@ -1000,7 +1332,7 @@ onUnmounted(() => {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgb(107 114 128);
+  color: var(--account-map-muted);
 }
 
 :global(.dark) .inspector-kicker {
@@ -1015,7 +1347,7 @@ onUnmounted(() => {
   font-size: 1.05rem;
   font-weight: 800;
   line-height: 1.2;
-  color: rgb(17 24 39);
+  color: var(--account-map-ink);
 }
 
 :global(.dark) .inspector-title {
@@ -1025,7 +1357,7 @@ onUnmounted(() => {
 .inspector-subtitle {
   margin-top: 0.3rem;
   font-size: 0.8125rem;
-  color: rgb(107 114 128);
+  color: var(--account-map-muted);
 }
 
 :global(.dark) .inspector-subtitle {
@@ -1186,8 +1518,20 @@ onUnmounted(() => {
 .inspector-metric {
   border-radius: 0.9rem;
   border: 1px solid var(--account-map-border);
-  background: rgb(255 255 255 / 0.72);
+  background: var(--account-map-subtle);
   padding: 0.75rem;
+}
+
+.inspector-metric p:first-child {
+  color: var(--account-map-muted) !important;
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.inspector-metric p:last-child {
+  color: var(--account-map-ink) !important;
+  font-size: 1rem;
+  font-weight: 850;
 }
 
 :global(.dark) .inspector-metric {
@@ -1199,7 +1543,7 @@ onUnmounted(() => {
   margin: 0 1rem 1rem;
   border-radius: 1rem;
   border: 1px solid var(--account-map-border);
-  background: rgb(255 255 255 / 0.72);
+  background: var(--account-map-subtle);
   padding: 0.9rem;
 }
 
@@ -1219,7 +1563,7 @@ onUnmounted(() => {
 .inspector-section-title h3 {
   font-size: 0.9rem;
   font-weight: 800;
-  color: rgb(17 24 39);
+  color: var(--account-map-ink);
 }
 
 .inspector-section-title span {
@@ -1230,7 +1574,7 @@ onUnmounted(() => {
   white-space: nowrap;
   font-size: 0.72rem;
   font-weight: 650;
-  color: rgb(107 114 128);
+  color: var(--account-map-muted);
 }
 
 :global(.dark) .inspector-section-title h3 {
@@ -1344,13 +1688,13 @@ onUnmounted(() => {
 
 .account-node {
   position: relative;
-  min-height: 5.6rem;
+  min-height: 5.45rem;
   overflow: hidden;
-  border: 1px solid rgb(229 231 235);
-  border-radius: 1rem;
-  padding: 0.85rem;
-  background: rgb(255 255 255);
-  color: rgb(17 24 39);
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.95rem;
+  padding: 0.82rem 0.86rem 0.82rem 0.95rem;
+  background: var(--account-map-surface);
+  color: var(--account-map-ink);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -1364,7 +1708,7 @@ onUnmounted(() => {
   inset: 0 auto 0 0;
   width: 3px;
   background: currentColor;
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .account-node > * {
@@ -1373,104 +1717,158 @@ onUnmounted(() => {
 
 .account-node:hover {
   transform: translateY(-1px);
-  background: rgb(249 250 251);
+  background: var(--account-map-subtle);
   box-shadow: 0 10px 24px rgb(15 23 42 / 0.07);
 }
 
 :global(.dark) .account-node {
-  border-color: rgb(31 41 55);
-  background: rgb(17 24 39 / 0.72);
-  color: rgb(243 244 246);
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42 / 0.72);
+  color: var(--account-map-ink);
 }
 
 :global(.dark) .account-node:hover {
-  background: rgb(31 41 55 / 0.82);
+  background: rgb(30 41 59 / 0.82);
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
 }
 
 .account-node-selected {
-  border-color: rgb(37 99 235) !important;
-  background: rgb(239 246 255);
+  border-color: rgb(14 165 233 / 0.75) !important;
+  background: rgb(240 249 255);
   box-shadow: 0 0 0 4px rgb(59 130 246 / 0.13), 0 12px 28px rgb(15 23 42 / 0.1);
 }
 
 .account-node-healthy {
-  border-color: rgb(167 243 208);
-  background: rgb(255 255 255);
-  color: rgb(6 95 70);
+  color: var(--account-map-good);
 }
 
 .account-node-degraded {
-  border-color: rgb(253 230 138);
-  background: rgb(255 255 255);
-  color: rgb(146 64 14);
+  color: var(--account-map-warn);
 }
 
 .account-node-limited {
-  border-color: rgb(221 214 254);
-  background: rgb(255 255 255);
-  color: rgb(109 40 217);
+  color: rgb(124 58 237);
 }
 
 .account-node-error {
-  border-color: rgb(254 205 211);
-  background: rgb(255 255 255);
-  color: rgb(190 18 60);
+  color: var(--account-map-danger);
 }
 
 .account-node-muted {
-  border-color: rgb(229 231 235);
-  background: rgb(249 250 251);
-  color: rgb(75 85 99);
+  color: var(--account-map-faint);
 }
 
 .account-node-blue {
-  border-color: rgb(191 219 254);
-  background: rgb(255 255 255);
-  color: rgb(29 78 216);
+  color: var(--account-map-accent-strong);
 }
 
 .account-node-blue-strong {
-  border-color: rgb(96 165 250);
-  background: rgb(239 246 255);
-  color: rgb(30 64 175);
+  border-color: rgb(14 165 233 / 0.42);
+  background: rgb(240 249 255);
+  color: var(--account-map-accent-strong);
 }
 
 :global(.dark) .account-node-healthy {
-  border-color: rgb(16 185 129 / 0.45);
-  background: rgb(6 78 59 / 0.22);
   color: rgb(167 243 208);
 }
 
 :global(.dark) .account-node-degraded {
-  border-color: rgb(245 158 11 / 0.5);
-  background: rgb(120 53 15 / 0.25);
   color: rgb(253 230 138);
 }
 
 :global(.dark) .account-node-limited {
-  border-color: rgb(139 92 246 / 0.5);
-  background: rgb(76 29 149 / 0.25);
   color: rgb(221 214 254);
 }
 
 :global(.dark) .account-node-error {
-  border-color: rgb(244 63 94 / 0.5);
-  background: rgb(136 19 55 / 0.25);
   color: rgb(254 205 211);
 }
 
 :global(.dark) .account-node-muted {
-  border-color: rgb(55 65 81);
-  background: rgb(31 41 55 / 0.72);
   color: rgb(156 163 175);
 }
 
 :global(.dark) .account-node-blue,
 :global(.dark) .account-node-blue-strong {
-  border-color: rgb(59 130 246 / 0.5);
-  background: rgb(30 64 175 / 0.25);
   color: rgb(191 219 254);
+}
+
+.account-node p:first-child {
+  color: var(--account-map-ink);
+}
+
+.account-node-subtitle {
+  margin-top: 0.35rem;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
+}
+
+.account-node-status {
+  border-radius: 999px;
+  background: rgb(226 232 240);
+  padding: 0.12rem 0.42rem;
+  color: rgb(71 85 105);
+  font-weight: 780;
+}
+
+.account-node-healthy .account-node-status {
+  background: rgb(209 250 229);
+  color: rgb(4 120 87);
+}
+
+.account-node-degraded .account-node-status {
+  background: rgb(254 243 199);
+  color: rgb(180 83 9);
+}
+
+.account-node-limited .account-node-status {
+  background: rgb(237 233 254);
+  color: rgb(109 40 217);
+}
+
+.account-node-error .account-node-status {
+  background: rgb(255 228 230);
+  color: rgb(190 18 60);
+}
+
+:global(.dark) .account-node-status {
+  background: rgb(51 65 85);
+  color: rgb(203 213 225);
+}
+
+:global(.dark) .account-node-healthy .account-node-status {
+  background: rgb(6 78 59 / 0.55);
+  color: rgb(167 243 208);
+}
+
+:global(.dark) .account-node-degraded .account-node-status {
+  background: rgb(120 53 15 / 0.5);
+  color: rgb(253 230 138);
+}
+
+:global(.dark) .account-node-limited .account-node-status {
+  background: rgb(76 29 149 / 0.5);
+  color: rgb(221 214 254);
+}
+
+:global(.dark) .account-node-error .account-node-status {
+  background: rgb(136 19 55 / 0.5);
+  color: rgb(254 205 211);
+}
+
+.account-node-meta {
+  margin-top: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
 }
 
 .inspector-action,
@@ -1600,6 +1998,31 @@ onUnmounted(() => {
 @media (max-width: 1279px) {
   .account-map-inspector {
     position: static;
+  }
+}
+
+@media (max-width: 768px) {
+  .account-map-toolbar-copy,
+  .account-pool-lane-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-map-toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .account-pool-mini-metrics {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .account-map-segmented {
+    width: 100%;
+  }
+
+  .account-map-segmented button {
+    flex: 1;
   }
 }
 
