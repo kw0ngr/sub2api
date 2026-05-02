@@ -1916,19 +1916,46 @@ onUnmounted(() => {
 
 :global(.app-shell.app-shell-anti) .account-map-page {
   color: var(--anti-ink);
+  width: 100%;
+  max-width: min(1480px, 100%);
+  margin-inline: auto;
+  transform: none !important;
+  --account-map-border: var(--anti-ink);
+  --account-map-border-strong: var(--anti-ink);
+  --account-map-ink: var(--anti-ink);
+  --account-map-muted: #334155;
+  --account-map-faint: #475569;
+  --account-map-surface: var(--anti-paper);
+  --account-map-subtle: #fffef2;
+  --account-map-soft: #fff9b8;
+  --account-map-shadow: none;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .account-node, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state) {
-  border: 4px solid var(--anti-ink) !important;
-  border-radius: 0.35rem !important;
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
-  box-shadow: 7px 7px 0 var(--anti-ink) !important;
+  box-shadow: 6px 6px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+  transform: none !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state),
+:global(.app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0.45rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 3px 3px 0 var(--anti-ink) !important;
   color: var(--anti-ink) !important;
 }
 
 :global(.app-shell.app-shell-anti) .account-map-page .account-map-toolbar {
   background: var(--anti-yellow) !important;
-  transform: rotate(-0.25deg);
+  transform: none !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-map-stat-card {
+  min-height: 5.4rem;
 }
 
 :global(.app-shell.app-shell-anti) .account-map-eyebrow {
@@ -1939,7 +1966,7 @@ onUnmounted(() => {
   padding: 0.2rem 0.35rem;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(h1, h2, h3, p, span, label, strong, small) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(h1, h2, h3, p, label, strong, small) {
   color: var(--anti-ink) !important;
 }
 
@@ -1951,7 +1978,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.2rem !important;
   box-shadow: 4px 4px 0 var(--anti-ink) !important;
@@ -1959,31 +1986,64 @@ onUnmounted(() => {
   font-weight: 950;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button:hover {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close):hover {
   background: var(--anti-green) !important;
   transform: rotate(-1deg) translate(-1px, -1px);
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page .account-node:nth-child(odd) {
-  transform: rotate(-0.35deg);
+:global(.app-shell.app-shell-anti) .account-map-page .account-node {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0.5rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 3px 3px 0 var(--anti-ink) !important;
+  transform: none !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page .account-node:nth-child(even) {
-  transform: rotate(0.35deg);
+:global(.app-shell.app-shell-anti) .account-map-page .account-node p:first-child,
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-meta,
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-subtitle {
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-status {
+  border: 2px solid var(--anti-ink);
+  border-radius: 0.2rem;
+  background: var(--anti-yellow) !important;
+  color: var(--anti-ink) !important;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-healthy {
+  color: #007f3b;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-degraded {
+  color: #a16207;
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-node-limited, .account-node-blue, .account-node-blue-strong) {
+  color: var(--anti-blue);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-error {
+  color: var(--anti-red);
+}
+
+:global(.app-shell.app-shell-anti) .account-map-page .account-node-muted {
+  color: var(--anti-muted);
 }
 
 :global(.app-shell.app-shell-anti) .account-map-page .account-node:hover,
 :global(.app-shell.app-shell-anti) .account-map-page .account-node-selected {
-  background: var(--anti-green) !important;
-  box-shadow: 9px 9px 0 var(--anti-red) !important;
-  transform: rotate(-1deg) translate(-2px, -2px);
+  background: #f6ff57 !important;
+  box-shadow: 5px 5px 0 var(--anti-red) !important;
+  transform: translate(-1px, -1px) !important;
 }
 
 :global(.app-shell.app-shell-anti) .account-map-page .inspector-status-card {
-  border: 4px solid var(--anti-ink) !important;
-  border-radius: 0.35rem !important;
+  border: 3px solid var(--anti-ink) !important;
+  border-radius: 0.5rem !important;
   background: var(--anti-yellow) !important;
-  box-shadow: 6px 6px 0 var(--anti-blue) !important;
+  box-shadow: 4px 4px 0 var(--anti-blue) !important;
   color: var(--anti-ink) !important;
 }
 

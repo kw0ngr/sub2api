@@ -71,29 +71,30 @@ defineExpose({ replayTour })
   --anti-cyan: #00e5ff;
   --anti-muted: #475569;
   --anti-link: #1428ff;
+  overflow-x: clip;
   color: var(--anti-ink);
   background:
-    radial-gradient(circle at 12% 18%, rgb(255 0 0 / 0.22) 0 8rem, transparent 8.2rem),
-    radial-gradient(circle at 84% 12%, rgb(0 255 0 / 0.25) 0 9rem, transparent 9.2rem),
-    repeating-linear-gradient(135deg, rgb(5 5 5 / 0.08) 0 10px, transparent 10px 22px),
-    linear-gradient(135deg, #ffeb3b 0%, #ffffff 48%, #00ffff 100%) !important;
-  font-family: Impact, "Arial Black", "Comic Sans MS", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: -0.015em;
+    radial-gradient(circle at 10% 10%, rgb(255 0 0 / 0.16) 0 7rem, transparent 7.2rem),
+    radial-gradient(circle at 88% 8%, rgb(0 255 0 / 0.16) 0 7.5rem, transparent 7.7rem),
+    repeating-linear-gradient(135deg, rgb(5 5 5 / 0.055) 0 10px, transparent 10px 24px),
+    linear-gradient(135deg, #fff038 0%, #ffffff 52%, #eaffff 100%) !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
 }
 
 .dark .app-shell.app-shell-anti {
   background:
-    radial-gradient(circle at 12% 18%, rgb(255 0 0 / 0.28) 0 8rem, transparent 8.2rem),
-    radial-gradient(circle at 84% 12%, rgb(0 255 0 / 0.28) 0 9rem, transparent 9.2rem),
-    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.10) 0 10px, transparent 10px 22px),
-    linear-gradient(135deg, #120012 0%, #ff00ff 46%, #ffeb3b 100%) !important;
+    radial-gradient(circle at 10% 10%, rgb(255 0 0 / 0.22) 0 7rem, transparent 7.2rem),
+    radial-gradient(circle at 88% 8%, rgb(0 255 0 / 0.20) 0 7.5rem, transparent 7.7rem),
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.08) 0 10px, transparent 10px 24px),
+    linear-gradient(135deg, #160016 0%, #2d0a3d 52%, #3b3300 100%) !important;
 }
 
 .app-shell.app-shell-anti .bg-mesh-gradient {
   background:
-    repeating-linear-gradient(90deg, rgb(5 5 5 / 0.18) 0 12px, transparent 12px 24px),
-    repeating-linear-gradient(0deg, rgb(0 0 255 / 0.12) 0 18px, transparent 18px 36px) !important;
-  opacity: 0.48;
+    repeating-linear-gradient(90deg, rgb(5 5 5 / 0.10) 0 12px, transparent 12px 28px),
+    repeating-linear-gradient(0deg, rgb(0 0 255 / 0.07) 0 18px, transparent 18px 40px) !important;
+  opacity: 0.24;
 }
 
 .app-shell.app-shell-anti :is(header.glass, aside, .card, .dropdown, .modal, .drawer, .table-card) {
@@ -107,11 +108,11 @@ defineExpose({ replayTour })
 
 .app-shell.app-shell-anti header.glass {
   z-index: 50;
-  transform: rotate(-0.25deg);
+  transform: none;
 }
 
 .app-shell.app-shell-anti aside {
-  transform: rotate(0.15deg);
+  transform: none;
 }
 
 .app-shell.app-shell-anti :is(.btn, .btn-primary, .btn-secondary, .btn-ghost, .dropdown-item, button:not(.chartjs-render-monitor)) {
