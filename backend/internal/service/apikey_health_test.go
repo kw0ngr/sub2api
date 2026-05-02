@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -93,6 +94,96 @@ func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 func TestDefaultAPIKeyBaseURL_OpenRouterAndDeepSeek(t *testing.T) {
 	require.Equal(t, "https://openrouter.ai/api/v1", DefaultAPIKeyBaseURL(PlatformOpenRouter))
 	require.Equal(t, "https://api.deepseek.com", DefaultAPIKeyBaseURL(PlatformDeepSeek))
+}
+
+func TestCheckOpenRouterAPIKey_LowBalanceIsInvalid(t *testing.T) {
+	svc := &AccountTestService{
+		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
+			newJSONResponse(http.StatusOK, `{"data":{"total_credits":1.2,"total_usage":0.5}}`),
+		}},
+	}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformOpenRouter,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-or-v1-test"},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.False(t, health.Valid)
+	require.True(t, health.Invalid)
+	require.Equal(t, http.StatusOK, health.StatusCode)
+	require.NotNil(t, health.ProbeQuota)
+	require.Equal(t, "0.7000", health.ProbeQuota.CreditsRemaining)
+	require.Contains(t, health.Message, "below 1")
+}
+
+func TestCheckDeepSeekAPIKey_LowBalanceIsInvalid(t *testing.T) {
+	svc := &AccountTestService{
+		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
+			newJSONResponse(http.StatusOK, `{"balance_infos":[{"total_balance":"0.50","currency":"USD"}]}`),
+		}},
+	}
+	account := &Account{
+		ID:          2,
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.False(t, health.Valid)
+	require.True(t, health.Invalid)
+	require.Equal(t, http.StatusOK, health.StatusCode)
+	require.NotNil(t, health.ProbeQuota)
+	require.Equal(t, "0.50 USD", health.ProbeQuota.Balance)
+	require.Contains(t, health.Message, "below 1")
+}
+
+func TestCheckDeepSeekAPIKey_AnyBalanceAtLeastOneStaysValid(t *testing.T) {
+	svc := &AccountTestService{
+		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
+			newJSONResponse(http.StatusOK, `{"balance_infos":[{"total_balance":"0.50","currency":"USD"},{"total_balance":"2.00","currency":"CNY"}]}`),
+		}},
+	}
+	account := &Account{
+		ID:          3,
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.True(t, health.Valid)
+	require.False(t, health.Invalid)
+	require.Equal(t, http.StatusOK, health.StatusCode)
+	require.NotNil(t, health.ProbeQuota)
+	require.Equal(t, "0.50 USD; 2.00 CNY", health.ProbeQuota.Balance)
+}
+
+func TestClassifyAPIKeyStatusAction_OpenRouterPaymentRequiredDisables(t *testing.T) {
+	account := &Account{Platform: PlatformOpenRouter, Type: AccountTypeAPIKey}
+
+	action := ClassifyAPIKeyStatusAction(account, http.StatusPaymentRequired, []byte(`{"error":{"message":"Insufficient credits"}}`))
+
+	require.Equal(t, APIKeyStatusActionPermanentDisable, action)
+}
+
+func TestClassifyAPIKeyStatusAction_DeepSeekInsufficientBalanceDisables(t *testing.T) {
+	account := &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}
+
+	action := ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, []byte(`{"error":{"message":"Insufficient balance"}}`))
+
+	require.Equal(t, APIKeyStatusActionPermanentDisable, action)
 }
 
 func TestBuildAPIKeyHealthCheckResultFromScheduledResult_InvalidFailure(t *testing.T) {

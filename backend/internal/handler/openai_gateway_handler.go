@@ -47,6 +47,13 @@ func resolveOpenAIForwardDefaultMappedModel(apiKey *service.APIKey, fallbackMode
 	return strings.TrimSpace(apiKey.Group.DefaultMappedModel)
 }
 
+func resolveOpenAICompatibleGatewayPlatform(apiKey *service.APIKey) string {
+	if apiKey != nil && apiKey.Group != nil && service.IsOpenAICompatiblePlatform(apiKey.Group.Platform) {
+		return apiKey.Group.Platform
+	}
+	return service.PlatformOpenAI
+}
+
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
@@ -230,6 +237,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
+	gatewayPlatform := resolveOpenAICompatibleGatewayPlatform(apiKey)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -240,8 +248,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	for {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForPlatform(
 			c.Request.Context(),
+			gatewayPlatform,
 			apiKey.GroupID,
 			previousResponseID,
 			sessionHash,
@@ -624,6 +633,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	effectiveMappedModel := preferredMappedModel
+	gatewayPlatform := resolveOpenAICompatibleGatewayPlatform(apiKey)
 
 	for {
 		currentRoutingModel := routingModel
@@ -631,8 +641,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			currentRoutingModel = effectiveMappedModel
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForPlatform(
 			c.Request.Context(),
+			gatewayPlatform,
 			apiKey.GroupID,
 			"", // no previous_response_id
 			sessionHash,
@@ -1159,8 +1170,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		firstMessage,
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
-	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForPlatform(
 		ctx,
+		resolveOpenAICompatibleGatewayPlatform(apiKey),
 		apiKey.GroupID,
 		previousResponseID,
 		sessionHash,

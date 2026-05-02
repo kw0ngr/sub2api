@@ -65,6 +65,20 @@ func (r stubOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.C
 	return result, nil
 }
 
+func (r stubOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]Account, error) {
+	allowed := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowed[platform] = struct{}{}
+	}
+	var result []Account
+	for _, acc := range r.accounts {
+		if _, ok := allowed[acc.Platform]; ok {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
+}
+
 func (r stubOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	var result []Account
 	for _, acc := range r.accounts {
@@ -77,6 +91,14 @@ func (r stubOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, pl
 
 func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (r stubOpenAIAccountRepo) ListSchedulableByPlatforms(ctx context.Context, platforms []string) ([]Account, error) {
+	return r.ListSchedulableByGroupIDAndPlatforms(ctx, 0, platforms)
+}
+
+func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatforms(ctx context.Context, platforms []string) ([]Account, error) {
+	return r.ListSchedulableByGroupIDAndPlatforms(ctx, 0, platforms)
 }
 
 type stubConcurrencyCache struct {
@@ -334,6 +356,122 @@ func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing
 	svc := &OpenAIGatewayService{}
 	require.Empty(t, svc.GenerateSessionHash(c, []byte(`{}`)))
 	require.Empty(t, svc.GenerateSessionHash(c, nil))
+}
+
+func TestOpenAIGatewayService_GetAccessToken_OpenAICompatibleAPIKeys(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+
+	for _, platform := range []string{PlatformOpenRouter, PlatformDeepSeek} {
+		token, mode, err := svc.GetAccessToken(context.Background(), &Account{
+			Platform:    platform,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"api_key": "sk-compatible"},
+		})
+
+		require.NoError(t, err, platform)
+		require.Equal(t, "sk-compatible", token, platform)
+		require.Equal(t, "apikey", mode, platform)
+	}
+}
+
+func TestBuildOpenAICompatibleChatCompletionsURL(t *testing.T) {
+	require.Equal(t,
+		"https://openrouter.ai/api/v1/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformOpenRouter, "https://openrouter.ai/api/v1"),
+	)
+	require.Equal(t,
+		"https://api.deepseek.com/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformDeepSeek, "https://api.deepseek.com"),
+	)
+	require.Equal(t,
+		"https://api.deepseek.com/v1/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformDeepSeek, "https://api.deepseek.com/v1"),
+	)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForPlatform_OpenRouter(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(99001)
+	openAIAccount := Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1}
+	openRouterAccount := Account{ID: 2, Platform: PlatformOpenRouter, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{openAIAccount, openRouterAccount}},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForPlatform(
+		ctx,
+		PlatformOpenRouter,
+		&groupID,
+		"",
+		"",
+		"openrouter/auto",
+		nil,
+		OpenAIUpstreamTransportAny,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(2), selection.Account.ID)
+	require.Equal(t, PlatformOpenRouter, selection.Account.Platform)
+}
+
+func TestOpenAIGatewayService_ForwardAsChatCompletions_OpenRouterUsesNativeChatEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"or-req"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl_1",
+				"object":"chat.completion",
+				"created":1,
+				"model":"openrouter/auto",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          99,
+		Platform:    PlatformOpenRouter,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-or-v1-test",
+			"base_url": "https://openrouter.ai/api/v1",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"openrouter/auto","messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://openrouter.ai/api/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-or-v1-test", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "openrouter/auto", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, 10, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"chat.completion"`)
 }
 
 func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error) {

@@ -1245,10 +1245,11 @@ func (s *OpenAIGatewayService) SelectAccountForModel(ctx context.Context, groupI
 // SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
 // SelectAccountForModelWithExclusions 选择支持指定模型的账号，同时排除指定的账号。
 func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
-	return s.selectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs, 0)
+	return s.selectAccountForModelWithExclusionsForPlatform(ctx, PlatformOpenAI, groupID, sessionHash, requestedModel, excludedIDs, 0)
 }
 
-func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, stickyAccountID int64) (*Account, error) {
+func (s *OpenAIGatewayService) selectAccountForModelWithExclusionsForPlatform(ctx context.Context, platform string, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, stickyAccountID int64) (*Account, error) {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
@@ -1258,20 +1259,20 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 
 	// 1. 尝试粘性会话命中
 	// Try sticky session hit
-	if account := s.tryStickySessionHit(ctx, groupID, sessionHash, requestedModel, excludedIDs, stickyAccountID); account != nil {
+	if account := s.tryStickySessionHitForPlatform(ctx, platform, groupID, sessionHash, requestedModel, excludedIDs, stickyAccountID); account != nil {
 		return account, nil
 	}
 
 	// 2. 获取可调度的 OpenAI 账号
 	// Get schedulable OpenAI accounts
-	accounts, err := s.listSchedulableAccounts(ctx, groupID)
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
 	if err != nil {
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 
 	// 3. 按优先级 + LRU 选择最佳账号
 	// Select by priority + LRU
-	selected := s.selectBestAccount(ctx, groupID, accounts, requestedModel, excludedIDs)
+	selected := s.selectBestAccountForPlatform(ctx, platform, groupID, accounts, requestedModel, excludedIDs)
 
 	if selected == nil {
 		if requestedModel != "" {
@@ -1294,7 +1295,8 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 //
 // tryStickySessionHit attempts to get account from sticky session.
 // Returns account if hit and usable; clears session and returns nil if account is unavailable.
-func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID *int64, sessionHash, requestedModel string, excludedIDs map[int64]struct{}, stickyAccountID int64) *Account {
+func (s *OpenAIGatewayService) tryStickySessionHitForPlatform(ctx context.Context, platform string, groupID *int64, sessionHash, requestedModel string, excludedIDs map[int64]struct{}, stickyAccountID int64) *Account {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if sessionHash == "" {
 		return nil
 	}
@@ -1326,13 +1328,13 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 
 	// 验证账号是否可用于当前请求
 	// Verify account is usable for current request
-	if !account.IsSchedulable() || !account.IsOpenAI() {
+	if !isSchedulableOpenAICompatibleAccountForPlatform(account, platform) {
 		return nil
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
 		return nil
 	}
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel)
+	account = s.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, account, requestedModel, platform)
 	if account == nil {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
@@ -1354,7 +1356,8 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 //
 // selectBestAccount selects the best account from candidates (priority + LRU).
 // Returns nil if no available account.
-func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}) *Account {
+func (s *OpenAIGatewayService) selectBestAccountForPlatform(ctx context.Context, platform string, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}) *Account {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	var selected *Account
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 
@@ -1367,11 +1370,11 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			continue
 		}
 
-		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel)
+		fresh := s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, acc, requestedModel, platform)
 		if fresh == nil {
 			continue
 		}
-		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, requestedModel)
+		fresh = s.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, fresh, requestedModel, platform)
 		if fresh == nil {
 			continue
 		}
@@ -1429,6 +1432,12 @@ func (s *OpenAIGatewayService) isBetterAccount(candidate, current *Account) bool
 
 // SelectAccountWithLoadAwareness selects an account with load-awareness and wait plan.
 func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+	return s.SelectAccountWithLoadAwarenessForPlatform(ctx, PlatformOpenAI, groupID, sessionHash, requestedModel, excludedIDs)
+}
+
+// SelectAccountWithLoadAwarenessForPlatform selects an OpenAI-compatible account for the requested provider.
+func (s *OpenAIGatewayService) SelectAccountWithLoadAwarenessForPlatform(ctx context.Context, platform string, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
@@ -1445,7 +1454,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 		}
 	}
 	if s.concurrencyService == nil || !cfg.LoadBatchEnabled {
-		account, err := s.selectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, excludedIDs, stickyAccountID)
+		account, err := s.selectAccountForModelWithExclusionsForPlatform(ctx, platform, groupID, sessionHash, requestedModel, excludedIDs, stickyAccountID)
 		if err != nil {
 			return nil, err
 		}
@@ -1472,7 +1481,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 		})
 	}
 
-	accounts, err := s.listSchedulableAccounts(ctx, groupID)
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -1498,9 +1507,9 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && account.IsSchedulable() && account.IsOpenAI() &&
+				if !clearSticky && isSchedulableOpenAICompatibleAccountForPlatform(account, platform) &&
 					(requestedModel == "" || account.IsModelSupported(requestedModel)) {
-					account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel)
+					account = s.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, account, requestedModel, platform)
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel) {
@@ -1566,7 +1575,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 		ordered := append([]*Account(nil), candidates...)
 		sortAccountsByPriorityAndLastUsed(ordered, false)
 		for _, acc := range ordered {
-			fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel)
+			fresh := s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, acc, requestedModel, platform)
 			if fresh == nil {
 				continue
 			}
@@ -1619,7 +1628,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 			shuffleWithinSortGroups(available)
 
 			for _, item := range available {
-				fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, item.account, requestedModel)
+				fresh := s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, item.account, requestedModel, platform)
 				if fresh == nil {
 					continue
 				}
@@ -1640,7 +1649,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	// ============ Layer 3: Fallback wait ============
 	sortAccountsByPriorityAndLastUsed(candidates, false)
 	for _, acc := range candidates {
-		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel)
+		fresh := s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, acc, requestedModel, platform)
 		if fresh == nil {
 			continue
 		}
@@ -1658,19 +1667,20 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	return nil, ErrNoAvailableAccounts
 }
 
-func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64) ([]Account, error) {
+func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if s.schedulerSnapshot != nil {
-		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, PlatformOpenAI, false)
+		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
 		return accounts, err
 	}
 	var accounts []Account
 	var err error
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, PlatformOpenAI)
+		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
 	} else if groupID != nil {
-		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, PlatformOpenAI)
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
 	} else {
-		accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatform(ctx, PlatformOpenAI)
+		accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatform(ctx, platform)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query accounts failed: %w", err)
@@ -1686,6 +1696,11 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 }
 
 func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, requestedModel string) *Account {
+	return s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, account, requestedModel, PlatformOpenAI)
+}
+
+func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountForPlatform(ctx context.Context, account *Account, requestedModel string, platform string) *Account {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if account == nil {
 		return nil
 	}
@@ -1699,7 +1714,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 		fresh = current
 	}
 
-	if !fresh.IsSchedulable() || !fresh.IsOpenAI() {
+	if !isSchedulableOpenAICompatibleAccountForPlatform(fresh, platform) {
 		return nil
 	}
 	if requestedModel != "" && !fresh.IsModelSupported(requestedModel) {
@@ -1709,6 +1724,11 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 }
 
 func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Context, account *Account, requestedModel string) *Account {
+	return s.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, account, requestedModel, PlatformOpenAI)
+}
+
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForPlatform(ctx context.Context, account *Account, requestedModel string, platform string) *Account {
+	platform = normalizeOpenAICompatiblePlatform(platform)
 	if account == nil {
 		return nil
 	}
@@ -1720,13 +1740,21 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	if err != nil || latest == nil {
 		return nil
 	}
-	if !latest.IsSchedulable() || !latest.IsOpenAI() {
+	if !isSchedulableOpenAICompatibleAccountForPlatform(latest, platform) {
 		return nil
 	}
 	if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
 		return nil
 	}
 	return latest
+}
+
+func isSchedulableOpenAICompatibleAccountForPlatform(account *Account, platform string) bool {
+	if account == nil || !account.IsSchedulable() {
+		return false
+	}
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	return account.Platform == platform && account.IsOpenAICompatible()
 }
 
 func (s *OpenAIGatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
@@ -2917,10 +2945,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 func shouldFailoverOpenAIPassthroughResponse(statusCode int) bool {
 	switch statusCode {
-	case http.StatusTooManyRequests, 529:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests, 529:
 		return true
 	default:
-		return false
+		return statusCode >= 500
 	}
 }
 
@@ -4243,6 +4271,12 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 	if usage == nil || len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
 		return
 	}
+	if chatUsage := gjson.GetBytes(data, "usage"); chatUsage.Exists() && chatUsage.Type != gjson.Null {
+		usage.InputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens").Int())
+		usage.OutputTokens = int(gjson.GetBytes(data, "usage.completion_tokens").Int())
+		usage.CacheReadInputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens").Int())
+		return
+	}
 	// 选择性解析：仅在数据中包含终止事件标识时才进入字段提取。
 	if len(data) < 72 {
 		return
@@ -4262,6 +4296,16 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return OpenAIUsage{}, false
+	}
+	if usage := gjson.GetBytes(body, "usage"); usage.Exists() && usage.Type != gjson.Null {
+		if gjson.GetBytes(body, "usage.prompt_tokens").Exists() ||
+			gjson.GetBytes(body, "usage.completion_tokens").Exists() {
+			return OpenAIUsage{
+				InputTokens:          int(gjson.GetBytes(body, "usage.prompt_tokens").Int()),
+				OutputTokens:         int(gjson.GetBytes(body, "usage.completion_tokens").Int()),
+				CacheReadInputTokens: int(gjson.GetBytes(body, "usage.prompt_tokens_details.cached_tokens").Int()),
+			}, true
+		}
 	}
 	values := gjson.GetManyBytes(
 		body,
@@ -4539,6 +4583,23 @@ func buildOpenAIResponsesURL(base string) string {
 		return normalized + "/responses"
 	}
 	return normalized + "/v1/responses"
+}
+
+func buildOpenAICompatibleChatCompletionsURL(platform, base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if normalized == "" {
+		normalized = DefaultAPIKeyBaseURL(platform)
+	}
+	if strings.HasSuffix(normalized, "/chat/completions") {
+		return normalized
+	}
+	if strings.HasSuffix(normalized, "/v1") {
+		return normalized + "/chat/completions"
+	}
+	if strings.TrimSpace(platform) == PlatformDeepSeek {
+		return normalized + "/chat/completions"
+	}
+	return normalized + "/v1/chat/completions"
 }
 
 func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {

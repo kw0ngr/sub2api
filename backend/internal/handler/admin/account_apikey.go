@@ -638,6 +638,11 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 			continue
 		}
 
+		if platform == "" && baseURL != "" {
+			if detected, ok := detectRawAPIKeyPlatformFromBaseURL(baseURL); ok {
+				platform = detected
+			}
+		}
 		if platform == "" {
 			var ok bool
 			platform, ok = service.DetectAPIKeyPlatform(key)
@@ -669,6 +674,24 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 	}
 
 	return total, lines, results, nil
+}
+
+func detectRawAPIKeyPlatformFromBaseURL(raw string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.Contains(normalized, "openrouter.ai"):
+		return service.PlatformOpenRouter, true
+	case strings.Contains(normalized, "deepseek.com"):
+		return service.PlatformDeepSeek, true
+	case strings.Contains(normalized, "api.openai.com"):
+		return service.PlatformOpenAI, true
+	case strings.Contains(normalized, "anthropic.com"):
+		return service.PlatformAnthropic, true
+	case strings.Contains(normalized, "generativelanguage.googleapis.com"):
+		return service.PlatformGemini, true
+	default:
+		return "", false
+	}
 }
 
 func splitRawAPIKeyImportLine(line string) []string {

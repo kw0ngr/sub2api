@@ -13,7 +13,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 )
 
-const apiKeyProbeCooldown = 72 * time.Hour
+const (
+	apiKeyProbeCooldown        = 72 * time.Hour
+	apiKeyMinimumUsableBalance = 1.0
+)
 
 type APIKeyHealthCheckResult struct {
 	Platform   string                    `json:"platform"`
@@ -300,11 +303,25 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return APIKeyStatusActionPermanentDisable
-		case http.StatusPaymentRequired, http.StatusTooManyRequests:
+		case http.StatusPaymentRequired:
+			return APIKeyStatusActionPermanentDisable
+		case http.StatusTooManyRequests:
 			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusBadRequest:
 			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error") ||
-				containsAny(msg, "invalid api key", "incorrect api key", "no api key provided", "authentication failed", "invalid token") {
+				containsAny(msg,
+					"invalid api key",
+					"incorrect api key",
+					"no api key provided",
+					"authentication failed",
+					"invalid token",
+					"insufficient balance",
+					"insufficient credits",
+					"insufficient quota",
+					"credit balance",
+					"balance is insufficient",
+					"credits exhausted",
+				) {
 				return APIKeyStatusActionPermanentDisable
 			}
 			return APIKeyStatusActionTemporaryCooldown
@@ -403,6 +420,16 @@ func (s *AccountTestService) checkOpenRouterAPIKey(ctx context.Context, account 
 		balance, total, used, remaining := parseOpenRouterCredits(body)
 		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformOpenRouter, statusCode, balance, total, used, remaining, "", time.Now())
 		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
+		if low, ok := apiKeyProbeBalanceBelowMinimum(firstNonEmpty(remaining, total), apiKeyMinimumUsableBalance); ok && low {
+			snapshot.Note = lowBalanceProbeNote()
+			return &APIKeyHealthCheckResult{
+				Platform:   PlatformOpenRouter,
+				StatusCode: statusCode,
+				Invalid:    true,
+				Message:    balanceBelowMinimumMessage(balance),
+				ProbeQuota: snapshot,
+			}, nil
+		}
 		return &APIKeyHealthCheckResult{
 			Platform:   PlatformOpenRouter,
 			StatusCode: statusCode,
@@ -430,9 +457,19 @@ func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *A
 		return nil, err
 	}
 	if statusCode == http.StatusOK {
-		balance, currency := parseDeepSeekBalance(body)
+		balance, currency, amounts := parseDeepSeekBalanceDetails(body)
 		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformDeepSeek, statusCode, balance, "", "", "", currency, time.Now())
 		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
+		if apiKeyProbeBalancesBelowMinimum(amounts, apiKeyMinimumUsableBalance) {
+			snapshot.Note = lowBalanceProbeNote()
+			return &APIKeyHealthCheckResult{
+				Platform:   PlatformDeepSeek,
+				StatusCode: statusCode,
+				Invalid:    true,
+				Message:    balanceBelowMinimumMessage(balance),
+				ProbeQuota: snapshot,
+			}, nil
+		}
 		return &APIKeyHealthCheckResult{
 			Platform:   PlatformDeepSeek,
 			StatusCode: statusCode,
@@ -573,6 +610,11 @@ func parseOpenRouterCredits(body []byte) (balance, total, used, remaining string
 }
 
 func parseDeepSeekBalance(body []byte) (balance, currency string) {
+	balance, currency, _ = parseDeepSeekBalanceDetails(body)
+	return balance, currency
+}
+
+func parseDeepSeekBalanceDetails(body []byte) (balance, currency string, amounts []float64) {
 	var payload struct {
 		BalanceInfos []struct {
 			TotalBalance any    `json:"total_balance"`
@@ -580,12 +622,15 @@ func parseDeepSeekBalance(body []byte) (balance, currency string) {
 		} `json:"balance_infos"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return "available", ""
+		return "available", "", nil
 	}
 	parts := make([]string, 0, len(payload.BalanceInfos))
 	currencies := make([]string, 0, len(payload.BalanceInfos))
 	for _, info := range payload.BalanceInfos {
 		amount := apiKeyProbeNumberString(info.TotalBalance)
+		if parsed, ok := apiKeyProbeFloat(info.TotalBalance); ok {
+			amounts = append(amounts, parsed)
+		}
 		if amount == "" {
 			amount = "?"
 		}
@@ -596,9 +641,9 @@ func parseDeepSeekBalance(body []byte) (balance, currency string) {
 		parts = append(parts, strings.TrimSpace(amount+" "+cur))
 	}
 	if len(parts) == 0 {
-		return "available", ""
+		return "available", "", nil
 	}
-	return strings.Join(parts, "; "), strings.Join(currencies, ";")
+	return strings.Join(parts, "; "), strings.Join(currencies, ";"), amounts
 }
 
 func apiKeyProbeNumberString(value any) string {
@@ -637,6 +682,47 @@ func apiKeyProbeFloat(value any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func apiKeyProbeBalanceBelowMinimum(value string, minimum float64) (bool, bool) {
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return false, false
+	}
+	return parsed < minimum, true
+}
+
+func apiKeyProbeBalancesBelowMinimum(amounts []float64, minimum float64) bool {
+	if len(amounts) == 0 {
+		return false
+	}
+	for _, amount := range amounts {
+		if amount >= minimum {
+			return false
+		}
+	}
+	return true
+}
+
+func balanceBelowMinimumMessage(balance string) string {
+	balance = strings.TrimSpace(balance)
+	if balance == "" {
+		return "balance below 1"
+	}
+	return "balance below 1: " + balance
+}
+
+func lowBalanceProbeNote() string {
+	return "Balance is below 1; health check marks this API key invalid for scheduling."
 }
 
 func balanceMessage(balance string) string {

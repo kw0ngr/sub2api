@@ -62,6 +62,21 @@ bad-key
 	require.Contains(t, results[0].Error, "could not detect platform")
 }
 
+func TestParseRawAPIKeyImportLines_DetectsProviderFromBaseURL(t *testing.T) {
+	total, lines, results, err := parseRawAPIKeyImportLines(`
+sk-deepseek-compatible,https://api.deepseek.com
+sk-openrouter-compatible,https://openrouter.ai/api/v1
+`)
+	require.NoError(t, err)
+	require.Equal(t, 2, total)
+	require.Empty(t, results)
+	require.Len(t, lines, 2)
+	require.Equal(t, service.PlatformDeepSeek, lines[0].Platform)
+	require.Equal(t, "https://api.deepseek.com", lines[0].BaseURL)
+	require.Equal(t, service.PlatformOpenRouter, lines[1].Platform)
+	require.Equal(t, "https://openrouter.ai/api/v1", lines[1].BaseURL)
+}
+
 func TestBuildAPIKeyIdentityUsesDefaultBaseURL(t *testing.T) {
 	a := buildAPIKeyIdentity(service.PlatformOpenAI, "sk-proj-1", "")
 	b := buildAPIKeyIdentity(service.PlatformOpenAI, "sk-proj-1", "https://api.openai.com/")
