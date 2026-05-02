@@ -231,6 +231,72 @@ func TestAccountTestService_OpenAIApiKeyUsesV1ResponsesEndpoint(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
+func TestAccountTestService_DeepSeekAPIKeyUsesAnthropicCompatibleBaseURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newSoraTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"content_block_delta","delta":{"text":"successful"}}
+
+data: {"type":"message_stop"}
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:          92,
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.deepseek.com"},
+	}
+
+	err := svc.testClaudeAccountConnection(ctx, account, "deepseek-v4-flash")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "https://api.deepseek.com/anthropic/v1/messages?beta=true", upstream.requests[0].URL.String())
+	require.Equal(t, "sk-test", getHeaderRaw(upstream.requests[0].Header, "x-api-key"))
+	require.Empty(t, getHeaderRaw(upstream.requests[0].Header, "authorization"))
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_OpenRouterAPIKeyUsesAnthropicCompatibleBaseURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newSoraTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"content_block_delta","delta":{"text":"successful"}}
+
+data: {"type":"message_stop"}
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:          93,
+		Platform:    PlatformOpenRouter,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-or-v1-test", "base_url": "https://openrouter.ai/api/v1"},
+	}
+
+	err := svc.testClaudeAccountConnection(ctx, account, "anthropic/claude-sonnet-4")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "https://openrouter.ai/api/v1/messages?beta=true", upstream.requests[0].URL.String())
+	require.Equal(t, "Bearer sk-or-v1-test", getHeaderRaw(upstream.requests[0].Header, "authorization"))
+	require.Empty(t, getHeaderRaw(upstream.requests[0].Header, "x-api-key"))
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
 // openAIStreamTextErrorRepo tracks SetError and SetSchedulable calls.
 type openAIStreamTextErrorRepo struct {
 	mockAccountRepoForGemini

@@ -195,6 +195,78 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Equal(t, "claude-3-haiku-20240307", gjson.GetBytes(bodyBytes, "model").String(), "缓存的上游请求体应包含映射后的模型")
 }
 
+func TestGatewayService_BuildUpstreamRequestThirdPartyAnthropicCompatibleBaseURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		name          string
+		account       *Account
+		token         string
+		wantURL       string
+		wantXAPIKey   string
+		wantAuthToken string
+	}{
+		{
+			name: "deepseek default openai-compatible base is upgraded to anthropic base",
+			account: &Account{
+				ID:          301,
+				Platform:    PlatformDeepSeek,
+				Type:        AccountTypeAPIKey,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"api_key":  "sk-deepseek-test",
+					"base_url": "https://api.deepseek.com",
+				},
+			},
+			token:       "sk-deepseek-test",
+			wantURL:     "https://api.deepseek.com/anthropic/v1/messages?beta=true",
+			wantXAPIKey: "sk-deepseek-test",
+		},
+		{
+			name: "openrouter default openai-compatible base is downgraded to anthropic skin base",
+			account: &Account{
+				ID:          302,
+				Platform:    PlatformOpenRouter,
+				Type:        AccountTypeAPIKey,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"api_key":  "sk-or-v1-test",
+					"base_url": "https://openrouter.ai/api/v1",
+				},
+			},
+			token:         "sk-or-v1-test",
+			wantURL:       "https://openrouter.ai/api/v1/messages?beta=true",
+			wantAuthToken: "Bearer sk-or-v1-test",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			c.Request.Header.Set("Anthropic-Version", "2023-06-01")
+
+			svc := &GatewayService{cfg: &config.Config{}}
+			req, err := svc.buildUpstreamRequest(
+				context.Background(),
+				c,
+				tc.account,
+				[]byte(`{"model":"claude-sonnet-4-5","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+				tc.token,
+				"apikey",
+				"claude-sonnet-4-5",
+				true,
+				false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantURL, req.URL.String())
+			require.Equal(t, tc.wantXAPIKey, getHeaderRaw(req.Header, "x-api-key"))
+			require.Equal(t, tc.wantAuthToken, getHeaderRaw(req.Header, "authorization"))
+		})
+	}
+}
+
 func TestGatewayService_AnthropicAPIKeyPassthrough_HTTP403TriggersFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -220,12 +220,12 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 	// Determine authentication method and API URL
 	var authToken string
-	var useBearer bool
+	var authScheme string
 	var apiURL string
 
 	if account.IsOAuth() {
 		// OAuth or Setup Token - use Bearer token
-		useBearer = true
+		authScheme = "bearer"
 		apiURL = testClaudeAPIURL
 		authToken = account.GetCredential("access_token")
 		if authToken == "" {
@@ -233,16 +233,13 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		}
 	} else if account.Type == "apikey" {
 		// API Key - use x-api-key header
-		useBearer = false
+		authScheme = "apikey"
 		authToken = account.GetCredential("api_key")
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
 
-		baseURL := account.GetBaseURL()
-		if baseURL == "" {
-			baseURL = "https://api.anthropic.com"
-		}
+		baseURL := anthropicCompatibleBaseURLForAccount(account)
 		normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
@@ -284,12 +281,12 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	}
 
 	// Set authentication header
-	if useBearer {
+	if authScheme == "bearer" {
 		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
 		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
-		req.Header.Set("x-api-key", authToken)
+		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, authToken)
 	}
 
 	// Get proxy URL

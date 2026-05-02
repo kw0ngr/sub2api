@@ -5458,7 +5458,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, error) {
 	targetURL := claudeAPIURL
-	baseURL := account.GetBaseURL()
+	baseURL := anthropicCompatibleBaseURLForAccount(account)
 	if baseURL != "" {
 		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 		if err != nil {
@@ -5490,7 +5490,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")
 	req.Header.Del("cookie")
-	setHeaderRaw(req.Header, "x-api-key", token)
+	setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 
 	if getHeaderRaw(req.Header, "content-type") == "" {
 		setHeaderRaw(req.Header, "content-type", "application/json")
@@ -6269,7 +6269,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// 确定目标URL
 	targetURL := claudeAPIURL
 	if account.Type == AccountTypeAPIKey {
-		baseURL := account.GetBaseURL()
+		baseURL := anthropicCompatibleBaseURLForAccount(account)
 		if baseURL != "" {
 			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 			if err != nil {
@@ -6380,7 +6380,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if tokenType == "oauth" {
 		setHeaderRaw(req.Header, "authorization", "Bearer "+token)
 	} else {
-		setHeaderRaw(req.Header, "x-api-key", token)
+		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 	}
 
 	// 白名单透传 headers（恢复真实 wire casing）。
@@ -9432,7 +9432,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, error) {
 	targetURL := claudeAPICountTokensURL
-	baseURL := account.GetBaseURL()
+	baseURL := anthropicCompatibleBaseURLForAccount(account)
 	if baseURL != "" {
 		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 		if err != nil {
@@ -9463,7 +9463,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")
 	req.Header.Del("cookie")
-	req.Header.Set("x-api-key", token)
+	setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
@@ -9480,7 +9480,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 确定目标 URL
 	targetURL := claudeAPICountTokensURL
 	if account.Type == AccountTypeAPIKey {
-		baseURL := account.GetBaseURL()
+		baseURL := anthropicCompatibleBaseURLForAccount(account)
 		if baseURL != "" {
 			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 			if err != nil {
@@ -9559,7 +9559,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if tokenType == "oauth" {
 		setHeaderRaw(req.Header, "authorization", "Bearer "+token)
 	} else {
-		setHeaderRaw(req.Header, "x-api-key", token)
+		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 	}
 
 	// 白名单透传 headers（恢复真实 wire casing）。
