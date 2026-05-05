@@ -123,6 +123,28 @@ func TestWSResponseCreate_NonResponseCreateFrameUntouched(t *testing.T) {
 	require.Equal(t, string(frame), string(updated))
 }
 
+func TestOpenAIWSPassthroughUsageMetaTracksReasoningEffort(t *testing.T) {
+	meta := newOpenAIWSPassthroughUsageMeta("gpt-5.4-xhigh", []byte(`{"type":"response.create","model":"gpt-5.4"}`))
+	meta.initFromFirstFrame([]byte(`{"type":"response.create","model":"gpt-5.4","service_tier":"flex"}`))
+
+	require.NotNil(t, meta.serviceTier.Load())
+	require.Equal(t, "flex", *meta.serviceTier.Load())
+	require.NotNil(t, meta.reasoningEffort.Load())
+	require.Equal(t, "xhigh", *meta.reasoningEffort.Load())
+
+	meta.updateFromResponseCreate([]byte(`{"type":"response.create","model":"gpt-5.4","reasoning":{"effort":"high"}}`), "gpt-5.4")
+	require.NotNil(t, meta.reasoningEffort.Load())
+	require.Equal(t, "high", *meta.reasoningEffort.Load())
+}
+
+func TestOpenAIWSPassthroughUsageMetaSessionModelFallback(t *testing.T) {
+	meta := newOpenAIWSPassthroughUsageMeta("", []byte(`{"type":"response.create","model":"gpt-5.4-low"}`))
+	meta.updateSessionRequestModel([]byte(`{"type":"session.update","session":{"model":"gpt-5.5-high"}}`))
+
+	require.Equal(t, "gpt-5.5-high", meta.requestModelForFrame([]byte(`{"type":"response.create"}`)))
+	require.Equal(t, "gpt-5.4", meta.requestModelForFrame([]byte(`{"type":"response.create","model":"gpt-5.4"}`)))
+}
+
 // TestWSResponseCreate_EmptyTypeFrameUntouched is the A1 regression: the
 // helper used to treat empty type as response.create, which risked stripping
 // fields from malformed / unknown client events. After the A1 fix only a

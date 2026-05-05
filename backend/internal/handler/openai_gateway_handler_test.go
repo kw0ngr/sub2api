@@ -91,6 +91,24 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	}
 }
 
+func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
+	body := []byte(`{"model":"claude-sonnet-4-5","metadata":{"user_id":"claude-code-session"},"messages":[{"role":"user","content":"hello"}]}`)
+
+	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession("", "", "claude-sonnet-4-5", body)
+
+	require.NotEmpty(t, sessionHash)
+	require.Empty(t, promptCacheKey)
+}
+
+func TestResolveOpenAIMessagesMetadataSession_PreservesExplicitPromptCacheKey(t *testing.T) {
+	body := []byte(`{"metadata":{"user_id":"claude-code-session"}}`)
+
+	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession("", "explicit-cache", "claude-sonnet-4-5", body)
+
+	require.NotEmpty(t, sessionHash)
+	require.Equal(t, "explicit-cache", promptCacheKey)
+}
+
 func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -349,30 +367,6 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 		require.True(t, ok)
 		require.False(t, c.Writer.Written())
 		assert.Equal(t, "", w.Body.String())
-	})
-}
-
-func TestResolveOpenAIForwardDefaultMappedModel(t *testing.T) {
-	t.Run("prefers_explicit_fallback_model", func(t *testing.T) {
-		apiKey := &service.APIKey{
-			Group: &service.Group{DefaultMappedModel: "gpt-5.4"},
-		}
-		require.Equal(t, "gpt-5.2", resolveOpenAIForwardDefaultMappedModel(apiKey, " gpt-5.2 "))
-	})
-
-	t.Run("uses_group_default_when_explicit_fallback_absent", func(t *testing.T) {
-		apiKey := &service.APIKey{
-			Group: &service.Group{DefaultMappedModel: "gpt-5.4"},
-		}
-		require.Equal(t, "gpt-5.4", resolveOpenAIForwardDefaultMappedModel(apiKey, ""))
-	})
-
-	t.Run("returns_empty_without_group_default", func(t *testing.T) {
-		require.Empty(t, resolveOpenAIForwardDefaultMappedModel(nil, ""))
-		require.Empty(t, resolveOpenAIForwardDefaultMappedModel(&service.APIKey{}, ""))
-		require.Empty(t, resolveOpenAIForwardDefaultMappedModel(&service.APIKey{
-			Group: &service.Group{},
-		}, ""))
 	})
 }
 

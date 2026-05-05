@@ -219,8 +219,12 @@ func (e *OpenAIWSClientCloseError) Reason() string {
 
 // OpenAIWSIngressHooks 定义入站 WS 每个 turn 的生命周期回调。
 type OpenAIWSIngressHooks struct {
-	BeforeTurn func(turn int) error
-	AfterTurn  func(turn int, result *OpenAIForwardResult, turnErr error)
+	// InitialRequestModel is the pre-channel-mapping model from the first
+	// inbound frame. It is only for usage metadata reasoning-effort inference;
+	// it must not affect upstream routing or billing model selection.
+	InitialRequestModel string
+	BeforeTurn          func(turn int) error
+	AfterTurn           func(turn int, result *OpenAIForwardResult, turnErr error)
 }
 
 func normalizeOpenAIWSLogValue(value string) string {
@@ -3099,6 +3103,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
 			return false
 		}
+		// function_call_output requests must keep previous_response_id because
+		// upstream needs the response chain to match tool outputs to prior tool calls.
+		if gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists() {
+			return false
+		}
 		if isStrictAffinityTurn(currentPayload) {
 			// Layer 2：严格亲和链路命中 previous_response_not_found 时，降级为“去掉 previous_response_id 后重放一次”。
 			// 该错误说明续链锚点已失效，继续 strict fail-close 只会直接中断本轮请求。
@@ -3365,7 +3374,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(pingErr.Error(), openAIWSLogValueMaxLen),
 				)
 				if forcePreferredConn {
-					if !turnPrevRecoveryTried && currentPreviousResponseID != "" {
+					hasFCOutput := gjson.GetBytes(currentPayload, `input.#(type=="function_call_output")`).Exists()
+					if !turnPrevRecoveryTried && currentPreviousResponseID != "" && !hasFCOutput {
 						updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
 						if dropErr != nil || !removed {
 							reason := "not_removed"

@@ -54,6 +54,11 @@ type OpsService struct {
 	geminiCompatService       *GeminiMessagesCompatService
 	antigravityGatewayService *AntigravityGatewayService
 	systemLogSink             *OpsSystemLogSink
+	cleanupReloader           CleanupReloader
+}
+
+type CleanupReloader interface {
+	Reload(ctx context.Context) error
 }
 
 func NewOpsService(
@@ -86,6 +91,13 @@ func NewOpsService(
 	}
 	svc.applyRuntimeLogConfigOnStartup(context.Background())
 	return svc
+}
+
+func (s *OpsService) SetCleanupReloader(reloader CleanupReloader) {
+	if s == nil {
+		return
+	}
+	s.cleanupReloader = reloader
 }
 
 func (s *OpsService) RequireMonitoringEnabled(ctx context.Context) error {
