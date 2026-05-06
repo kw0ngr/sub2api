@@ -262,6 +262,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
 	payloadBytes, _ := json.Marshal(payload)
+	if next, changed := ensureClaudeOAuthSystemCloaking(payloadBytes, claude.CLICurrentVersion, defaultClaudeCodeEntrypoint); changed {
+		payloadBytes = next
+	}
+	payloadBytes = syncBillingHeaderVersion(payloadBytes, claude.DefaultHeaders["User-Agent"])
+	payloadBytes = signBillingHeaderCCH(payloadBytes)
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})

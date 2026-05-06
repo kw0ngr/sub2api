@@ -814,6 +814,80 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_BuildRequestRejectsInvalidBas
 	require.Error(t, err)
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_ClaudeCodeMimicAppliesFingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "curl/8.0")
+
+	account := &Account{
+		ID:       912,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "upstream-anthropic-key",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"anthropic_passthrough": true,
+			"claude_code_mimic":     true,
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	svc := &GatewayService{cfg: &config.Config{}}
+	req, err := svc.buildUpstreamRequestAnthropicAPIKeyPassthrough(context.Background(), c, account, body, "k")
+	require.NoError(t, err)
+
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime"], getHeaderRaw(req.Header, "X-Stainless-Runtime"))
+	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
+	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaClaudeCode)
+	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaInterleavedThinking)
+
+	rawBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(rawBody), "x-anthropic-billing-header:")
+	require.Contains(t, string(rawBody), "You are Claude Code, Anthropic's official CLI for Claude.")
+}
+
+func TestGatewayService_AnthropicAPIKeyMimic_BuildRequestCloaksBodyAndHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "curl/8.0")
+	c.Request.Header.Set("Anthropic-Beta", "client-beta")
+
+	account := &Account{
+		ID:       913,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "upstream-anthropic-key",
+			"base_url": "https://api.anthropic.com",
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"system":"original system","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	svc := &GatewayService{cfg: &config.Config{}}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "k", "apikey", "claude-sonnet-4-6", true, true)
+	require.NoError(t, err)
+
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
+	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
+	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaClaudeCode)
+	require.NotContains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaOAuth)
+	require.Equal(t, "stream", getHeaderRaw(req.Header, "x-stainless-helper-method"))
+
+	rawBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(rawBody), "x-anthropic-billing-header:")
+	require.Contains(t, string(rawBody), "You are Claude Code, Anthropic's official CLI for Claude.")
+	require.Contains(t, gjson.GetBytes(rawBody, "metadata.user_id").String(), "session_id")
+}
+
 func TestGatewayService_AnthropicOAuth_NotAffectedByAPIKeyPassthroughToggle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

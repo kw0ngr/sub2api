@@ -3095,6 +3095,9 @@ export default {
         apiKeyPassthrough: '自动透传（仅替换认证）',
         apiKeyPassthroughDesc:
           '仅对 Anthropic API Key 生效。开启后，messages/count_tokens 请求将透传上游并仅替换认证，保留计费/并发/审计及必要安全过滤；关闭即可回滚到现有兼容链路。',
+        claudeCodeMimic: 'Claude Code 指纹伪装',
+        claudeCodeMimicDesc:
+          '适合上游中转 key 被限制为 Claude Code 客户端的场景。开启后网关会补齐 Claude Code 请求头、beta、metadata、billing header 与 CCH 签名；建议同时开启 TLS 指纹。',
         webSearchEmulation: 'Web Search 模拟',
         webSearchEmulationDesc:
           '为该 API Key 账号启用 web search 模拟。客户端发送纯 web_search 请求时，由网关调用第三方搜索 API 并构造响应返回。默认跟随渠道配置。',

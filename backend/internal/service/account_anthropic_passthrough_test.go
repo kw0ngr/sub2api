@@ -60,3 +60,27 @@ func TestAccount_IsAnthropicAPIKeyPassthroughEnabled(t *testing.T) {
 		require.False(t, openai.IsAnthropicAPIKeyPassthroughEnabled())
 	})
 }
+
+func TestAccount_IsTLSFingerprintEnabled_AllowsAnthropicAPIKey(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"enable_tls_fingerprint": true,
+		},
+	}
+
+	require.True(t, account.IsTLSFingerprintEnabled())
+}
+
+func TestAccount_IsClaudeCodeMimicEnabled(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"claude_code_mimic": true,
+		},
+	}
+
+	require.True(t, account.IsClaudeCodeMimicEnabled())
+}

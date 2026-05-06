@@ -1215,6 +1215,18 @@ func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
 	return ok && enabled
 }
 
+// IsClaudeCodeMimicEnabled 返回 Anthropic API Key 账号是否启用 Claude Code 指纹伪装。
+//
+// 该模式用于"上游中转 key 仅允许 Claude Code 客户端"的场景；OAuth/SetupToken
+// 账号沿用原有自动伪装链路，不读取此字段。
+func (a *Account) IsClaudeCodeMimicEnabled() bool {
+	if a == nil || a.Platform != PlatformAnthropic || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["claude_code_mimic"].(bool)
+	return ok && enabled
+}
+
 // WebSearch 模拟三态常量
 const (
 	WebSearchModeDefault  = "default"  // 跟随渠道配置
@@ -1280,11 +1292,11 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 }
 
 // IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 仅适用于 Anthropic OAuth/SetupToken 类型账号
+// 适用于 Anthropic OAuth/SetupToken 账号，以及需要模拟 Claude Code 的 Anthropic API Key 中转账号。
 // 启用后将模拟 Claude Code (Node.js) 客户端的 TLS 握手特征
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	// 仅支持 Anthropic OAuth/SetupToken 账号
-	if !a.IsAnthropicOAuthOrSetupToken() {
+	// 仅支持 Anthropic 家族账号
+	if !(a.IsAnthropicOAuthOrSetupToken() || (a.Platform == PlatformAnthropic && a.Type == AccountTypeAPIKey)) {
 		return false
 	}
 	if a.Extra == nil {

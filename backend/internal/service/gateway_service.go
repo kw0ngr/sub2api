@@ -1463,6 +1463,26 @@ func claudeCodeMimicryBetas(modelID string, body []byte) []string {
 	return tokens
 }
 
+func claudeCodeAPIKeyMimicryBetas(modelID string, body []byte) []string {
+	if strings.Contains(strings.ToLower(modelID), "haiku") {
+		return []string{claude.BetaInterleavedThinking}
+	}
+	tokens := []string{
+		claude.BetaClaudeCode,
+		claude.BetaInterleavedThinking,
+		claude.BetaFineGrainedToolStreaming,
+		claude.BetaPromptCachingScope,
+		claude.BetaEffort,
+		claude.BetaRedactThinking,
+		claude.BetaContextManagement,
+		claude.BetaExtendedCacheTTL,
+	}
+	if isStructuredOutputRequest(body) {
+		tokens = append(tokens, betaStructuredOutputs)
+	}
+	return tokens
+}
+
 func mergeClaudeCodeOAuthBetas(modelID string, body []byte, incoming string, drop map[string]struct{}) string {
 	return mergeAnthropicBetaDropping(claudeCodeMimicryBetas(modelID, body), incoming, drop)
 }
@@ -4524,11 +4544,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	shouldMimicClaudeCode := (account.IsOAuth() || account.IsClaudeCodeMimicEnabled()) && !isClaudeCode
 
 	if shouldMimicClaudeCode {
 		// 非 Claude Code 客户端：将 system 替换为 Claude Code 标识，原始 system 迁移至 messages
-		// 条件：1) OAuth/SetupToken 账号  2) 不是 Claude Code 客户端  3) 不是 Haiku 模型  4) system 中还没有 Claude Code 提示词
+		// 条件：1) OAuth/SetupToken 或显式启用 Claude Code 伪装的 API Key 账号
+		//      2) 不是 Claude Code 客户端  3) 不是 Haiku 模型  4) system 中还没有 Claude Code 提示词
 		systemRewritten := false
 		if !strings.Contains(strings.ToLower(reqModel), "haiku") &&
 			!systemIncludesClaudeCodePrompt(parsed.System) {
@@ -5459,6 +5480,55 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, error) {
+	clientHeaders := http.Header{}
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	downstreamAPIKeyHash := hashAPIKeyForSession(extractDownstreamAPIKey(clientHeaders))
+	sessionID := strings.TrimSpace(getHeaderRaw(clientHeaders, "x-claude-code-session-id"))
+	if sessionID == "" {
+		sessionID = getOrCreateClaudeCodeSessionID(downstreamAPIKeyHash)
+	}
+	mimicClaudeCode := account != nil && account.IsClaudeCodeMimicEnabled()
+	enableFP, enableMPT, enableCCH := true, false, true
+	if s.settingService != nil {
+		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+	}
+	var mimicFingerprint *Fingerprint
+	activeFingerprintApplied := false
+	if mimicClaudeCode && enableFP && s.settingService != nil {
+		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, nil); ok {
+			mimicFingerprint = activeFingerprint
+			activeFingerprintApplied = true
+		}
+	}
+	if mimicClaudeCode {
+		cliVersion := claude.CLICurrentVersion
+		if activeFingerprintApplied && mimicFingerprint != nil {
+			cliVersion = resolveClaudeCodeCLIVersion(mimicFingerprint.UserAgent)
+		}
+		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
+			body = next
+		}
+		metadataUserID := formatClaudeOAuthMetadataUserID(
+			generateClientID(),
+			strings.TrimSpace(account.GetExtraString("account_uuid")),
+			sessionID,
+		)
+		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, enableMPT); changed {
+			body = next
+		}
+		mimicUA := claude.DefaultHeaders["User-Agent"]
+		if activeFingerprintApplied && mimicFingerprint != nil && strings.TrimSpace(mimicFingerprint.UserAgent) != "" {
+			mimicUA = mimicFingerprint.UserAgent
+		}
+		body = syncBillingHeaderVersion(body, mimicUA)
+		if enableCCH || mimicClaudeCode {
+			body = signBillingHeaderCCH(body)
+		}
+	}
+	setOpsUpstreamRequestBody(c, body)
+
 	targetURL := claudeAPIURL
 	baseURL := anthropicCompatibleBaseURLForAccount(account)
 	if baseURL != "" {
@@ -5499,6 +5569,21 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	}
 	if getHeaderRaw(req.Header, "anthropic-version") == "" {
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
+	}
+	if mimicClaudeCode {
+		var fp *Fingerprint
+		if activeFingerprintApplied {
+			fp = mimicFingerprint
+		}
+		applyClaudeCodeMimicHeaders(req, gjson.GetBytes(body, "stream").Bool(), fp)
+		if sessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+		}
+		incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(gjson.GetBytes(body, "model").String(), body), incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+		if c != nil {
+			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, "apikey", true))
+		}
 	}
 
 	return req, nil
@@ -6309,6 +6394,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if s.settingService != nil {
 		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
+	isAnthropicAPIKeyMimic := account != nil && account.Platform == PlatformAnthropic && account.Type == AccountTypeAPIKey && mimicClaudeCode
 	if account.IsOAuth() {
 		clientUserAgent := getHeaderRaw(clientHeaders, "User-Agent")
 		cliVersion := resolveClaudeCodeCLIVersion(clientUserAgent)
@@ -6354,10 +6440,31 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, enableMPT); changed {
 			body = next
 		}
+	} else if isAnthropicAPIKeyMimic {
+		cliVersion := claude.CLICurrentVersion
+		if enableFP && s.settingService != nil {
+			if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, nil); ok {
+				fingerprint = activeFingerprint
+				activeFingerprintApplied = true
+				cliVersion = resolveClaudeCodeCLIVersion(fingerprint.UserAgent)
+			}
+		}
+		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
+			body = next
+		}
+
+		metadataUserID := formatClaudeOAuthMetadataUserID(
+			generateClientID(),
+			strings.TrimSpace(account.GetExtraString("account_uuid")),
+			sessionID,
+		)
+		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, enableMPT); changed {
+			body = next
+		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if account.IsOAuth() && mimicClaudeCode {
+	if mimicClaudeCode && (account.IsOAuth() || isAnthropicAPIKeyMimic) {
 		mimicUA := claude.DefaultHeaders["User-Agent"]
 		if activeFingerprintApplied && fingerprint != nil && strings.TrimSpace(fingerprint.UserAgent) != "" {
 			mimicUA = fingerprint.UserAgent
@@ -6369,7 +6476,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
 	}
 	// CCH 签名：将 cch=00000 占位符替换为 xxHash64 签名（需在所有 body 修改之后）
-	if enableCCH {
+	if enableCCH || mimicClaudeCode {
 		body = signBillingHeaderCCH(body)
 	}
 
@@ -6417,6 +6524,15 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if sessionID != "" {
 			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
 		}
+	} else if isAnthropicAPIKeyMimic {
+		var mimicFingerprint *Fingerprint
+		if activeFingerprintApplied {
+			mimicFingerprint = fingerprint
+		}
+		applyClaudeCodeMimicHeaders(req, reqStream, mimicFingerprint)
+		if sessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+		}
 	}
 
 	// Build effective drop set: merge static defaults with dynamic beta policy filter rules
@@ -6449,7 +6565,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		}
 	} else {
 		// API-key accounts: apply beta policy filter to strip controlled tokens
-		if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
+		if isAnthropicAPIKeyMimic {
+			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+			apiKeyDropSet := mergeDropSets(policyFilterSet, claude.BetaOAuth)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(modelID, body), incomingBeta, apiKeyDropSet))
+		} else if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
 			setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(existingBeta, effectiveDropSet))
 		} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey {
 			// API-key：仅在请求显式使用 beta 特性且客户端未提供时，按需补齐（默认关闭）
@@ -6485,7 +6605,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// Always capture a compact fingerprint line for later error diagnostics.
 	// We only print it when needed (or when the explicit debug flag is enabled).
-	if c != nil && tokenType == "oauth" {
+	if c != nil && (tokenType == "oauth" || isAnthropicAPIKeyMimic) {
 		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, tokenType, mimicClaudeCode))
 	}
 	if s.debugClaudeMimicEnabled() {
@@ -9165,7 +9285,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	body = StripEmptyTextBlocks(body)
 
 	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	shouldMimicClaudeCode := (account.IsOAuth() || account.IsClaudeCodeMimicEnabled()) && !isClaudeCode
 
 	if shouldMimicClaudeCode {
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
@@ -9441,6 +9561,55 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, error) {
+	clientHeaders := http.Header{}
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	downstreamAPIKeyHash := hashAPIKeyForSession(extractDownstreamAPIKey(clientHeaders))
+	sessionID := strings.TrimSpace(getHeaderRaw(clientHeaders, "x-claude-code-session-id"))
+	if sessionID == "" {
+		sessionID = getOrCreateClaudeCodeSessionID(downstreamAPIKeyHash)
+	}
+	mimicClaudeCode := account != nil && account.IsClaudeCodeMimicEnabled()
+	enableFP, enableMPT, enableCCH := true, false, true
+	if s.settingService != nil {
+		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+	}
+	var mimicFingerprint *Fingerprint
+	activeFingerprintApplied := false
+	if mimicClaudeCode && enableFP && s.settingService != nil {
+		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, nil); ok {
+			mimicFingerprint = activeFingerprint
+			activeFingerprintApplied = true
+		}
+	}
+	if mimicClaudeCode {
+		cliVersion := claude.CLICurrentVersion
+		if activeFingerprintApplied && mimicFingerprint != nil {
+			cliVersion = resolveClaudeCodeCLIVersion(mimicFingerprint.UserAgent)
+		}
+		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
+			body = next
+		}
+		metadataUserID := formatClaudeOAuthMetadataUserID(
+			generateClientID(),
+			strings.TrimSpace(account.GetExtraString("account_uuid")),
+			sessionID,
+		)
+		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, enableMPT); changed {
+			body = next
+		}
+		mimicUA := claude.DefaultHeaders["User-Agent"]
+		if activeFingerprintApplied && mimicFingerprint != nil && strings.TrimSpace(mimicFingerprint.UserAgent) != "" {
+			mimicUA = mimicFingerprint.UserAgent
+		}
+		body = syncBillingHeaderVersion(body, mimicUA)
+		if enableCCH || mimicClaudeCode {
+			body = signBillingHeaderCCH(body)
+		}
+	}
+	setOpsUpstreamRequestBody(c, body)
+
 	targetURL := claudeAPICountTokensURL
 	baseURL := anthropicCompatibleBaseURLForAccount(account)
 	if baseURL != "" {
@@ -9480,6 +9649,23 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	}
 	if req.Header.Get("anthropic-version") == "" {
 		req.Header.Set("anthropic-version", "2023-06-01")
+	}
+	if mimicClaudeCode {
+		var fp *Fingerprint
+		if activeFingerprintApplied {
+			fp = mimicFingerprint
+		}
+		applyClaudeCodeMimicHeaders(req, false, fp)
+		if sessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+		}
+		incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+		required := append([]string{}, claudeCodeAPIKeyMimicryBetas(gjson.GetBytes(body, "model").String(), body)...)
+		required = append(required, claude.BetaTokenCounting)
+		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+		if c != nil {
+			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, "apikey", true))
+		}
 	}
 
 	return req, nil
@@ -9529,6 +9715,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	var ctFingerprint *Fingerprint
 	ctActiveFingerprintApplied := false
+	ctAnthropicAPIKeyMimic := account != nil && account.Platform == PlatformAnthropic && account.Type == AccountTypeAPIKey && mimicClaudeCode
 	if account.IsOAuth() && ctEnableFP && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil && fp != nil {
@@ -9543,9 +9730,32 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			ctActiveFingerprintApplied = true
 		}
 	}
+	if ctAnthropicAPIKeyMimic && ctEnableFP && s.settingService != nil {
+		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, nil); ok {
+			ctFingerprint = activeFingerprint
+			ctActiveFingerprintApplied = true
+		}
+	}
+	if ctAnthropicAPIKeyMimic {
+		cliVersion := claude.CLICurrentVersion
+		if ctActiveFingerprintApplied && ctFingerprint != nil {
+			cliVersion = resolveClaudeCodeCLIVersion(ctFingerprint.UserAgent)
+		}
+		if next, changed := ensureClaudeOAuthSystemCloaking(body, cliVersion, defaultClaudeCodeEntrypoint); changed {
+			body = next
+		}
+		metadataUserID := formatClaudeOAuthMetadataUserID(
+			generateClientID(),
+			strings.TrimSpace(account.GetExtraString("account_uuid")),
+			sessionID,
+		)
+		if next, changed := applyClaudeOAuthMetadataUserID(body, metadataUserID, false); changed {
+			body = next
+		}
+	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if account.IsOAuth() && mimicClaudeCode {
+	if mimicClaudeCode && (account.IsOAuth() || ctAnthropicAPIKeyMimic) {
 		mimicUA := claude.DefaultHeaders["User-Agent"]
 		if ctActiveFingerprintApplied && ctFingerprint != nil && strings.TrimSpace(ctFingerprint.UserAgent) != "" {
 			mimicUA = ctFingerprint.UserAgent
@@ -9556,7 +9766,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	} else if account.IsOAuth() {
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
 	}
-	if ctEnableCCH {
+	if ctEnableCCH || mimicClaudeCode {
 		body = signBillingHeaderCCH(body)
 	}
 
@@ -9602,6 +9812,15 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		if sessionID != "" {
 			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
 		}
+	} else if ctAnthropicAPIKeyMimic {
+		var mimicFingerprint *Fingerprint
+		if ctActiveFingerprintApplied {
+			mimicFingerprint = ctFingerprint
+		}
+		applyClaudeCodeMimicHeaders(req, false, mimicFingerprint)
+		if sessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+		}
 	}
 
 	// Build effective drop set for count_tokens: merge static defaults with dynamic beta policy filter rules
@@ -9625,7 +9844,13 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		}
 	} else {
 		// API-key accounts: apply beta policy filter to strip controlled tokens
-		if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
+		if ctAnthropicAPIKeyMimic {
+			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+			required := append([]string{}, claudeCodeAPIKeyMimicryBetas(modelID, body)...)
+			required = append(required, claude.BetaTokenCounting)
+			apiKeyDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account, modelID), claude.BetaOAuth)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, apiKeyDropSet))
+		} else if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
 			setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(existingBeta, ctEffectiveDropSet))
 		} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey {
 			// API-key：与 messages 同步的按需 beta 注入（默认关闭）
@@ -9649,7 +9874,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		s.settingService.RecordClaudeCodeFingerprintDrift(ctx, req, body, account, tokenType, mimicClaudeCode, ctActiveFingerprintApplied, "/v1/messages/count_tokens")
 	}
 
-	if c != nil && tokenType == "oauth" {
+	if c != nil && (tokenType == "oauth" || ctAnthropicAPIKeyMimic) {
 		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, tokenType, mimicClaudeCode))
 	}
 	if s.debugClaudeMimicEnabled() {
