@@ -1227,6 +1227,18 @@ func (a *Account) IsClaudeCodeMimicEnabled() bool {
 	return ok && enabled
 }
 
+// IsClaudeCodeRelayStrongModeEnabled 返回 Anthropic API Key 是否启用 Claude Code Relay 强模式。
+//
+// 强模式仅在 Claude Code 指纹伪装主开关开启时生效，用于部分上游中转站要求
+// Bearer + OAuth beta 的 Claude Code-like 请求形态；默认关闭，避免影响官方 API Key。
+func (a *Account) IsClaudeCodeRelayStrongModeEnabled() bool {
+	if !a.IsClaudeCodeMimicEnabled() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["claude_code_relay_strong"].(bool)
+	return ok && enabled
+}
+
 // WebSearch 模拟三态常量
 const (
 	WebSearchModeDefault  = "default"  // 跟随渠道配置

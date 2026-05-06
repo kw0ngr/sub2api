@@ -2955,12 +2955,27 @@ export default {
         claudeCodeMimic: 'Claude Code fingerprint mimicry',
         claudeCodeMimicDesc:
           'For upstream relay keys restricted to Claude Code clients. Adds Claude Code headers, beta tokens, metadata, billing header, and CCH signing. TLS fingerprinting is recommended too.',
+        claudeCodeRelayStrong: 'Claude Code Relay strong mode',
+        claudeCodeRelayStrongDesc:
+          'Default off. For relays that still reject API Key mimicry as non-Claude-Code. Sends Bearer auth and OAuth beta tokens; enable only when this account explicitly needs it.',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationDesc:
           'Enable web search emulation for this API Key account. When a pure web_search request is detected, the gateway calls a third-party search API and constructs the response locally. Default follows channel config.',
         webSearchDefault: 'Default',
         webSearchEnabled: 'Enabled',
         webSearchDisabled: 'Disabled',
+      },
+      mimicDiagnostic: {
+        title: 'Claude Code mimic diagnostic',
+        modeLine: 'mode: mimic {mimic} / strong {strong} / auth {auth} / token {token}',
+        fingerprintLine: 'fingerprint: HTTP sample {sample} / TLS {tls}',
+        betaLine: 'beta: claude-code {claudeCode} / oauth {oauth} / extended-cache {ttl}',
+        bodyLine: 'body: metadata.user_id {metadata} / billing header {billing} / CCH {cch}',
+        uaLine: 'UA: {ua}',
+        sampleActive: 'active',
+        sampleDefault: 'default',
+        enabled: 'enabled',
+        disabled: 'disabled'
       },
       modelRestriction: 'Model Restriction (Optional)',
       modelWhitelist: 'Model Whitelist',

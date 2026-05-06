@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -350,11 +351,17 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	} else {
 		if mimicClaudeCode {
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
-			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(testModelID, payloadBytes), incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+			required := claudeCodeAPIKeyMimicryBetasForAccount(account, testModelID, payloadBytes)
+			dropSet := claudeCodeAPIKeyMimicDropSetForAccount(account, nil)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, dropSet))
 		} else {
 			req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
 		}
-		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, authToken)
+		if mimicClaudeCode {
+			setAnthropicAPIKeyMimicAuthHeader(req.Header, account, authToken)
+		} else {
+			setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, authToken)
+		}
 	}
 
 	// Get proxy URL
@@ -363,7 +370,25 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	var tlsProfileName string
+	var tlsProfileEnabled bool
+	var tlsProfile *tlsfingerprint.Profile
+	if s.tlsFPProfileService != nil {
+		resolved := s.tlsFPProfileService.ResolveTLSProfile(account)
+		if resolved != nil {
+			tlsProfileEnabled = true
+			tlsProfileName = resolved.Name
+			tlsProfile = resolved
+		}
+	}
+	if mimicClaudeCode {
+		s.sendEvent(c, TestEvent{
+			Type: "mimic_diagnostic",
+			Data: buildClaudeMimicDiagnosticData(req, payloadBytes, account, claudeCodeMimicTokenLabel(authScheme, account), mimicClaudeCode, activeFingerprintApplied, tlsProfileEnabled, tlsProfileName),
+		})
+	}
+
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -378,7 +403,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
 		}
 		if isClaudeCodeCredentialScopeError(string(body)) {
-			log.Printf("[ClaudeMimicTestDebug] %s", buildClaudeMimicDebugLine(req, payloadBytes, account, authScheme, mimicClaudeCode))
+			log.Printf("[ClaudeMimicTestDebug] %s", buildClaudeMimicDebugLine(req, payloadBytes, account, claudeCodeMimicTokenLabel(authScheme, account), mimicClaudeCode))
 		}
 
 		return s.sendErrorAndEnd(c, errMsg)

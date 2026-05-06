@@ -84,3 +84,22 @@ func TestAccount_IsClaudeCodeMimicEnabled(t *testing.T) {
 
 	require.True(t, account.IsClaudeCodeMimicEnabled())
 }
+
+func TestAccount_IsClaudeCodeRelayStrongModeEnabled(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"claude_code_mimic":        true,
+			"claude_code_relay_strong": true,
+		},
+	}
+	require.True(t, account.IsClaudeCodeRelayStrongModeEnabled())
+
+	account.Extra["claude_code_mimic"] = false
+	require.False(t, account.IsClaudeCodeRelayStrongModeEnabled(), "强模式必须依赖 Claude Code 伪装主开关")
+
+	account.Extra["claude_code_mimic"] = true
+	account.Extra["claude_code_relay_strong"] = false
+	require.False(t, account.IsClaudeCodeRelayStrongModeEnabled(), "默认关闭")
+}

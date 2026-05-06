@@ -1183,6 +1183,38 @@
         </div>
       </div>
 
+      <!-- Anthropic API Key Claude Code Relay 强模式 -->
+      <div
+        v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.claudeCodeRelayStrong') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.anthropic.claudeCodeRelayStrongDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            :disabled="!anthropicClaudeCodeMimicEnabled"
+            @click="anthropicClaudeCodeMimicEnabled && (anthropicClaudeCodeRelayStrongEnabled = !anthropicClaudeCodeRelayStrongEnabled)"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              anthropicClaudeCodeRelayStrongEnabled ? 'bg-amber-500' : 'bg-gray-200 dark:bg-dark-600',
+              anthropicClaudeCodeMimicEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                anthropicClaudeCodeRelayStrongEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Anthropic API Key: Web Search Emulation (hidden when global disabled) -->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey' && webSearchGlobalEnabled"
@@ -2027,6 +2059,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const codexCLIOnlyEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
 const anthropicClaudeCodeMimicEnabled = ref(false)
+const anthropicClaudeCodeRelayStrongEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
 const {
@@ -2213,6 +2246,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyEnabled.value = false
   anthropicPassthroughEnabled.value = false
   anthropicClaudeCodeMimicEnabled.value = false
+  anthropicClaudeCodeRelayStrongEnabled.value = false
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
@@ -2235,6 +2269,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'anthropic' && newAccount.type === 'apikey') {
     anthropicPassthroughEnabled.value = extra?.anthropic_passthrough === true
     anthropicClaudeCodeMimicEnabled.value = extra?.claude_code_mimic === true
+    anthropicClaudeCodeRelayStrongEnabled.value = extra?.claude_code_relay_strong === true && anthropicClaudeCodeMimicEnabled.value
     // 三态：string "default"/"enabled"/"disabled"，向后兼容旧 bool
     const wsVal = extra?.web_search_emulation
     if (wsVal === 'enabled' || wsVal === 'disabled') {
@@ -2469,6 +2504,12 @@ watch(
   },
   { immediate: true }
 )
+
+watch(anthropicClaudeCodeMimicEnabled, (enabled) => {
+  if (!enabled) {
+    anthropicClaudeCodeRelayStrongEnabled.value = false
+  }
+})
 
 const loadTLSProfiles = async () => {
   try {
@@ -3215,8 +3256,14 @@ const handleSubmit = async () => {
       }
       if (anthropicClaudeCodeMimicEnabled.value) {
         newExtra.claude_code_mimic = true
+        if (anthropicClaudeCodeRelayStrongEnabled.value) {
+          newExtra.claude_code_relay_strong = true
+        } else {
+          delete newExtra.claude_code_relay_strong
+        }
       } else {
         delete newExtra.claude_code_mimic
+        delete newExtra.claude_code_relay_strong
       }
       if (webSearchEmulationMode.value === 'default') {
         delete newExtra.web_search_emulation

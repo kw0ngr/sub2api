@@ -470,6 +470,7 @@ const handleEvent = (event: {
   error?: string
   image_url?: string
   mime_type?: string
+  data?: Record<string, unknown>
 }) => {
   switch (event.type) {
     case 'test_start':
@@ -504,6 +505,10 @@ const handleEvent = (event: {
       }
       break
 
+    case 'mimic_diagnostic':
+      renderMimicDiagnostic(event.data)
+      break
+
     case 'test_complete':
       // Move streaming content to output lines
       if (streamingContent.value) {
@@ -527,6 +532,64 @@ const handleEvent = (event: {
       }
       break
   }
+}
+
+const yesNo = (value: unknown) => (value === true ? '✓' : '×')
+
+const displayValue = (value: unknown, fallback = '-') => {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return fallback
+}
+
+const renderMimicDiagnostic = (data?: Record<string, unknown>) => {
+  if (!data) return
+
+  addLine('', 'text-gray-300')
+  addLine(t('admin.accounts.mimicDiagnostic.title'), 'text-amber-300')
+  addLine(
+    t('admin.accounts.mimicDiagnostic.modeLine', {
+      mimic: yesNo(data.mimic_enabled),
+      strong: yesNo(data.relay_strong),
+      auth: displayValue(data.auth_scheme),
+      token: displayValue(data.token_type)
+    }),
+    'text-gray-300'
+  )
+  addLine(
+    t('admin.accounts.mimicDiagnostic.fingerprintLine', {
+      sample: data.active_fingerprint === true
+        ? t('admin.accounts.mimicDiagnostic.sampleActive')
+        : t('admin.accounts.mimicDiagnostic.sampleDefault'),
+      tls: data.tls_fingerprint === true
+        ? displayValue(data.tls_profile, t('admin.accounts.mimicDiagnostic.enabled'))
+        : t('admin.accounts.mimicDiagnostic.disabled')
+    }),
+    'text-gray-300'
+  )
+  addLine(
+    t('admin.accounts.mimicDiagnostic.betaLine', {
+      claudeCode: yesNo(data.has_claude_code_beta),
+      oauth: yesNo(data.has_oauth_beta),
+      ttl: yesNo(data.has_extended_ttl)
+    }),
+    'text-gray-300'
+  )
+  addLine(
+    t('admin.accounts.mimicDiagnostic.bodyLine', {
+      metadata: yesNo(data.metadata_user_id),
+      billing: yesNo(data.billing_header),
+      cch: yesNo(data.cch_signed)
+    }),
+    'text-gray-300'
+  )
+  addLine(
+    t('admin.accounts.mimicDiagnostic.uaLine', {
+      ua: displayValue(data.user_agent)
+    }),
+    'text-gray-400'
+  )
+  addLine('', 'text-gray-300')
 }
 
 const copyOutput = () => {

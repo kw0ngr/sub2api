@@ -3098,12 +3098,27 @@ export default {
         claudeCodeMimic: 'Claude Code 指纹伪装',
         claudeCodeMimicDesc:
           '适合上游中转 key 被限制为 Claude Code 客户端的场景。开启后网关会补齐 Claude Code 请求头、beta、metadata、billing header 与 CCH 签名；建议同时开启 TLS 指纹。',
+        claudeCodeRelayStrong: 'Claude Code Relay 强模式',
+        claudeCodeRelayStrongDesc:
+          '默认关闭。适合仍把 API Key 伪装识别为非 Claude Code 的中转站；开启后使用 Bearer 鉴权并补齐 OAuth beta，仅在明确需要时开启。',
         webSearchEmulation: 'Web Search 模拟',
         webSearchEmulationDesc:
           '为该 API Key 账号启用 web search 模拟。客户端发送纯 web_search 请求时，由网关调用第三方搜索 API 并构造响应返回。默认跟随渠道配置。',
         webSearchDefault: '默认',
         webSearchEnabled: '开启',
         webSearchDisabled: '关闭',
+      },
+      mimicDiagnostic: {
+        title: 'Claude Code 伪装诊断',
+        modeLine: '模式：伪装 {mimic} / 强模式 {strong} / 鉴权 {auth} / token {token}',
+        fingerprintLine: '指纹：HTTP 样本 {sample} / TLS {tls}',
+        betaLine: 'beta：claude-code {claudeCode} / oauth {oauth} / extended-cache {ttl}',
+        bodyLine: 'body：metadata.user_id {metadata} / billing header {billing} / CCH {cch}',
+        uaLine: 'UA：{ua}',
+        sampleActive: '已套用',
+        sampleDefault: '默认',
+        enabled: '已开启',
+        disabled: '未开启'
       },
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',

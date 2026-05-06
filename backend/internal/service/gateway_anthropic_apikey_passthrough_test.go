@@ -265,7 +265,53 @@ data: {"type":"message_stop"}
 	require.NotNil(t, parsed)
 	require.True(t, parsed.IsNewFormat)
 	require.Equal(t, sessionID, parsed.SessionID)
+	require.Contains(t, rec.Body.String(), `"type":"mimic_diagnostic"`)
+	require.Contains(t, rec.Body.String(), `"mimic_enabled":true`)
+	require.Contains(t, rec.Body.String(), `"relay_strong":false`)
 	require.Contains(t, rec.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_AnthropicAPIKeyClaudeCodeRelayStrongUsesBearerAndOAuthBeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/202/test", nil)
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`data: {"type":"content_block_delta","delta":{"text":"successful"}}
+
+data: {"type":"message_stop"}
+
+`)),
+		},
+	}
+	svc := &AccountTestService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          202,
+		Name:        "claude-code-relay-strong",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ant-test",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"claude_code_mimic":        true,
+			"claude_code_relay_strong": true,
+		},
+	}
+
+	err := svc.testClaudeAccountConnection(c, account, "claude-sonnet-4-6")
+	require.NoError(t, err)
+	require.Equal(t, "Bearer sk-ant-test", getHeaderRaw(upstream.lastReq.Header, "authorization"))
+	require.Empty(t, getHeaderRaw(upstream.lastReq.Header, "x-api-key"))
+	beta := getHeaderRaw(upstream.lastReq.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaOAuth)
 }
 
 func TestGatewayService_BuildUpstreamRequestThirdPartyAnthropicCompatibleBaseURL(t *testing.T) {
@@ -925,6 +971,60 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ClaudeCodeMimicAppliesFingerp
 	require.Contains(t, string(rawBody), "You are Claude Code, Anthropic's official CLI for Claude.")
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_ClaudeCodeRelayStrongUsesBearerAndOAuthBeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	account := &Account{
+		ID:       913,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "upstream-anthropic-key",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"anthropic_passthrough":    true,
+			"claude_code_mimic":        true,
+			"claude_code_relay_strong": true,
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	svc := &GatewayService{cfg: &config.Config{}}
+	req, err := svc.buildUpstreamRequestAnthropicAPIKeyPassthrough(context.Background(), c, account, body, "k")
+	require.NoError(t, err)
+
+	require.Equal(t, "Bearer k", getHeaderRaw(req.Header, "authorization"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-api-key"))
+	beta := getHeaderRaw(req.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaOAuth)
+}
+
+func TestClaudeMimicDebugLineUsesRawHeadersAndRedactsSecrets(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "https://relay.example/v1/messages", nil)
+	req.Header = http.Header{}
+	setHeaderRaw(req.Header, "authorization", "Bearer secret-token")
+	setHeaderRaw(req.Header, "x-api-key", "secret-api-key")
+	setHeaderRaw(req.Header, "x-goog-api-key", "secret-goog-key")
+	setHeaderRaw(req.Header, "anthropic-beta", claude.BetaClaudeCode)
+	setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", "session-123")
+
+	line := buildClaudeMimicDebugLine(req, []byte(`{"metadata":{"user_id":"u"},"system":"x-anthropic-billing-header: cch=abc;"}`), &Account{ID: 1, Name: "debug"}, "apikey", true)
+
+	require.Contains(t, line, `authorization="Bearer [redacted]"`)
+	require.Contains(t, line, `x-api-key="[redacted]"`)
+	require.Contains(t, line, `x-goog-api-key="[redacted]"`)
+	require.Contains(t, line, `anthropic-beta="`+claude.BetaClaudeCode+`"`)
+	require.Contains(t, line, `x-claude-code-session-id="session-123"`)
+	require.NotContains(t, line, "secret-token")
+	require.NotContains(t, line, "secret-api-key")
+	require.NotContains(t, line, "secret-goog-key")
+}
+
 func TestGatewayService_AnthropicAPIKeyMimic_BuildRequestCloaksBodyAndHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -959,6 +1059,41 @@ func TestGatewayService_AnthropicAPIKeyMimic_BuildRequestCloaksBodyAndHeaders(t 
 	require.Contains(t, string(rawBody), "x-anthropic-billing-header:")
 	require.Contains(t, string(rawBody), "You are Claude Code, Anthropic's official CLI for Claude.")
 	require.Contains(t, gjson.GetBytes(rawBody, "metadata.user_id").String(), "session_id")
+}
+
+func TestGatewayService_AnthropicAPIKeyMimic_RelayStrongUsesBearerAndOAuthBeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	account := &Account{
+		ID:       914,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "upstream-anthropic-key",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"claude_code_mimic":        true,
+			"claude_code_relay_strong": true,
+		},
+	}
+	body := []byte(`{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	svc := &GatewayService{cfg: &config.Config{}}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "k", "apikey", "claude-sonnet-4-6", true, true)
+	require.NoError(t, err)
+
+	require.Equal(t, "Bearer k", getHeaderRaw(req.Header, "authorization"))
+	require.Empty(t, getHeaderRaw(req.Header, "x-api-key"))
+	beta := getHeaderRaw(req.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaOAuth)
+	debugLine, ok := c.Get(claudeMimicDebugInfoKey)
+	require.True(t, ok)
+	require.Contains(t, debugLine.(string), "tokenType=apikey-relay-strong")
 }
 
 func TestGatewayService_AnthropicOAuth_NotAffectedByAPIKeyPassthroughToggle(t *testing.T) {

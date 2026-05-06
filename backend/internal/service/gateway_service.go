@@ -236,7 +236,7 @@ func redactAuthHeaderValue(v string) string {
 func safeHeaderValueForLog(key string, v string) string {
 	key = strings.ToLower(strings.TrimSpace(key))
 	switch key {
-	case "authorization", "x-api-key":
+	case "authorization", "x-api-key", "x-goog-api-key":
 		return redactAuthHeaderValue(v)
 	default:
 		return strings.TrimSpace(v)
@@ -421,14 +421,20 @@ func buildClaudeMimicDebugLine(req *http.Request, body []byte, account *Account,
 		"x-stainless-timeout",
 		"authorization",
 		"x-api-key",
+		"x-goog-api-key",
 		"content-type",
 		"accept",
 		"x-stainless-helper-method",
+		"x-client-request-id",
+		"x-claude-code-session-id",
+		"accept-language",
+		"sec-fetch-mode",
+		"accept-encoding",
 	}
 
 	h := make([]string, 0, len(interesting))
 	for _, k := range interesting {
-		if v := req.Header.Get(k); v != "" {
+		if v := getHeaderRaw(req.Header, k); v != "" {
 			h = append(h, fmt.Sprintf("%s=%q", k, safeHeaderValueForLog(k, v)))
 		}
 	}
@@ -5562,7 +5568,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")
 	req.Header.Del("cookie")
-	setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+	if mimicClaudeCode {
+		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
+	} else {
+		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+	}
 
 	if getHeaderRaw(req.Header, "content-type") == "" {
 		setHeaderRaw(req.Header, "content-type", "application/json")
@@ -5580,9 +5590,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
 		}
 		incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
-		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(gjson.GetBytes(body, "model").String(), body), incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+		required := claudeCodeAPIKeyMimicryBetasForAccount(account, gjson.GetBytes(body, "model").String(), body)
+		dropSet := claudeCodeAPIKeyMimicDropSetForAccount(account, nil)
+		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, dropSet))
 		if c != nil {
-			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, "apikey", true))
+			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, claudeCodeMimicTokenLabel("apikey", account), true))
 		}
 	}
 
@@ -6488,6 +6500,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// 设置认证头（保持原始大小写）
 	if tokenType == "oauth" {
 		setHeaderRaw(req.Header, "authorization", "Bearer "+token)
+	} else if isAnthropicAPIKeyMimic {
+		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
 		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 	}
@@ -6567,8 +6581,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		// API-key accounts: apply beta policy filter to strip controlled tokens
 		if isAnthropicAPIKeyMimic {
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
-			apiKeyDropSet := mergeDropSets(policyFilterSet, claude.BetaOAuth)
-			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(modelID, body), incomingBeta, apiKeyDropSet))
+			apiKeyDropSet := claudeCodeAPIKeyMimicDropSetForAccount(account, policyFilterSet)
+			requiredBetas := claudeCodeAPIKeyMimicryBetasForAccount(account, modelID, body)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, apiKeyDropSet))
 		} else if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
 			setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(existingBeta, effectiveDropSet))
 		} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey {
@@ -6606,10 +6621,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// Always capture a compact fingerprint line for later error diagnostics.
 	// We only print it when needed (or when the explicit debug flag is enabled).
 	if c != nil && (tokenType == "oauth" || isAnthropicAPIKeyMimic) {
-		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, tokenType, mimicClaudeCode))
+		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, claudeCodeMimicTokenLabel(tokenType, account), mimicClaudeCode))
 	}
 	if s.debugClaudeMimicEnabled() {
-		logClaudeMimicDebug(req, body, account, tokenType, mimicClaudeCode)
+		logClaudeMimicDebug(req, body, account, claudeCodeMimicTokenLabel(tokenType, account), mimicClaudeCode)
 	}
 
 	return req, nil
@@ -9642,7 +9657,11 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")
 	req.Header.Del("cookie")
-	setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+	if mimicClaudeCode {
+		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
+	} else {
+		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+	}
 
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
@@ -9660,11 +9679,12 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
 		}
 		incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
-		required := append([]string{}, claudeCodeAPIKeyMimicryBetas(gjson.GetBytes(body, "model").String(), body)...)
+		required := append([]string{}, claudeCodeAPIKeyMimicryBetasForAccount(account, gjson.GetBytes(body, "model").String(), body)...)
 		required = append(required, claude.BetaTokenCounting)
-		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+		dropSet := claudeCodeAPIKeyMimicDropSetForAccount(account, nil)
+		setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, dropSet))
 		if c != nil {
-			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, "apikey", true))
+			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, claudeCodeMimicTokenLabel("apikey", account), true))
 		}
 	}
 
@@ -9778,6 +9798,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 设置认证头（保持原始大小写）
 	if tokenType == "oauth" {
 		setHeaderRaw(req.Header, "authorization", "Bearer "+token)
+	} else if ctAnthropicAPIKeyMimic {
+		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
 		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
 	}
@@ -9846,9 +9868,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		// API-key accounts: apply beta policy filter to strip controlled tokens
 		if ctAnthropicAPIKeyMimic {
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
-			required := append([]string{}, claudeCodeAPIKeyMimicryBetas(modelID, body)...)
+			required := append([]string{}, claudeCodeAPIKeyMimicryBetasForAccount(account, modelID, body)...)
 			required = append(required, claude.BetaTokenCounting)
-			apiKeyDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account, modelID), claude.BetaOAuth)
+			apiKeyDropSet := claudeCodeAPIKeyMimicDropSetForAccount(account, s.getBetaPolicyFilterSet(ctx, c, account, modelID))
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(required, incomingBeta, apiKeyDropSet))
 		} else if existingBeta := getHeaderRaw(req.Header, "anthropic-beta"); existingBeta != "" {
 			setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(existingBeta, ctEffectiveDropSet))
@@ -9875,10 +9897,10 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	if c != nil && (tokenType == "oauth" || ctAnthropicAPIKeyMimic) {
-		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, tokenType, mimicClaudeCode))
+		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, claudeCodeMimicTokenLabel(tokenType, account), mimicClaudeCode))
 	}
 	if s.debugClaudeMimicEnabled() {
-		logClaudeMimicDebug(req, body, account, tokenType, mimicClaudeCode)
+		logClaudeMimicDebug(req, body, account, claudeCodeMimicTokenLabel(tokenType, account), mimicClaudeCode)
 	}
 
 	return req, nil
