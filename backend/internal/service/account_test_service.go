@@ -68,6 +68,7 @@ type AccountTestService struct {
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
+	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
 }
 
@@ -78,6 +79,7 @@ func NewAccountTestService(
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
+	settingService *SettingService,
 	tlsFPProfileService *TLSFingerprintProfileService,
 ) *AccountTestService {
 	return &AccountTestService{
@@ -86,6 +88,7 @@ func NewAccountTestService(
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
+		settingService:            settingService,
 		tlsFPProfileService:       tlsFPProfileService,
 	}
 }
@@ -256,17 +259,55 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
+	mimicClaudeCode := account.IsOAuth() || account.IsClaudeCodeMimicEnabled()
+	sessionID := ""
+	if mimicClaudeCode {
+		sessionID = getOrCreateClaudeCodeSessionID(hashAPIKeyForSession(authToken))
+	}
+	enableFP, enableMPT, enableCCH := true, false, true
+	if s.settingService != nil {
+		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+	}
+	var mimicFingerprint *Fingerprint
+	activeFingerprintApplied := false
+	if mimicClaudeCode && enableFP && s.settingService != nil {
+		if activeFingerprint, ok := s.settingService.ApplyActiveClaudeCodeFingerprint(ctx, nil); ok {
+			mimicFingerprint = activeFingerprint
+			activeFingerprintApplied = true
+		}
+	}
+
 	// Create Claude Code style payload (same for all account types)
 	payload, err := createTestPayload(testModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
 	payloadBytes, _ := json.Marshal(payload)
-	if next, changed := ensureClaudeOAuthSystemCloaking(payloadBytes, claude.CLICurrentVersion, defaultClaudeCodeEntrypoint); changed {
+	cliVersion := claude.CLICurrentVersion
+	mimicUA := claude.DefaultHeaders["User-Agent"]
+	if activeFingerprintApplied && mimicFingerprint != nil && strings.TrimSpace(mimicFingerprint.UserAgent) != "" {
+		mimicUA = mimicFingerprint.UserAgent
+		if v := resolveClaudeCodeCLIVersion(mimicFingerprint.UserAgent); v != "" {
+			cliVersion = v
+		}
+	}
+	if next, changed := ensureClaudeOAuthSystemCloaking(payloadBytes, cliVersion, defaultClaudeCodeEntrypoint); changed {
 		payloadBytes = next
 	}
-	payloadBytes = syncBillingHeaderVersion(payloadBytes, claude.DefaultHeaders["User-Agent"])
-	payloadBytes = signBillingHeaderCCH(payloadBytes)
+	if mimicClaudeCode && sessionID != "" {
+		metadataUserID := formatClaudeOAuthMetadataUserID(
+			generateClientID(),
+			strings.TrimSpace(account.GetExtraString("account_uuid")),
+			sessionID,
+		)
+		if next, changed := applyClaudeOAuthMetadataUserID(payloadBytes, metadataUserID, enableMPT); changed {
+			payloadBytes = next
+		}
+	}
+	payloadBytes = syncBillingHeaderVersion(payloadBytes, mimicUA)
+	if enableCCH || mimicClaudeCode {
+		payloadBytes = signBillingHeaderCCH(payloadBytes)
+	}
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -280,17 +321,39 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Apply Claude Code client headers
-	for key, value := range claude.DefaultHeaders {
-		req.Header.Set(key, value)
+	// Apply Claude Code client headers. In explicit mimic mode this must use
+	// the same forced header policy as the real gateway forwarding path.
+	if mimicClaudeCode {
+		var fp *Fingerprint
+		if activeFingerprintApplied {
+			fp = mimicFingerprint
+		}
+		applyClaudeCodeMimicHeaders(req, true, fp)
+		if sessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+		}
+	} else {
+		for key, value := range claude.DefaultHeaders {
+			req.Header.Set(key, value)
+		}
 	}
 
 	// Set authentication header
 	if authScheme == "bearer" {
-		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
+		incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+		if mimicClaudeCode {
+			setHeaderRaw(req.Header, "anthropic-beta", mergeClaudeCodeOAuthBetas(testModelID, payloadBytes, incomingBeta, defaultDroppedBetasSet))
+		} else {
+			req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
+		}
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		if mimicClaudeCode {
+			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
+			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(claudeCodeAPIKeyMimicryBetas(testModelID, payloadBytes), incomingBeta, mergeDropSets(nil, claude.BetaOAuth)))
+		} else {
+			req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		}
 		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, authToken)
 	}
 
@@ -313,6 +376,9 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 		if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
 			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
+		}
+		if isClaudeCodeCredentialScopeError(string(body)) {
+			log.Printf("[ClaudeMimicTestDebug] %s", buildClaudeMimicDebugLine(req, payloadBytes, account, authScheme, mimicClaudeCode))
 		}
 
 		return s.sendErrorAndEnd(c, errMsg)

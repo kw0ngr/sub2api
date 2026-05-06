@@ -195,6 +195,79 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Equal(t, "claude-3-haiku-20240307", gjson.GetBytes(bodyBytes, "model").String(), "缓存的上游请求体应包含映射后的模型")
 }
 
+func TestAccountTestService_AnthropicAPIKeyClaudeCodeMimicAppliesFullFingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/201/test", nil)
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`data: {"type":"content_block_delta","delta":{"text":"successful"}}
+
+data: {"type":"message_stop"}
+
+`)),
+		},
+	}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:          201,
+		Name:        "claude-code-scoped-apikey",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ant-test",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"claude_code_mimic": true,
+			"account_uuid":      "account-test-uuid",
+		},
+	}
+
+	err := svc.testClaudeAccountConnection(c, account, "claude-sonnet-4-6")
+	require.NoError(t, err)
+	require.NotNil(t, upstream.lastReq)
+	require.NotEmpty(t, upstream.lastBody)
+
+	req := upstream.lastReq
+	rawBody := upstream.lastBody
+	require.Equal(t, "application/json", getHeaderRaw(req.Header, "accept"))
+	require.Equal(t, "stream", getHeaderRaw(req.Header, "x-stainless-helper-method"))
+	require.NotEmpty(t, getHeaderRaw(req.Header, "x-client-request-id"))
+	sessionID := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id")
+	require.NotEmpty(t, sessionID)
+	require.Equal(t, "claude-cli/2.1.92 (external, cli)", getHeaderRaw(req.Header, "user-agent"))
+	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
+
+	beta := getHeaderRaw(req.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaPromptCachingScope)
+	require.Contains(t, beta, claude.BetaExtendedCacheTTL)
+	require.NotContains(t, beta, claude.BetaOAuth)
+
+	bodyText := string(rawBody)
+	require.Contains(t, bodyText, "x-anthropic-billing-header:")
+	require.Contains(t, bodyText, claudeCodeSystemPrompt)
+	require.Contains(t, bodyText, "cc_version=2.1.92")
+	require.NotContains(t, bodyText, "cch=00000;")
+
+	userID := gjson.GetBytes(rawBody, "metadata.user_id").String()
+	parsed := ParseMetadataUserID(userID)
+	require.NotNil(t, parsed)
+	require.True(t, parsed.IsNewFormat)
+	require.Equal(t, sessionID, parsed.SessionID)
+	require.Contains(t, rec.Body.String(), "test_complete")
+}
+
 func TestGatewayService_BuildUpstreamRequestThirdPartyAnthropicCompatibleBaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
