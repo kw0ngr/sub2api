@@ -51,6 +51,81 @@ func TestGatewayService_GetBetaHeader_ClientProvided(t *testing.T) {
 	require.Equal(t, "oauth-2025-04-20,foo-beta", withOAuth)
 }
 
+func TestGatewayService_BuildUpstreamRequest_OAuthClaudeCodeClientBackfillsClaudeCodeBeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("anthropic-beta", claude.BetaInterleavedThinking)
+	c.Request.Header.Set("User-Agent", "claude-cli/2.1.99 (external, cli)")
+	c.Request.Header.Set("X-App", "cli")
+
+	svc := &GatewayService{}
+	account := &Account{
+		ID:          1004,
+		Name:        "oauth-real-claude-code-incomplete-beta",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+
+	req, err := svc.buildUpstreamRequest(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"claude-sonnet-4-6","system":[{"type":"text","text":"You are Claude Code, Anthropic's official CLI for Claude."}],"metadata":{"user_id":"{\"device_id\":\"dev\",\"account_uuid\":\"acc\",\"session_id\":\"00000000-0000-4000-8000-000000000001\"}"},"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}`),
+		"oauth-token",
+		"oauth",
+		"claude-sonnet-4-6",
+		false,
+		false,
+	)
+	require.NoError(t, err)
+
+	beta := getHeaderRaw(req.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaOAuth)
+	require.Contains(t, beta, claude.BetaInterleavedThinking)
+	require.Contains(t, beta, claude.BetaPromptCachingScope)
+}
+
+func TestGatewayService_BuildCountTokensRequest_OAuthClaudeCodeClientBackfillsClaudeCodeBeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	c.Request.Header.Set("anthropic-beta", claude.BetaInterleavedThinking)
+	c.Request.Header.Set("User-Agent", "claude-cli/2.1.99 (external, cli)")
+	c.Request.Header.Set("X-App", "cli")
+
+	svc := &GatewayService{}
+	account := &Account{
+		ID:          1005,
+		Name:        "oauth-real-claude-code-count-tokens-incomplete-beta",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+
+	req, err := svc.buildCountTokensRequest(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}`),
+		"oauth-token",
+		"oauth",
+		"claude-sonnet-4-6",
+		false,
+	)
+	require.NoError(t, err)
+
+	beta := getHeaderRaw(req.Header, "anthropic-beta")
+	require.Contains(t, beta, claude.BetaClaudeCode)
+	require.Contains(t, beta, claude.BetaOAuth)
+	require.Contains(t, beta, claude.BetaInterleavedThinking)
+	require.Contains(t, beta, claude.BetaTokenCounting)
+}
+
 func TestGatewayService_GetBetaHeader_DynamicStructured(t *testing.T) {
 	svc := &GatewayService{}
 	body := []byte(`{"output_config":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object"}}}}`)

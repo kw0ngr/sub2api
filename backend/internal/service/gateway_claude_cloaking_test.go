@@ -155,6 +155,11 @@ func TestGenerateClaudeCodeBillingHeader(t *testing.T) {
 	require.Equal(t, "x-anthropic-billing-header: cc_version=2.1.92.f34; cc_entrypoint=cli; cch=00000;", got)
 }
 
+func TestIsClaudeCodeCredentialScopeError_CurrentRestrictionMessage(t *testing.T) {
+	msg := "This model is restricted to Claude Code clients only and cannot be accessed through other API clients."
+	require.True(t, isClaudeCodeCredentialScopeError(msg))
+}
+
 func TestEnsureClaudeOAuthSystemCloaking_InsertsBillingAndPrefix(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-6","system":[{"type":"text","text":"custom system"}],"messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
 	next, changed := ensureClaudeOAuthSystemCloaking(body, "2.1.92", "cli")

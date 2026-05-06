@@ -476,8 +476,10 @@ func isClaudeCodeCredentialScopeError(msg string) bool {
 	if m == "" {
 		return false
 	}
-	return strings.Contains(m, "only authorized for use with claude code") &&
-		strings.Contains(m, "cannot be used for other api requests")
+	return (strings.Contains(m, "only authorized for use with claude code") &&
+		strings.Contains(m, "cannot be used for other api requests")) ||
+		(strings.Contains(m, "restricted to claude code clients only") &&
+			strings.Contains(m, "cannot be accessed through other api clients"))
 }
 
 // sseDataRe matches SSE data lines with optional whitespace after colon.
@@ -1459,6 +1461,16 @@ func claudeCodeMimicryBetas(modelID string, body []byte) []string {
 		tokens = append(tokens, betaStructuredOutputs)
 	}
 	return tokens
+}
+
+func mergeClaudeCodeOAuthBetas(modelID string, body []byte, incoming string, drop map[string]struct{}) string {
+	return mergeAnthropicBetaDropping(claudeCodeMimicryBetas(modelID, body), incoming, drop)
+}
+
+func mergeClaudeCodeOAuthCountTokensBetas(modelID string, body []byte, incoming string, drop map[string]struct{}) string {
+	required := append([]string{}, claudeCodeMimicryBetas(modelID, body)...)
+	required = append(required, claude.BetaTokenCounting)
+	return mergeAnthropicBetaDropping(required, incoming, drop)
 }
 
 func joinBetaTokens(tokens []string) string {
@@ -6430,9 +6442,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			requiredBetas := claudeCodeMimicryBetas(modelID, body)
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, effectiveDropSet))
 		} else {
-			// Claude Code 客户端：尽量透传原始 header，仅补齐 oauth beta
+			// Claude Code 客户端：保留原始 header，同时兜底补齐 OAuth/Claude Code 必需 beta。
 			clientBetaHeader := getHeaderRaw(req.Header, "anthropic-beta")
-			setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(s.getBetaHeader(modelID, body, clientBetaHeader), effectiveDropSet))
+			baseBeta := s.getBetaHeader(modelID, body, clientBetaHeader)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeClaudeCodeOAuthBetas(modelID, body, baseBeta, effectiveDropSet))
 		}
 	} else {
 		// API-key accounts: apply beta policy filter to strip controlled tokens
@@ -9607,15 +9620,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, ctEffectiveDropSet))
 		} else {
 			clientBetaHeader := getHeaderRaw(req.Header, "anthropic-beta")
-			if clientBetaHeader == "" {
-				setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(claude.CountTokensBetaHeader, ctEffectiveDropSet))
-			} else {
-				beta := s.getBetaHeader(modelID, body, clientBetaHeader)
-				if !containsBetaToken(beta, claude.BetaTokenCounting) {
-					beta = beta + "," + claude.BetaTokenCounting
-				}
-				setHeaderRaw(req.Header, "anthropic-beta", stripBetaTokensWithSet(beta, ctEffectiveDropSet))
-			}
+			baseBeta := s.getBetaHeader(modelID, body, clientBetaHeader)
+			setHeaderRaw(req.Header, "anthropic-beta", mergeClaudeCodeOAuthCountTokensBetas(modelID, body, baseBeta, ctEffectiveDropSet))
 		}
 	} else {
 		// API-key accounts: apply beta policy filter to strip controlled tokens
