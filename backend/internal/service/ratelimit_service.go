@@ -124,6 +124,16 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) (shouldDisable bool) {
 	if account != nil && account.Type == AccountTypeAPIKey {
 		if account.Platform == PlatformOpenAI && (statusCode == http.StatusTooManyRequests || statusCode == 529) {
+			if !(account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()) {
+				action := ClassifyAPIKeyStatusAction(account, statusCode, responseBody)
+				if action == APIKeyStatusActionPermanentDisable {
+					if s == nil || s.accountRepo == nil {
+						return true
+					}
+					s.handleAPIKeyPermanentDisable(ctx, account, statusCode, responseBody)
+					return true
+				}
+			}
 			goto genericRuntimePath
 		}
 		// Pool mode without custom error codes: upstream manages key state, skip local marking.

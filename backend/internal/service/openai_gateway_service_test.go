@@ -2226,3 +2226,33 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "upstream rejected request")
 	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 }
+
+func TestOpenAIStreamingResponseFailedInsufficientQuotaReturns429Failover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	account := &Account{ID: 77, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_quota"}}`,
+		`data: {"type":"response.in_progress","response":{"id":"resp_quota"}}`,
+		`data: {"type":"response.failed","response":{"error":{"type":"insufficient_quota","code":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}}`,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_quota"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	usage, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-4o", "gpt-4o")
+
+	require.NotNil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "insufficient_quota")
+	require.NotContains(t, rec.Body.String(), "response.failed")
+}

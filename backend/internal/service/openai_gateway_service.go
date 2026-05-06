@@ -3171,6 +3171,71 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	return true
 }
 
+func openAIStreamFailedEventFields(payload []byte, fallbackMessage string) (code string, errType string, message string) {
+	if len(payload) > 0 {
+		for _, path := range []string{"response.error.code", "error.code", "code"} {
+			if value := strings.TrimSpace(gjson.GetBytes(payload, path).String()); value != "" {
+				code = value
+				break
+			}
+		}
+		for _, path := range []string{"response.error.type", "error.type", "type"} {
+			if value := strings.TrimSpace(gjson.GetBytes(payload, path).String()); value != "" && value != "response.failed" {
+				errType = value
+				break
+			}
+		}
+		for _, path := range []string{"response.error.message", "error.message", "message"} {
+			if value := strings.TrimSpace(gjson.GetBytes(payload, path).String()); value != "" {
+				message = sanitizeUpstreamErrorMessage(value)
+				break
+			}
+		}
+	}
+	if message == "" {
+		message = sanitizeUpstreamErrorMessage(strings.TrimSpace(fallbackMessage))
+	}
+	return code, errType, message
+}
+
+func openAIStreamFailedEventHTTPStatus(payload []byte, message string) int {
+	code, errType, msg := openAIStreamFailedEventFields(payload, message)
+	combined := strings.ToLower(strings.TrimSpace(msg + " " + code + " " + errType))
+	if combined == "" {
+		return http.StatusBadGateway
+	}
+	if containsAny(combined, "insufficient_quota", "exceeded your current quota", "billing details", "usage_limit", "rate_limit", "quota exceeded") {
+		return http.StatusTooManyRequests
+	}
+	if containsAny(combined, "invalid_api_key", "authentication", "unauthorized", "api key invalid") {
+		return http.StatusUnauthorized
+	}
+	if containsAny(combined, "permission", "forbidden", "access denied", "not authorized") {
+		return http.StatusForbidden
+	}
+	return http.StatusBadGateway
+}
+
+func openAIStreamFailedEventErrorBody(payload []byte, message string) []byte {
+	code, errType, msg := openAIStreamFailedEventFields(payload, message)
+	msg = sanitizeUpstreamErrorMessage(strings.TrimSpace(msg))
+	if msg == "" {
+		msg = "OpenAI stream disconnected before completion"
+	}
+	if errType == "" {
+		errType = "upstream_error"
+	}
+	errObj := gin.H{
+		"type":    errType,
+		"message": msg,
+	}
+	if code != "" {
+		errObj["code"] = code
+	}
+	body, _ := json.Marshal(gin.H{"error": errObj})
+	return body
+}
+
 func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	c *gin.Context,
 	account *Account,
@@ -3183,6 +3248,8 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	if message == "" {
 		message = "OpenAI stream disconnected before completion"
 	}
+	statusCode := openAIStreamFailedEventHTTPStatus(payload, message)
+	body := openAIStreamFailedEventErrorBody(payload, message)
 	detail := ""
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -3192,10 +3259,10 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		detail = truncateString(string(payload), maxBytes)
 	}
 	if c != nil {
-		setOpsUpstreamError(c, http.StatusBadGateway, message, detail)
+		setOpsUpstreamError(c, statusCode, message, detail)
 		event := OpsUpstreamErrorEvent{
 			Platform:           PlatformOpenAI,
-			UpstreamStatusCode: http.StatusBadGateway,
+			UpstreamStatusCode: statusCode,
 			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
 			Passthrough:        passthrough,
 			Kind:               "failover",
@@ -3209,14 +3276,19 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		}
 		appendOpsUpstreamError(c, event)
 	}
-	body, _ := json.Marshal(gin.H{
-		"error": gin.H{
-			"type":    "upstream_error",
-			"message": message,
-		},
-	})
+	if s != nil && s.rateLimitService != nil && account != nil && len(payload) > 0 {
+		headers := http.Header{}
+		if upstreamRequestID = strings.TrimSpace(upstreamRequestID); upstreamRequestID != "" {
+			headers.Set("x-request-id", upstreamRequestID)
+		}
+		ctx := context.Background()
+		if c != nil && c.Request != nil {
+			ctx = c.Request.Context()
+		}
+		_ = s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
+	}
 	return &UpstreamFailoverError{
-		StatusCode:   http.StatusBadGateway,
+		StatusCode:   statusCode,
 		ResponseBody: body,
 	}
 }

@@ -69,6 +69,12 @@
           </div>
           <strong>{{ item.value }}</strong>
           <small>{{ item.detail }}</small>
+          <div v-if="item.metrics?.length" class="account-map-stat-metrics">
+            <span v-for="metric in item.metrics" :key="metric.label">
+              <b>{{ metric.value }}</b>
+              {{ metric.label }}
+            </span>
+          </div>
         </div>
       </section>
 
@@ -81,7 +87,7 @@
               <p>先缩小范围，再展开查看具体账号，避免异常账号一次性淹没页面。</p>
             </div>
           </div>
-          <div class="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
+          <div class="account-map-filter-grid grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
             <label class="account-map-field">
               <span>搜索账号</span>
               <input
@@ -157,88 +163,56 @@
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">调整筛选条件，或者先在账号管理中导入/创建上游账号。</p>
         </div>
 
-        <div v-else class="space-y-4">
+        <div v-else class="account-pool-card-grid">
           <article
             v-for="pool in visiblePools"
             :key="pool.key"
-            class="account-pool-lane"
+            role="button"
+            tabindex="0"
+            class="account-pool-card"
+            :class="[
+              `account-pool-card-${poolStatusTone(pool)}`,
+              selectedPoolForDetail?.key === pool.key ? 'account-pool-card-active' : ''
+            ]"
+            @click="selectPool(pool)"
+            @keydown.enter.prevent="selectPool(pool)"
+            @keydown.space.prevent="selectPool(pool)"
           >
-            <div class="account-pool-lane-header">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="account-pool-platform">
-                    {{ platformLabel(pool.platform) }}
-                  </span>
-                  <h2>
-                    {{ accountTypeLabel(pool.type) }}
-                  </h2>
-                </div>
-                <p>
-                  {{ pool.accounts.length }} 个账号 · 健康 {{ poolHealthyCount(pool) }} · 需关注 {{ poolAttentionCount(pool) }}
-                </p>
-              </div>
-              <div class="account-pool-mini-metrics">
-                <div>
-                  <span>RPM</span>
-                  <strong>{{ poolRPM(pool) }}</strong>
-                </div>
-                <div>
-                  <span>并发</span>
-                  <strong>{{ poolConcurrency(pool) }}</strong>
-                </div>
-                <div>
-                  <span>指纹</span>
-                  <strong>{{ poolFingerprintCount(pool) }}</strong>
-                </div>
-                <div>
-                  <span>额度</span>
-                  <strong>{{ poolQuotaSignalCount(pool) }}</strong>
-                </div>
-              </div>
+            <div class="account-pool-card-head">
+              <span class="account-pool-platform">{{ platformLabel(pool.platform) }}</span>
+              <span class="account-pool-status-dot"></span>
             </div>
-
-            <div class="account-node-grid">
-              <button
-                v-for="account in visiblePoolAccounts(pool)"
+            <div class="account-pool-card-main">
+              <h2>{{ accountTypeLabel(pool.type) }}</h2>
+              <div class="account-pool-card-count">
+                <strong>{{ pool.accounts.length }}</strong>
+                <span>账号</span>
+              </div>
+              <p>{{ poolSummaryText(pool) }}</p>
+            </div>
+            <div class="account-pool-card-metrics">
+              <span><b>{{ poolHealthyCount(pool) }}</b>健康</span>
+              <span><b>{{ poolRPM(pool) }}</b>RPM</span>
+              <span><b>{{ poolConcurrency(pool) }}</b>并发</span>
+              <span><b>{{ poolFingerprintCount(pool) }}</b>TLS</span>
+            </div>
+            <div class="account-pool-card-preview">
+              <span
+                v-for="account in poolPreviewAccounts(pool)"
                 :key="account.id"
-                type="button"
-                class="account-node group text-left"
-                :class="[nodeClass(account), selectedAccount?.id === account.id ? 'account-node-selected' : '']"
-                @click="selectAccount(account)"
+                class="account-pool-avatar"
+                :class="nodeClass(account)"
+                :title="account.name"
               >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <p class="truncate text-sm font-bold">{{ account.name }}</p>
-                    <p class="account-node-subtitle">
-                      <span class="account-node-status">{{ statusLabel(account) }}</span>
-                      <span>{{ account.type }}</span>
-                    </p>
-                  </div>
-                  <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-current opacity-70"></span>
-                </div>
-                <div class="account-node-meta">
-                  <span>RPM {{ account.current_rpm ?? 0 }}</span>
-                  <span>并发 {{ account.current_concurrency ?? 0 }}</span>
-                  <span v-if="account.enable_tls_fingerprint">TLS</span>
-                  <span v-else>no TLS</span>
-                </div>
-                <div v-if="quotaBrief(account)" class="account-node-quota">
-                  <span>{{ quotaBrief(account) }}</span>
-                  <small>{{ quotaSourceLabel(quotaSnapshot(account)) }}</small>
-                </div>
-              </button>
+                {{ accountInitial(account) }}
+              </span>
+              <span v-if="pool.accounts.length > poolPreviewAccounts(pool).length" class="account-pool-avatar account-pool-avatar-more">
+                +{{ pool.accounts.length - poolPreviewAccounts(pool).length }}
+              </span>
             </div>
-
-            <div v-if="poolHiddenCount(pool) > 0 || isPoolExpanded(pool)" class="account-pool-footer">
-              <span v-if="poolHiddenCount(pool) > 0">
-                已优先显示 {{ visiblePoolAccounts(pool).length }} 个账号，剩余 {{ poolHiddenCount(pool) }} 个折叠。
-              </span>
-              <span v-else>
-                已展开全部 {{ pool.accounts.length }} 个账号。
-              </span>
-              <button type="button" class="account-map-link-button" @click="togglePoolExpanded(pool)">
-                {{ isPoolExpanded(pool) ? '收起' : '展开全部' }}
-              </button>
+            <div class="account-pool-card-foot">
+              <span>额度 {{ poolQuotaSignalCount(pool) }}</span>
+              <span>查看详情 →</span>
             </div>
           </article>
         </div>
@@ -358,12 +332,69 @@
             </div>
           </template>
 
+          <template v-else-if="selectedPoolForDetail">
+            <div class="inspector-profile-card inspector-pool-card">
+              <button type="button" class="inspector-close" aria-label="取消选择账号池" @click="clearPoolSelection">
+                ×
+              </button>
+              <p class="inspector-kicker">池详情</p>
+              <h2 class="inspector-title">{{ platformLabel(selectedPoolForDetail.platform) }} · {{ accountTypeLabel(selectedPoolForDetail.type) }}</h2>
+              <div class="inspector-profile-meta">
+                <span>{{ selectedPoolForDetail.accounts.length }} 个账号</span>
+                <span>健康 {{ poolHealthyCount(selectedPoolForDetail) }}</span>
+                <span>需关注 {{ poolAttentionCount(selectedPoolForDetail) }}</span>
+              </div>
+            </div>
+
+            <div class="inspector-snapshot-grid">
+              <MetricTile label="RPM" :value="String(poolRPM(selectedPoolForDetail))" />
+              <MetricTile label="并发" :value="String(poolConcurrency(selectedPoolForDetail))" />
+              <MetricTile label="TLS 覆盖" :value="poolFingerprintCount(selectedPoolForDetail)" />
+              <MetricTile label="额度信号" :value="String(poolQuotaSignalCount(selectedPoolForDetail))" />
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>池内账号</h3>
+                  <p>{{ poolSummaryText(selectedPoolForDetail) }}</p>
+                </div>
+                <button
+                  v-if="poolHiddenCount(selectedPoolForDetail) > 0 || isPoolExpanded(selectedPoolForDetail)"
+                  type="button"
+                  class="account-map-link-button"
+                  @click="togglePoolExpanded(selectedPoolForDetail)"
+                >
+                  {{ isPoolExpanded(selectedPoolForDetail) ? '收起' : `展开 ${poolHiddenCount(selectedPoolForDetail)} 个` }}
+                </button>
+              </div>
+
+              <div class="inspector-account-list">
+                <button
+                  v-for="account in visiblePoolAccounts(selectedPoolForDetail)"
+                  :key="account.id"
+                  type="button"
+                  class="inspector-account-row"
+                  :class="nodeClass(account)"
+                  @click="selectAccount(account)"
+                >
+                  <span class="inspector-account-dot"></span>
+                  <span class="inspector-account-main">
+                    <b>{{ account.name }}</b>
+                    <small>{{ statusLabel(account) }} · RPM {{ account.current_rpm ?? 0 }} · 并发 {{ account.current_concurrency ?? 0 }}</small>
+                  </span>
+                  <span class="inspector-account-quota">{{ quotaBrief(account) || '未探测' }}</span>
+                </button>
+              </div>
+            </div>
+          </template>
+
           <template v-else>
             <div class="inspector-empty-header">
               <p class="inspector-kicker">详情栏</p>
-              <h2 class="inspector-title">选择账号查看调度状态</h2>
+              <h2 class="inspector-title">选择账号池查看细节</h2>
               <p class="inspector-subtitle">
-                未选择时展示当前筛选范围的账号池概览和优先关注项。
+                左侧卡片是当前筛选范围内的调度入口，点击池子后在这里聚焦账号列表。
               </p>
             </div>
 
@@ -379,32 +410,22 @@
                 <MetricTile label="TLS 覆盖" :value="`${summary.tls_enabled}/${summary.total || 0}`" />
                 <MetricTile label="额度信号" :value="String(summary.quota_signals || 0)" />
               </div>
-            </div>
 
-            <div class="inspector-section">
-              <div class="inspector-section-title">
-                <h3>优先关注</h3>
-                <span>{{ attentionAccounts.length ? `${attentionAccounts.length} 个` : '无异常' }}</span>
-              </div>
-              <button
-                v-for="account in attentionAccounts"
-                :key="account.id"
-                type="button"
-                class="inspector-attention-item"
-                @click="selectAccount(account)"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <p class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ account.name }}</p>
-                  <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusBadgeClass(account)">
-                    {{ statusLabel(account) }}
-                  </span>
+              <div v-if="platformHealthRows.length" class="account-map-platform-list">
+                <div
+                  v-for="row in platformHealthRows"
+                  :key="row.platform"
+                  class="account-map-platform-row"
+                >
+                  <div class="account-map-platform-row-head">
+                    <span>{{ platformLabel(row.platform) }}</span>
+                    <strong>{{ row.healthy }}/{{ row.total }}</strong>
+                  </div>
+                  <div class="account-map-platform-track">
+                    <span :style="{ width: `${row.healthyPercent}%` }"></span>
+                  </div>
+                  <p>{{ row.attention }} 需关注 · {{ row.quota }} 额度信号</p>
                 </div>
-                <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {{ account.status_reason || account.error_message || account.temp_unschedulable_reason || '等待恢复或需要人工复核' }}
-                </p>
-              </button>
-              <div v-if="!attentionAccounts.length" class="inspector-good-state">
-                当前筛选范围内没有明显异常账号。
               </div>
             </div>
           </template>
@@ -435,6 +456,14 @@ type AccountStatusKind = AccountPoolMapStatusKind
 type AccountPool = AccountPoolMapPool
 type DetailRow = { label: string; value: string }
 type QuotaStatItem = { label: string; value: string; hint: string }
+type PlatformHealthRow = {
+  platform: string
+  total: number
+  healthy: number
+  attention: number
+  quota: number
+  healthyPercent: number
+}
 
 const MetricTile = defineComponent({
   props: {
@@ -472,6 +501,7 @@ const errorMessage = ref('')
 const knownPlatforms = ref<string[]>([])
 const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
+const selectedPoolKey = ref<string | null>(null)
 const inspectorPanel = ref<HTMLElement | null>(null)
 const expandedPoolKeys = ref<Set<string>>(new Set())
 const checkingHealth = ref(false)
@@ -508,6 +538,11 @@ const selectedAccount = computed(() => accounts.value.find((item) => item.id ===
 
 const visiblePools = computed<AccountPool[]>(() => pools.value)
 
+const selectedPoolForDetail = computed(() => {
+  if (!selectedPoolKey.value) return null
+  return visiblePools.value.find((pool) => pool.key === selectedPoolKey.value) || null
+})
+
 const selectedPool = computed(() => {
   const selected = selectedAccount.value
   if (!selected) return null
@@ -525,10 +560,32 @@ const selectedPoolPeerCount = computed(() => {
   return pool ? Math.max(0, pool.accounts.length - 1) : 0
 })
 
-const attentionAccounts = computed(() => accounts.value
-  .filter((account) => statusKind(account) !== 'healthy')
-  .sort((a, b) => statusWeight(a) - statusWeight(b))
-  .slice(0, 6))
+const platformHealthRows = computed<PlatformHealthRow[]>(() => {
+  const map = new Map<string, PlatformHealthRow>()
+  for (const account of accounts.value) {
+    const platform = account.platform || 'unknown'
+    const row = map.get(platform) || {
+      platform,
+      total: 0,
+      healthy: 0,
+      attention: 0,
+      quota: 0,
+      healthyPercent: 0
+    }
+    row.total += 1
+    if (statusKind(account) === 'healthy') row.healthy += 1
+    else row.attention += 1
+    if (quotaHasAnySignal(quotaSnapshot(account))) row.quota += 1
+    map.set(platform, row)
+  }
+  return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      healthyPercent: row.total ? Math.max(4, Math.round((row.healthy / row.total) * 100)) : 0
+    }))
+    .sort((a, b) => b.total - a.total || platformLabel(a.platform).localeCompare(platformLabel(b.platform)))
+    .slice(0, 5)
+})
 
 const summary = computed(() => {
   return serverSummary.value || buildSummary(accounts.value, pools.value)
@@ -541,7 +598,11 @@ const summaryCards = computed(() => [
     value: summary.value.total,
     detail: `${summary.value.pools || visiblePools.value.length} 个池/泳道`,
     dotClass: 'bg-slate-400',
-    tone: 'neutral'
+    tone: 'neutral',
+    metrics: [
+      { label: '平台', value: String(platformHealthRows.value.length) },
+      { label: 'TLS', value: `${summary.value.tls_enabled}/${summary.value.total || 0}` }
+    ]
   },
   {
     key: 'healthy',
@@ -549,7 +610,11 @@ const summaryCards = computed(() => [
     value: summary.value.healthy,
     detail: summary.value.total ? `${Math.round((summary.value.healthy / summary.value.total) * 100)}% 可用` : '无账号',
     dotClass: 'bg-emerald-500',
-    tone: 'good'
+    tone: 'good',
+    metrics: [
+      { label: 'RPM', value: String(summary.value.rpm || 0) },
+      { label: '并发', value: String(summary.value.concurrency || 0) }
+    ]
   },
   {
     key: 'attention',
@@ -557,7 +622,11 @@ const summaryCards = computed(() => [
     value: summary.value.attention,
     detail: '错误、冷却、限流或停用',
     dotClass: summary.value.attention > 0 ? 'bg-amber-500' : 'bg-emerald-500',
-    tone: summary.value.attention > 0 ? 'warn' : 'good'
+    tone: summary.value.attention > 0 ? 'warn' : 'good',
+    metrics: [
+      { label: '错误', value: String(summary.value.error || 0) },
+      { label: '冷却/限流', value: String((summary.value.degraded || 0) + (summary.value.rate_limited || 0)) }
+    ]
   },
   {
     key: 'quota',
@@ -565,7 +634,11 @@ const summaryCards = computed(() => [
     value: summary.value.quota_signals || 0,
     detail: `${summary.value.rate_limited} 限流 · ${summary.value.disabled} 停用`,
     dotClass: summary.value.quota_signals > 0 ? 'bg-sky-500' : 'bg-slate-300',
-    tone: summary.value.quota_signals > 0 ? 'accent' : 'neutral'
+    tone: summary.value.quota_signals > 0 ? 'accent' : 'neutral',
+    metrics: [
+      { label: '会话', value: String(summary.value.active_sessions || 0) },
+      { label: '停用', value: String(summary.value.disabled || 0) }
+    ]
   }
 ])
 
@@ -700,6 +773,34 @@ function poolFingerprintCount(pool: AccountPool): string {
 
 function poolQuotaSignalCount(pool: AccountPool): number {
   return pool.summary?.quota_signals ?? pool.accounts.filter((item) => quotaHasAnySignal(quotaSnapshot(item))).length
+}
+
+function poolStatusTone(pool: AccountPool): AccountStatusKind {
+  const summary = pool.summary
+  if ((summary?.error || 0) > 0) return 'error'
+  if ((summary?.rate_limited || 0) > 0) return 'rate_limited'
+  if ((summary?.degraded || 0) > 0) return 'degraded'
+  if ((summary?.disabled || 0) > 0 && poolHealthyCount(pool) === 0) return 'disabled'
+  return 'healthy'
+}
+
+function poolSummaryText(pool: AccountPool): string {
+  const attention = poolAttentionCount(pool)
+  const limited = pool.summary?.rate_limited || 0
+  const disabled = pool.summary?.disabled || 0
+  const parts = [`健康 ${poolHealthyCount(pool)}`, `需关注 ${attention}`]
+  if (limited > 0) parts.push(`限流 ${limited}`)
+  if (disabled > 0) parts.push(`停用 ${disabled}`)
+  return parts.join(' · ')
+}
+
+function poolPreviewAccounts(pool: AccountPool): AccountPoolMapAccount[] {
+  return pool.accounts.slice(0, 5)
+}
+
+function accountInitial(account: AccountPoolMapAccount): string {
+  const text = (account.name || account.platform || '?').trim()
+  return text.slice(0, 1).toUpperCase() || '?'
 }
 
 function quotaSnapshot(account: Account | AccountPoolMapAccount | null | undefined): APIKeyProbeQuotaSnapshot | null {
@@ -1011,17 +1112,33 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString()
 }
 
+function selectPool(pool: AccountPool) {
+  selectedPoolKey.value = pool.key
+  selectedAccountId.value = null
+  void scrollInspectorIntoView()
+}
+
 function selectAccount(account: AccountPoolMapAccount) {
   selectedAccountId.value = account.id
-  void nextTick(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
-      inspectorPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  })
+  const pool = visiblePools.value.find((item) => item.accounts.some((poolAccount) => poolAccount.id === account.id))
+  if (pool) selectedPoolKey.value = pool.key
+  void scrollInspectorIntoView()
 }
 
 function clearSelection() {
   selectedAccountId.value = null
+}
+
+function clearPoolSelection() {
+  selectedAccountId.value = null
+  selectedPoolKey.value = null
+}
+
+async function scrollInspectorIntoView() {
+  await nextTick()
+  if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+    inspectorPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 }
 
 async function refresh() {
@@ -1122,6 +1239,9 @@ function loadPoolMapResponse(response: AccountPoolMapResponse) {
   if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
     selectedAccountId.value = null
   }
+  if (selectedPoolKey.value && !pools.value.some((pool) => pool.key === selectedPoolKey.value)) {
+    selectedPoolKey.value = null
+  }
 }
 
 async function loadFallbackAccounts() {
@@ -1147,6 +1267,9 @@ async function loadFallbackAccounts() {
   mergeKnownPlatforms(nextAccounts)
   if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
     selectedAccountId.value = null
+  }
+  if (selectedPoolKey.value && !pools.value.some((pool) => pool.key === selectedPoolKey.value)) {
+    selectedPoolKey.value = null
   }
 }
 
@@ -1315,17 +1438,17 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-:global(.dark) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+:global(.dark) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector) {
   border-color: rgb(51 65 85);
   background: var(--account-map-surface);
   color: var(--account-map-ink);
 }
 
-:global(.dark) .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-lane p, .account-node-meta, .account-map-meta) {
+:global(.dark) .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-card-main p, .account-pool-card-count span, .account-pool-card-foot, .account-node-meta, .account-map-meta, .inspector-account-main small, .inspector-account-quota) {
   color: var(--account-map-muted);
 }
 
-:global(.dark) .account-map-page :is(.account-map-stat-card strong, .account-pool-lane h2, .account-node p:first-child, .inspector-title) {
+:global(.dark) .account-map-page :is(.account-map-stat-card strong, .account-pool-card-main h2, .account-pool-card-count strong, .account-node p:first-child, .inspector-title, .inspector-account-main b) {
   color: var(--account-map-ink);
 }
 
@@ -1333,7 +1456,6 @@ onUnmounted(() => {
 .account-map-stat-card,
 .account-map-filter-card,
 .account-map-empty-state,
-.account-pool-lane,
 .account-map-inspector {
   border: 1px solid var(--account-map-border);
   background: var(--account-map-surface);
@@ -1545,21 +1667,6 @@ onUnmounted(() => {
   align-items: start;
 }
 
-.account-pool-lane {
-  overflow: hidden;
-  border-radius: 1.15rem;
-  padding: 1rem;
-}
-
-.account-pool-lane-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--account-map-border);
-  padding-bottom: 0.95rem;
-}
-
 .account-pool-platform {
   border-radius: 999px;
   background: var(--account-map-soft);
@@ -1567,89 +1674,6 @@ onUnmounted(() => {
   color: var(--account-map-ink);
   font-size: 0.76rem;
   font-weight: 800;
-}
-
-.account-pool-lane h2 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--account-map-ink);
-  font-size: 1.02rem;
-  font-weight: 850;
-}
-
-.account-pool-lane-header p {
-  margin-top: 0.45rem;
-  color: var(--account-map-muted);
-  font-size: 0.82rem;
-}
-
-.account-pool-mini-metrics {
-  display: grid;
-  min-width: min(100%, 18rem);
-  grid-template-columns: repeat(4, minmax(3.4rem, 1fr));
-  gap: 0.45rem;
-}
-
-.account-pool-mini-metrics div {
-  border: 1px solid var(--account-map-border);
-  border-radius: 0.85rem;
-  background: var(--account-map-subtle);
-  padding: 0.55rem 0.65rem;
-  text-align: right;
-}
-
-.account-pool-mini-metrics span {
-  display: block;
-  color: var(--account-map-faint);
-  font-size: 0.68rem;
-  font-weight: 760;
-}
-
-.account-pool-mini-metrics strong {
-  display: block;
-  margin-top: 0.15rem;
-  color: var(--account-map-ink);
-  font-size: 0.92rem;
-  font-weight: 850;
-}
-
-.account-node-grid {
-  margin-top: 1rem;
-  display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-@media (min-width: 640px) {
-  .account-node-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1024px) {
-  .account-node-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1536px) {
-  .account-node-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-.account-pool-footer {
-  margin-top: 0.95rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-top: 1px solid var(--account-map-border);
-  padding-top: 0.85rem;
-  color: var(--account-map-muted);
-  font-size: 0.78rem;
 }
 
 .account-map-link-button {
@@ -2233,54 +2257,6 @@ onUnmounted(() => {
   border-bottom-color: rgb(31 41 55);
 }
 
-.inspector-attention-item {
-  width: 100%;
-  border-radius: 0.9rem;
-  border: 1px solid var(--account-map-border);
-  background: var(--account-map-subtle);
-  padding: 0.75rem;
-  text-align: left;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.inspector-attention-item + .inspector-attention-item {
-  margin-top: 0.55rem;
-}
-
-.inspector-attention-item:hover {
-  transform: translateY(-1px);
-  border-color: rgb(191 219 254);
-  background: rgb(255 255 255);
-}
-
-:global(.dark) .inspector-attention-item {
-  border-color: rgb(55 65 81 / 0.7);
-  background: rgb(31 41 55 / 0.58);
-}
-
-:global(.dark) .inspector-attention-item:hover {
-  border-color: rgb(59 130 246 / 0.58);
-  background: rgb(31 41 55 / 0.82);
-}
-
-.inspector-good-state {
-  border-radius: 0.9rem;
-  border: 1px solid rgb(167 243 208);
-  background: rgb(236 253 245);
-  padding: 0.85rem;
-  font-size: 0.875rem;
-  color: rgb(4 120 87);
-}
-
-:global(.dark) .inspector-good-state {
-  border-color: rgb(16 185 129 / 0.35);
-  background: rgb(16 185 129 / 0.12);
-  color: rgb(167 243 208);
-}
-
 .account-node {
   position: relative;
   min-height: 5.45rem;
@@ -2563,7 +2539,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -2572,8 +2548,8 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
-:global(.app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
   background: var(--anti-paper) !important;
@@ -2610,7 +2586,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close) {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.2rem !important;
   box-shadow: 4px 4px 0 var(--anti-ink) !important;
@@ -2618,7 +2594,7 @@ onUnmounted(() => {
   font-weight: 950;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close):hover {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close):hover {
   background: var(--anti-green) !important;
   transform: rotate(-1deg) translate(-1px, -1px);
 }
@@ -2706,13 +2682,13 @@ onUnmounted(() => {
   --account-map-soft: #1e293b;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
   background: linear-gradient(135deg, #101827, #0b1020) !important;
   box-shadow: 6px 6px 0 #334155 !important;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-pool-mini-metrics div {
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
   background: #111827 !important;
   box-shadow: 3px 3px 0 #334155 !important;
 }
@@ -2779,26 +2755,20 @@ onUnmounted(() => {
   box-shadow: 4px 4px 0 #2563eb !important;
 }
 
-@media (max-width: 1279px) {
+@media (max-width: 980px) {
   .account-map-inspector {
     position: static;
   }
 }
 
 @media (max-width: 768px) {
-  .account-map-toolbar-copy,
-  .account-pool-lane-header {
+  .account-map-toolbar-copy {
     align-items: stretch;
     flex-direction: column;
   }
 
   .account-map-toolbar-actions {
     justify-content: flex-start;
-  }
-
-  .account-pool-mini-metrics {
-    width: 100%;
-    min-width: 0;
   }
 
   .account-map-segmented {
@@ -2811,10 +2781,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
-  .account-pool-mini-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .inspector-metric-grid,
   .inspector-overview-grid {
     grid-template-columns: 1fr;
@@ -2829,6 +2795,434 @@ onUnmounted(() => {
   .inspector-section-title span {
     max-width: 100%;
   }
+}
+
+/* Account map composition pass: full-width operations layout, fewer dead zones. */
+.account-map-page {
+  width: 100%;
+  max-width: min(1680px, calc(100vw - 1.5rem));
+}
+
+.account-map-toolbar {
+  background:
+    radial-gradient(circle at 2rem 0, rgb(14 165 233 / 0.10), transparent 8rem),
+    linear-gradient(135deg, var(--account-map-surface), var(--account-map-subtle));
+}
+
+.account-map-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  gap: 0.9rem;
+}
+
+.account-map-stat-card {
+  min-height: 5.45rem;
+  padding: 0.9rem 0.95rem;
+}
+
+.account-map-stat-metrics {
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.account-map-stat-metrics span {
+  min-width: 0;
+  border-radius: 0.7rem;
+  background: var(--account-map-subtle);
+  padding: 0.38rem 0.48rem;
+  color: var(--account-map-muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.account-map-stat-metrics b {
+  margin-right: 0.22rem;
+  color: var(--account-map-ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-map-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: 1rem;
+}
+
+.account-map-filter-grid {
+  grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.58fr) !important;
+  align-items: end;
+}
+
+.account-pool-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 204px), 1fr));
+  gap: 0.9rem;
+}
+
+.account-pool-card {
+  position: relative;
+  display: grid;
+  min-height: 15.25rem;
+  cursor: pointer;
+  grid-template-rows: auto 1fr auto auto;
+  overflow: hidden;
+  border: 1px solid var(--account-map-border);
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at 88% 14%, currentColor 0 0.5rem, transparent 0.55rem),
+    var(--account-map-surface);
+  box-shadow: var(--account-map-shadow);
+  color: var(--account-map-good);
+  outline: none;
+  padding: 0.9rem;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.account-pool-card:hover,
+.account-pool-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgb(14 165 233 / 0.46);
+  box-shadow: 0 16px 34px rgb(15 23 42 / 0.10);
+}
+
+.account-pool-card-active {
+  border-color: rgb(14 165 233 / 0.72);
+  box-shadow: 0 0 0 4px rgb(14 165 233 / 0.12), 0 18px 38px rgb(15 23 42 / 0.12);
+}
+
+.account-pool-card-degraded {
+  color: var(--account-map-warn);
+}
+
+.account-pool-card-rate_limited {
+  color: rgb(124 58 237);
+}
+
+.account-pool-card-error {
+  color: var(--account-map-danger);
+}
+
+.account-pool-card-disabled {
+  color: var(--account-map-faint);
+}
+
+.account-pool-card-head,
+.account-pool-card-foot,
+.account-pool-card-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.account-pool-card-head,
+.account-pool-card-foot {
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.account-pool-status-dot {
+  height: 0.62rem;
+  width: 0.62rem;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 13%, transparent);
+}
+
+.account-pool-card-main {
+  position: relative;
+  margin-top: 0.95rem;
+  min-width: 0;
+}
+
+.account-pool-card-main h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--account-map-ink);
+  font-size: 0.98rem;
+  font-weight: 880;
+}
+
+.account-pool-card-count {
+  margin-top: 0.8rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.38rem;
+  color: var(--account-map-ink);
+}
+
+.account-pool-card-count strong {
+  color: var(--account-map-ink);
+  font-size: 2.35rem;
+  font-weight: 950;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+}
+
+.account-pool-card-count span {
+  color: var(--account-map-muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.account-pool-card-main p {
+  margin-top: 0.65rem;
+  color: var(--account-map-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.account-pool-card-metrics {
+  position: relative;
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.account-pool-card-metrics span {
+  min-width: 0;
+  border-radius: 0.72rem;
+  background: var(--account-map-subtle);
+  padding: 0.42rem 0.5rem;
+  color: var(--account-map-muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.account-pool-card-metrics b {
+  margin-right: 0.22rem;
+  color: var(--account-map-ink);
+  font-size: 0.76rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-pool-card-preview {
+  margin-top: 0.85rem;
+  min-height: 2rem;
+}
+
+.account-pool-avatar {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--account-map-surface);
+  border-radius: 999px;
+  background: var(--account-map-subtle);
+  color: currentColor;
+  font-size: 0.72rem;
+  font-weight: 900;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+}
+
+.account-pool-avatar + .account-pool-avatar {
+  margin-left: -0.42rem;
+}
+
+.account-pool-avatar-more {
+  color: var(--account-map-muted);
+}
+
+.account-pool-card-foot {
+  margin-top: 0.85rem;
+  border-top: 1px solid var(--account-map-border);
+  padding-top: 0.75rem;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.account-map-detail-rail {
+  align-self: start;
+  min-height: calc(100vh - 6.25rem);
+}
+
+.account-map-inspector {
+  height: calc(100vh - 6.25rem);
+  max-height: calc(100vh - 6.25rem);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.account-map-inspector::-webkit-scrollbar {
+  width: 8px;
+}
+
+.account-map-inspector::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(148 163 184 / 0.55);
+  background-clip: content-box;
+}
+
+.inspector-section {
+  margin-inline: 0.9rem;
+}
+
+.inspector-pool-card {
+  background:
+    radial-gradient(circle at 90% 16%, rgb(14 165 233 / 0.15), transparent 4.8rem),
+    var(--account-map-surface);
+}
+
+.inspector-account-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.inspector-account-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) minmax(5.2rem, auto);
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.9rem;
+  background: var(--account-map-surface);
+  padding: 0.68rem;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.inspector-account-row:hover {
+  transform: translateY(-1px);
+  border-color: rgb(14 165 233 / 0.38);
+  background: var(--account-map-subtle);
+}
+
+.inspector-account-dot {
+  height: 0.72rem;
+  width: 0.72rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.inspector-account-main {
+  min-width: 0;
+}
+
+.inspector-account-main b,
+.inspector-account-main small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-account-main b {
+  color: var(--account-map-ink);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.inspector-account-main small {
+  margin-top: 0.16rem;
+  color: var(--account-map-muted);
+  font-size: 0.7rem;
+}
+
+.inspector-account-quota {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: var(--account-map-subtle);
+  padding: 0.25rem 0.48rem;
+  color: var(--account-map-muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+}
+
+.inspector-overview-grid,
+.inspector-snapshot-grid {
+  gap: 0.55rem;
+}
+
+.account-map-platform-list {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.account-map-platform-row {
+  border-radius: 0.85rem;
+  border: 1px solid var(--account-map-border);
+  background: var(--account-map-surface);
+  padding: 0.7rem;
+}
+
+.account-map-platform-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--account-map-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.account-map-platform-row-head strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.account-map-platform-track {
+  margin-top: 0.48rem;
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--account-map-soft);
+}
+
+.account-map-platform-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--account-map-good), var(--account-map-accent));
+}
+
+.account-map-platform-row p {
+  margin-top: 0.42rem;
+  color: var(--account-map-muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 980px) {
+  .account-map-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .account-map-inspector {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .account-map-filter-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .account-map-page {
+    max-width: 100%;
+  }
+
 }
 </style>
 
@@ -2846,21 +3240,21 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-.dark .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector) {
+.dark .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector) {
   border-color: rgb(51 65 85);
   background: var(--account-map-surface);
   color: var(--account-map-ink);
 }
 
-.dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-lane p, .account-node-meta, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span) {
+.dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-card-main p, .account-pool-card-count span, .account-pool-card-foot, .account-node-meta, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span, .inspector-account-main small, .inspector-account-quota) {
   color: var(--account-map-muted);
 }
 
-.dark .account-map-page :is(.account-map-stat-card strong, .account-pool-lane h2, .account-node p:first-child, .account-map-filter-header h2, .inspector-title, .inspector-section-title h3, .inspector-metric p:last-child) {
+.dark .account-map-page :is(.account-map-stat-card strong, .account-pool-card-main h2, .account-pool-card-count strong, .account-node p:first-child, .account-map-filter-header h2, .inspector-title, .inspector-section-title h3, .inspector-metric p:last-child, .inspector-account-main b) {
   color: var(--account-map-ink);
 }
 
-.dark .account-map-page :is(.account-map-control, .account-map-segmented, .account-pool-mini-metrics div, .inspector-metric, .inspector-section, .inspector-attention-item) {
+.dark .account-map-page :is(.account-map-control, .account-map-segmented, .account-map-stat-metrics span, .account-pool-card-metrics span, .inspector-metric, .inspector-section, .inspector-account-row, .inspector-account-quota) {
   border-color: rgb(55 65 81 / 0.74);
   background: var(--account-map-subtle);
   color: var(--account-map-ink);
@@ -2931,7 +3325,7 @@ onUnmounted(() => {
   color: rgb(148 163 184);
 }
 
-.dark .account-map-page :is(.inspector-heading, .inspector-empty-header, .account-pool-lane-header, .quota-fact-list, .inspector-row) {
+.dark .account-map-page :is(.inspector-heading, .inspector-empty-header, .quota-fact-list, .inspector-row) {
   border-color: rgb(51 65 85);
 }
 
@@ -3008,12 +3402,6 @@ onUnmounted(() => {
   color: rgb(253 230 138);
 }
 
-.dark .account-map-page .inspector-good-state {
-  border-color: rgb(16 185 129 / 0.35);
-  background: rgb(16 185 129 / 0.12);
-  color: rgb(167 243 208);
-}
-
 .dark .account-map-page .inspector-action {
   border-color: rgb(55 65 81);
   color: rgb(209 213 219);
@@ -3067,7 +3455,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -3076,8 +3464,8 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.app-shell.app-shell-anti .account-map-page .account-pool-mini-metrics div {
+.app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
+.app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
   background: var(--anti-paper) !important;
@@ -3110,7 +3498,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close) {
+.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.2rem !important;
   box-shadow: 4px 4px 0 var(--anti-ink) !important;
@@ -3118,7 +3506,7 @@ onUnmounted(() => {
   font-weight: 950;
 }
 
-.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-attention-item):not(.inspector-close):hover {
+.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close):hover {
   background: var(--anti-green) !important;
   transform: rotate(-1deg) translate(-1px, -1px);
 }
@@ -3166,13 +3554,13 @@ onUnmounted(() => {
   --account-map-soft: #1e293b;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-lane, .account-map-inspector, .inspector-profile-card) {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
   background: linear-gradient(135deg, #101827, #0b1020) !important;
   box-shadow: 6px 6px 0 #334155 !important;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .inspector-section, .inspector-metric, .inspector-attention-item, .inspector-alert, .inspector-good-state, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.dark .app-shell.app-shell-anti .account-map-page .account-pool-mini-metrics div {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
   background: #111827 !important;
   box-shadow: 3px 3px 0 #334155 !important;
 }
@@ -3202,5 +3590,28 @@ onUnmounted(() => {
 .dark .app-shell.app-shell-anti .account-map-page .account-map-segmented button.active {
   background: #facc15 !important;
   color: #111827 !important;
+}
+
+.app-shell.app-shell-anti .account-map-page :is(.account-map-platform-row, .account-node-meta span) {
+  border: 2px solid var(--anti-ink) !important;
+  border-radius: 0.35rem !important;
+  background: var(--anti-paper) !important;
+  box-shadow: 2px 2px 0 var(--anti-ink) !important;
+  color: var(--anti-ink) !important;
+}
+
+.app-shell.app-shell-anti .account-map-page .account-map-platform-track {
+  border: 2px solid var(--anti-ink);
+  border-radius: 0;
+  background: var(--anti-paper);
+}
+
+.app-shell.app-shell-anti .account-map-page .account-map-platform-track span {
+  background: var(--anti-green);
+}
+
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-platform-row, .account-node-meta span) {
+  background: #111827 !important;
+  box-shadow: 2px 2px 0 #334155 !important;
 }
 </style>

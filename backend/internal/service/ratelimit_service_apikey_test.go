@@ -97,6 +97,31 @@ func TestRateLimitService_HandleUpstreamError_APIKey429UsesTemporaryCooldown(t *
 	require.WithinDuration(t, before.Add(apiKey429Cooldown), *repo.lastRateLimitResetAt, after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey429InsufficientQuotaPermanentDisable(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          109,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Schedulable: true,
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		http.Header{},
+		[]byte(`{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}`),
+	)
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 0, repo.rateLimitedCalls)
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+}
+
 func TestRateLimitService_HandleUpstreamError_APIKey529UsesTemporaryCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
