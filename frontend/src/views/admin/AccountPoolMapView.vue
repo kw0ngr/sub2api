@@ -78,7 +78,7 @@
         </div>
       </section>
 
-      <section class="account-map-workspace grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <section class="account-map-workspace">
         <div class="account-map-main-column">
         <div class="account-map-filter-card">
           <div class="account-map-filter-header">
@@ -179,11 +179,15 @@
             @keydown.space.prevent="selectPool(pool)"
           >
             <div class="account-pool-card-head">
-              <span class="account-pool-platform">{{ platformLabel(pool.platform) }}</span>
-              <span class="account-pool-status-dot"></span>
+              <div class="account-pool-card-title">
+                <span class="account-pool-platform">{{ platformLabel(pool.platform) }}</span>
+                <h2>{{ accountTypeLabel(pool.type) }}</h2>
+              </div>
+              <span class="account-pool-status-chip" :class="`account-pool-status-chip-${poolStatusTone(pool)}`">
+                {{ statusKindLabel(poolStatusTone(pool)) }}
+              </span>
             </div>
             <div class="account-pool-card-main">
-              <h2>{{ accountTypeLabel(pool.type) }}</h2>
               <div class="account-pool-card-count">
                 <strong>{{ pool.accounts.length }}</strong>
                 <span>账号</span>
@@ -192,9 +196,15 @@
             </div>
             <div class="account-pool-card-metrics">
               <span><b>{{ poolHealthyCount(pool) }}</b>健康</span>
+              <span><b>{{ poolAttentionCount(pool) }}</b>关注</span>
               <span><b>{{ poolRPM(pool) }}</b>RPM</span>
               <span><b>{{ poolConcurrency(pool) }}</b>并发</span>
               <span><b>{{ poolFingerprintCount(pool) }}</b>TLS</span>
+              <span><b>{{ poolQuotaSignalCount(pool) }}</b>额度</span>
+            </div>
+            <div class="account-pool-card-signal">
+              <span>{{ poolQuotaSummary(pool) }}</span>
+              <strong :title="poolPrimaryIssue(pool)">{{ poolPrimaryIssue(pool) }}</strong>
             </div>
             <div class="account-pool-card-preview">
               <span
@@ -211,18 +221,32 @@
               </span>
             </div>
             <div class="account-pool-card-foot">
-              <span>额度 {{ poolQuotaSignalCount(pool) }}</span>
-              <span>查看详情 →</span>
+              <span>{{ poolTrafficSummary(pool) }}</span>
+              <button type="button" class="account-pool-detail-button" @click.stop="selectPool(pool)">
+                查看详情
+              </button>
             </div>
           </article>
         </div>
-      </div>
+        </div>
+      </section>
 
-      <aside class="account-map-detail-rail">
-        <section ref="inspectorPanel" class="account-map-inspector" aria-live="polite">
+      <div
+        v-if="detailDrawerOpen"
+        class="account-map-drawer-layer"
+        role="presentation"
+        @click.self="closeDrawer"
+      >
+        <aside
+          class="account-map-drawer"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="selectedAccount ? '账号详情' : '账号池详情'"
+        >
+        <section class="account-map-inspector" aria-live="polite">
           <template v-if="selectedAccount">
             <div class="inspector-profile-card">
-              <button type="button" class="inspector-close" aria-label="取消选择账号" @click="clearSelection">
+              <button type="button" class="inspector-close" aria-label="关闭账号详情" @click="closeDrawer">
                 ×
               </button>
               <p class="inspector-kicker">账号详情</p>
@@ -430,14 +454,14 @@
             </div>
           </template>
         </section>
-      </aside>
-      </section>
+        </aside>
+      </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -502,7 +526,6 @@ const knownPlatforms = ref<string[]>([])
 const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
 const selectedPoolKey = ref<string | null>(null)
-const inspectorPanel = ref<HTMLElement | null>(null)
 const expandedPoolKeys = ref<Set<string>>(new Set())
 const checkingHealth = ref(false)
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -542,6 +565,8 @@ const selectedPoolForDetail = computed(() => {
   if (!selectedPoolKey.value) return null
   return visiblePools.value.find((pool) => pool.key === selectedPoolKey.value) || null
 })
+
+const detailDrawerOpen = computed(() => Boolean(selectedAccount.value || selectedPoolForDetail.value))
 
 const selectedPool = computed(() => {
   const selected = selectedAccount.value
@@ -792,6 +817,29 @@ function poolSummaryText(pool: AccountPool): string {
   if (limited > 0) parts.push(`限流 ${limited}`)
   if (disabled > 0) parts.push(`停用 ${disabled}`)
   return parts.join(' · ')
+}
+
+function poolTrafficSummary(pool: AccountPool): string {
+  const sessions = pool.summary?.active_sessions ?? pool.accounts.reduce((sum, item) => sum + (item.active_sessions || 0), 0)
+  return `${poolRPM(pool)} RPM · ${poolConcurrency(pool)} 并发 · ${sessions} 会话`
+}
+
+function poolQuotaSummary(pool: AccountPool): string {
+  const quotaSignals = poolQuotaSignalCount(pool)
+  const total = pool.accounts.length
+  if (quotaSignals > 0) return `额度信号 ${quotaSignals}/${total}`
+  if (pool.platform === 'gemini') return 'Gemini 多为项目级额度'
+  return '额度未探测'
+}
+
+function poolPrimaryIssue(pool: AccountPool): string {
+  const summary = pool.summary
+  if ((summary?.error || 0) > 0) return `${summary?.error || 0} 个错误账号`
+  if ((summary?.rate_limited || 0) > 0) return `${summary?.rate_limited || 0} 个限流中`
+  if ((summary?.degraded || 0) > 0) return `${summary?.degraded || 0} 个冷却/降级`
+  if ((summary?.disabled || 0) > 0) return `${summary?.disabled || 0} 个已停用`
+  if (poolHealthyCount(pool) === pool.accounts.length) return '全部可调度'
+  return `${poolAttentionCount(pool)} 个需关注`
 }
 
 function poolPreviewAccounts(pool: AccountPool): AccountPoolMapAccount[] {
@@ -1115,18 +1163,12 @@ function formatDate(value?: string | null): string {
 function selectPool(pool: AccountPool) {
   selectedPoolKey.value = pool.key
   selectedAccountId.value = null
-  void scrollInspectorIntoView()
 }
 
 function selectAccount(account: AccountPoolMapAccount) {
   selectedAccountId.value = account.id
   const pool = visiblePools.value.find((item) => item.accounts.some((poolAccount) => poolAccount.id === account.id))
   if (pool) selectedPoolKey.value = pool.key
-  void scrollInspectorIntoView()
-}
-
-function clearSelection() {
-  selectedAccountId.value = null
 }
 
 function clearPoolSelection() {
@@ -1134,10 +1176,13 @@ function clearPoolSelection() {
   selectedPoolKey.value = null
 }
 
-async function scrollInspectorIntoView() {
-  await nextTick()
-  if (typeof window !== 'undefined' && window.innerWidth < 1280) {
-    inspectorPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+function closeDrawer() {
+  clearPoolSelection()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && detailDrawerOpen.value) {
+    closeDrawer()
   }
 }
 
@@ -1398,11 +1443,13 @@ watch(
 
 onMounted(() => {
   void refresh()
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
   if (refreshTimer) clearTimeout(refreshTimer)
   clearHealthPollTimer()
+  document.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -3224,6 +3271,218 @@ onUnmounted(() => {
   }
 
 }
+
+/* Drawer pass: the map stays scan-friendly; deep inspection moves to a focused side panel. */
+.account-map-workspace {
+  display: block;
+}
+
+.account-map-main-column {
+  width: 100%;
+}
+
+.account-pool-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 1rem;
+}
+
+.account-pool-card {
+  min-height: 20.5rem;
+  grid-template-rows: auto auto auto auto auto;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 91% 14%, currentColor 0 0.42rem, transparent 0.46rem),
+    radial-gradient(circle at 86% 22%, currentColor 0 0.68rem, transparent 0.72rem),
+    linear-gradient(180deg, var(--account-map-surface), color-mix(in srgb, var(--account-map-subtle) 44%, var(--account-map-surface)));
+}
+
+.account-pool-card-head {
+  align-items: flex-start;
+}
+
+.account-pool-card-title {
+  min-width: 0;
+}
+
+.account-pool-card-title h2 {
+  margin-top: 0.55rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--account-map-ink);
+  font-size: 1rem;
+  font-weight: 880;
+}
+
+.account-pool-status-chip {
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  background: color-mix(in srgb, currentColor 10%, var(--account-map-surface));
+  padding: 0.25rem 0.55rem;
+  color: currentColor;
+  font-size: 0.68rem;
+  font-weight: 860;
+}
+
+.account-pool-card-main {
+  margin-top: 0.75rem;
+}
+
+.account-pool-card-count {
+  margin-top: 0;
+}
+
+.account-pool-card-count strong {
+  font-size: 2.15rem;
+}
+
+.account-pool-card-main p {
+  margin-top: 0.5rem;
+}
+
+.account-pool-card-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.85rem;
+}
+
+.account-pool-card-metrics span {
+  min-height: 2.55rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+}
+
+.account-pool-card-metrics b {
+  display: block;
+  margin-right: 0;
+  font-size: 0.92rem;
+}
+
+.account-pool-card-signal {
+  position: relative;
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 0.5rem;
+}
+
+.account-pool-card-signal span,
+.account-pool-card-signal strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 0.78rem;
+  border: 1px solid var(--account-map-border);
+  background: var(--account-map-surface);
+  padding: 0.5rem 0.58rem;
+  font-size: 0.7rem;
+  line-height: 1.1;
+}
+
+.account-pool-card-signal span {
+  color: var(--account-map-muted);
+  font-weight: 760;
+}
+
+.account-pool-card-signal strong {
+  color: var(--account-map-ink);
+  font-weight: 880;
+}
+
+.account-pool-card-preview {
+  margin-top: 0.85rem;
+}
+
+.account-pool-card-foot {
+  margin-top: 0.85rem;
+  align-items: center;
+}
+
+.account-pool-detail-button {
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid rgb(14 165 233 / 0.26);
+  background: rgb(240 249 255);
+  padding: 0.38rem 0.68rem;
+  color: var(--account-map-accent-strong);
+  font-size: 0.7rem;
+  font-weight: 860;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.account-pool-detail-button:hover {
+  transform: translateY(-1px);
+  border-color: rgb(14 165 233 / 0.46);
+  background: rgb(224 242 254);
+}
+
+.account-map-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(15 23 42 / 0.35);
+  padding: 1rem;
+  backdrop-filter: blur(7px);
+}
+
+.account-map-drawer {
+  width: min(620px, calc(100vw - 2rem));
+  height: 100%;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+  border: 1px solid var(--account-map-border);
+  border-radius: 1.35rem;
+  background: var(--account-map-surface);
+  box-shadow: 0 30px 90px rgb(15 23 42 / 0.28);
+  animation: account-map-drawer-in 0.18s ease-out;
+}
+
+.account-map-drawer .account-map-inspector {
+  position: static;
+  height: 100%;
+  max-height: none;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@keyframes account-map-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 760px) {
+  .account-map-drawer-layer {
+    padding: 0;
+  }
+
+  .account-map-drawer {
+    width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .account-pool-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
 
 <style>
@@ -3455,7 +3714,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
+.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-drawer, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -3465,7 +3724,7 @@ onUnmounted(() => {
 }
 
 .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
+.app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .account-pool-card-signal span, .account-pool-card-signal strong, .account-pool-status-chip, .inspector-account-quota) {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
   background: var(--anti-paper) !important;
@@ -3540,6 +3799,11 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
+.app-shell.app-shell-anti .account-map-page .account-map-drawer-layer {
+  background: rgb(5 5 5 / 0.52) !important;
+  backdrop-filter: blur(3px) contrast(1.12);
+}
+
 .dark .app-shell.app-shell-anti .account-map-page {
   --anti-paper: #0b1020;
   --anti-ink: #f8fafc;
@@ -3554,13 +3818,13 @@ onUnmounted(() => {
   --account-map-soft: #1e293b;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-drawer, .account-map-inspector, .inspector-profile-card) {
   background: linear-gradient(135deg, #101827, #0b1020) !important;
   box-shadow: 6px 6px 0 #334155 !important;
 }
 
 .dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .account-pool-card-signal span, .account-pool-card-signal strong, .account-pool-status-chip, .inspector-account-quota) {
   background: #111827 !important;
   box-shadow: 3px 3px 0 #334155 !important;
 }
