@@ -520,7 +520,14 @@ normalize_release_version() {
 
 get_main_branch_version() {
     local raw_version
-    raw_version=$(curl -fsSL --connect-timeout 10 --max-time 30 "https://raw.githubusercontent.com/${GITHUB_REPO}/main/backend/cmd/server/VERSION" 2>/dev/null || true)
+    # Some networks can reach api.github.com but time out on raw.githubusercontent.com.
+    # Prefer the Contents API with a raw media type to avoid hanging upgrades on
+    # hosts where GitHub Raw is blocked; keep raw.githubusercontent.com only as a
+    # short fallback for environments where the API is restricted.
+    raw_version=$(curl -fsSL -H "Accept: application/vnd.github.raw" --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/contents/backend/cmd/server/VERSION?ref=main" 2>/dev/null || true)
+    if [ -z "$raw_version" ]; then
+        raw_version=$(curl -fsSL --connect-timeout 3 --max-time 8 "https://raw.githubusercontent.com/${GITHUB_REPO}/main/backend/cmd/server/VERSION" 2>/dev/null || true)
+    fi
     normalize_release_version "$raw_version"
 }
 
