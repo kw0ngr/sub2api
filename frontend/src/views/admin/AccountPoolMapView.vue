@@ -87,7 +87,7 @@
               <p>先缩小范围，再展开查看具体账号，避免异常账号一次性淹没页面。</p>
             </div>
           </div>
-          <div class="account-map-filter-grid grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
+          <div class="account-map-filter-grid">
             <label class="account-map-field">
               <span>搜索账号</span>
               <input
@@ -245,12 +245,19 @@
         >
         <section class="account-map-inspector" aria-live="polite">
           <template v-if="selectedAccount">
-            <div class="inspector-profile-card">
+            <!-- Drawer sticky header -->
+            <div class="inspector-drawer-header">
+              <div class="inspector-drawer-header-left">
+                <span class="inspector-kicker">账号详情</span>
+                <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
+              </div>
               <button type="button" class="inspector-close" aria-label="关闭账号详情" @click="closeDrawer">
-                ×
+                <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M1 1l12 12M13 1L1 13"/>
+                </svg>
               </button>
-              <p class="inspector-kicker">账号详情</p>
-              <h2 class="inspector-title">{{ selectedAccount.name }}</h2>
+            </div>
+            <div class="inspector-profile-card">
               <div class="inspector-profile-meta">
                 <span>{{ platformLabel(selectedAccount.platform) }}</span>
                 <span>{{ accountTypeLabel(selectedAccount.type) }}</span>
@@ -357,12 +364,19 @@
           </template>
 
           <template v-else-if="selectedPoolForDetail">
-            <div class="inspector-profile-card inspector-pool-card">
+            <!-- Drawer sticky header -->
+            <div class="inspector-drawer-header">
+              <div class="inspector-drawer-header-left">
+                <span class="inspector-kicker">池详情</span>
+                <h2 class="inspector-title">{{ platformLabel(selectedPoolForDetail.platform) }} · {{ accountTypeLabel(selectedPoolForDetail.type) }}</h2>
+              </div>
               <button type="button" class="inspector-close" aria-label="取消选择账号池" @click="clearPoolSelection">
-                ×
+                <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M1 1l12 12M13 1L1 13"/>
+                </svg>
               </button>
-              <p class="inspector-kicker">池详情</p>
-              <h2 class="inspector-title">{{ platformLabel(selectedPoolForDetail.platform) }} · {{ accountTypeLabel(selectedPoolForDetail.type) }}</h2>
+            </div>
+            <div class="inspector-profile-card inspector-pool-card">
               <div class="inspector-profile-meta">
                 <span>{{ selectedPoolForDetail.accounts.length }} 个账号</span>
                 <span>健康 {{ poolHealthyCount(selectedPoolForDetail) }}</span>
@@ -408,15 +422,22 @@
                     <small>{{ statusLabel(account) }} · RPM {{ account.current_rpm ?? 0 }} · 并发 {{ account.current_concurrency ?? 0 }}</small>
                   </span>
                   <span class="inspector-account-quota">{{ quotaBrief(account) || '未探测' }}</span>
+                  <svg class="inspector-account-chevron" aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 2l4 4-4 4"/>
+                  </svg>
                 </button>
               </div>
             </div>
           </template>
 
           <template v-else>
+            <div class="inspector-drawer-header inspector-drawer-header-empty">
+              <div class="inspector-drawer-header-left">
+                <span class="inspector-kicker">详情栏</span>
+                <h2 class="inspector-title">选择账号池查看细节</h2>
+              </div>
+            </div>
             <div class="inspector-empty-header">
-              <p class="inspector-kicker">详情栏</p>
-              <h2 class="inspector-title">选择账号池查看细节</h2>
               <p class="inspector-subtitle">
                 左侧卡片是当前筛选范围内的调度入口，点击池子后在这里聚焦账号列表。
               </p>
@@ -1797,22 +1818,44 @@ onUnmounted(() => {
   border-radius: 1.15rem;
 }
 
-.inspector-profile-card {
-  position: relative;
+/* Drawer sticky header: title + close in a fixed top bar */
+.inspector-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   border-bottom: 1px solid var(--account-map-border);
-  padding: 1.05rem;
+  background: var(--account-map-surface);
+  padding: 0.85rem 1rem;
+  backdrop-filter: blur(10px);
 }
 
-.inspector-profile-card .inspector-close {
-  position: absolute;
-  right: 1rem;
-  top: 1rem;
+.inspector-drawer-header-left {
+  min-width: 0;
+  flex: 1;
 }
 
-.inspector-profile-card > .inspector-kicker,
-.inspector-profile-card > .inspector-title,
-.inspector-profile-card > .inspector-profile-meta {
-  padding-right: 2.75rem;
+.inspector-drawer-header-left .inspector-kicker {
+  display: block;
+}
+
+.inspector-drawer-header-left .inspector-title {
+  margin-top: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspector-drawer-header-empty {
+  border-bottom: 0;
+  padding-bottom: 0.6rem;
+}
+
+.inspector-profile-card {
+  padding: 0.85rem 1rem 1rem;
 }
 
 .inspector-profile-meta {
@@ -1834,7 +1877,11 @@ onUnmounted(() => {
 
 .inspector-heading,
 .inspector-empty-header {
-  padding: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.inspector-empty-header {
+  /* subtitle only — no title, handled by drawer header */
 }
 
 .inspector-heading {
@@ -1888,8 +1935,8 @@ onUnmounted(() => {
 
 .inspector-close {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
+  height: 2.25rem;
+  width: 2.25rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -1899,13 +1946,15 @@ onUnmounted(() => {
   transition:
     border-color 0.15s ease,
     background-color 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .inspector-close:hover {
   border-color: rgb(191 219 254);
   background: rgb(239 246 255);
   color: rgb(29 78 216);
+  transform: rotate(90deg);
 }
 
 :global(.dark) .inspector-close {
@@ -2044,6 +2093,9 @@ onUnmounted(() => {
 
 .inspector-snapshot-grid {
   padding-top: 1rem;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--account-map-border);
+  margin-bottom: 0.25rem;
 }
 
 .inspector-overview-grid {
@@ -2075,7 +2127,7 @@ onUnmounted(() => {
 }
 
 .inspector-section {
-  margin: 0 1rem 1rem;
+  margin: 0.75rem 1rem 0;
   border-radius: 1rem;
   border: 1px solid var(--account-map-border);
   background: var(--account-map-subtle);
@@ -2275,7 +2327,7 @@ onUnmounted(() => {
 }
 
 .inspector-alert {
-  margin: 0 1rem 1rem;
+  margin: 0.75rem 1rem 0;
   border-radius: 1rem;
   border: 1px solid rgb(253 230 138);
   background: rgb(255 251 235);
@@ -2293,7 +2345,7 @@ onUnmounted(() => {
 .inspector-actions {
   display: grid;
   gap: 0.55rem;
-  padding: 0 1rem 1rem;
+  padding: 0.85rem 1rem 1.25rem;
 }
 
 .inspector-empty-header {
@@ -2898,8 +2950,25 @@ onUnmounted(() => {
 }
 
 .account-map-filter-grid {
-  grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.58fr) !important;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;
+}
+
+@media (max-width: 860px) {
+  .account-map-filter-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .account-map-filter-grid .flex.items-end {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .account-map-filter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .account-pool-card-grid {
@@ -2917,9 +2986,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 1px solid var(--account-map-border);
   border-radius: 1.15rem;
-  background:
-    radial-gradient(circle at 88% 14%, currentColor 0 0.5rem, transparent 0.55rem),
-    var(--account-map-surface);
+  background: var(--account-map-surface);
   box-shadow: var(--account-map-shadow);
   color: var(--account-map-good);
   outline: none;
@@ -3130,13 +3197,13 @@ onUnmounted(() => {
 .inspector-account-row {
   display: grid;
   width: 100%;
-  grid-template-columns: auto minmax(0, 1fr) minmax(5.2rem, auto);
+  grid-template-columns: auto minmax(0, 1fr) minmax(4.5rem, auto) 1.25rem;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.6rem;
   border: 1px solid var(--account-map-border);
   border-radius: 0.9rem;
   background: var(--account-map-surface);
-  padding: 0.68rem;
+  padding: 0.72rem 0.68rem;
   text-align: left;
   transition:
     border-color 0.15s ease,
@@ -3145,9 +3212,20 @@ onUnmounted(() => {
 }
 
 .inspector-account-row:hover {
-  transform: translateY(-1px);
+  transform: translateX(2px);
   border-color: rgb(14 165 233 / 0.38);
   background: var(--account-map-subtle);
+}
+
+.inspector-account-chevron {
+  flex-shrink: 0;
+  color: var(--account-map-faint);
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.inspector-account-row:hover .inspector-account-chevron {
+  color: var(--account-map-accent);
+  transform: translateX(2px);
 }
 
 .inspector-account-dot {
@@ -3259,12 +3337,6 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 900px) {
-  .account-map-filter-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-}
-
 @media (max-width: 640px) {
   .account-map-page {
     max-width: 100%;
@@ -3287,13 +3359,10 @@ onUnmounted(() => {
 }
 
 .account-pool-card {
-  min-height: 20.5rem;
-  grid-template-rows: auto auto auto auto auto;
+  min-height: 0;
+  grid-template-rows: auto auto auto auto auto auto;
   padding: 1rem;
-  background:
-    radial-gradient(circle at 91% 14%, currentColor 0 0.42rem, transparent 0.46rem),
-    radial-gradient(circle at 86% 22%, currentColor 0 0.68rem, transparent 0.72rem),
-    linear-gradient(180deg, var(--account-map-surface), color-mix(in srgb, var(--account-map-subtle) 44%, var(--account-map-surface)));
+  background: linear-gradient(180deg, var(--account-map-surface), color-mix(in srgb, var(--account-map-subtle) 44%, var(--account-map-surface)));
 }
 
 .account-pool-card-head {
@@ -3316,13 +3385,26 @@ onUnmounted(() => {
 
 .account-pool-status-chip {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
-  background: color-mix(in srgb, currentColor 10%, var(--account-map-surface));
-  padding: 0.25rem 0.55rem;
+  border: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+  background: color-mix(in srgb, currentColor 12%, var(--account-map-surface));
+  padding: 0.28rem 0.62rem 0.28rem 0.48rem;
   color: currentColor;
   font-size: 0.68rem;
   font-weight: 860;
+}
+
+.account-pool-status-chip::before {
+  content: '';
+  display: inline-block;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .account-pool-card-main {
@@ -3429,26 +3511,35 @@ onUnmounted(() => {
   z-index: 80;
   display: flex;
   justify-content: flex-end;
-  background: rgb(15 23 42 / 0.35);
+  background: rgb(15 23 42 / 0.4);
   padding: 1rem;
-  backdrop-filter: blur(7px);
+  backdrop-filter: blur(8px);
+  animation: drawer-overlay-in 0.2s ease-out;
+}
+
+@keyframes drawer-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .account-map-drawer {
-  width: min(620px, calc(100vw - 2rem));
+  width: min(560px, calc(100vw - 2rem));
   height: 100%;
   max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--account-map-border);
   border-radius: 1.35rem;
   background: var(--account-map-surface);
-  box-shadow: 0 30px 90px rgb(15 23 42 / 0.28);
-  animation: account-map-drawer-in 0.18s ease-out;
+  box-shadow: 0 32px 80px rgb(15 23 42 / 0.22), 0 0 0 1px rgb(255 255 255 / 0.06);
+  animation: account-map-drawer-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .account-map-drawer .account-map-inspector {
   position: static;
-  height: 100%;
+  flex: 1;
+  height: auto;
   max-height: none;
   overflow-y: auto;
   border: 0;
@@ -3459,12 +3550,12 @@ onUnmounted(() => {
 @keyframes account-map-drawer-in {
   from {
     opacity: 0;
-    transform: translateX(1rem);
+    transform: translateX(1.5rem) scale(0.98);
   }
 
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
   }
 }
 
@@ -3503,6 +3594,11 @@ onUnmounted(() => {
   border-color: rgb(51 65 85);
   background: var(--account-map-surface);
   color: var(--account-map-ink);
+}
+
+.dark .account-map-page .inspector-drawer-header {
+  background: rgb(15 23 42 / 0.97);
+  border-bottom-color: rgb(51 65 85);
 }
 
 .dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-card-main p, .account-pool-card-count span, .account-pool-card-foot, .account-node-meta, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span, .inspector-account-main small, .inspector-account-quota) {
