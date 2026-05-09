@@ -73,11 +73,22 @@ func NewTLSFingerprintProfileService(
 
 // List 获取所有模板
 func (s *TLSFingerprintProfileService) List(ctx context.Context) ([]*model.TLSFingerprintProfile, error) {
-	return s.repo.List(ctx)
+	profiles, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	builtIns := builtInTLSFingerprintProfiles()
+	result := make([]*model.TLSFingerprintProfile, 0, len(builtIns)+len(profiles))
+	result = append(result, builtIns...)
+	result = append(result, profiles...)
+	return result, nil
 }
 
 // GetByID 根据 ID 获取模板
 func (s *TLSFingerprintProfileService) GetByID(ctx context.Context, id int64) (*model.TLSFingerprintProfile, error) {
+	if p, ok := builtInTLSFingerprintProfileByID(id); ok {
+		return p, nil
+	}
 	return s.repo.GetByID(ctx, id)
 }
 
@@ -101,6 +112,9 @@ func (s *TLSFingerprintProfileService) Create(ctx context.Context, profile *mode
 
 // Update 更新模板
 func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	if profile != nil && profile.ID < 0 {
+		return nil, &model.ValidationError{Field: "id", Message: "built-in TLS fingerprint profiles cannot be modified"}
+	}
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
@@ -119,6 +133,9 @@ func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *mode
 
 // Delete 删除模板
 func (s *TLSFingerprintProfileService) Delete(ctx context.Context, id int64) error {
+	if id < 0 {
+		return &model.ValidationError{Field: "id", Message: "built-in TLS fingerprint profiles cannot be deleted"}
+	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -148,19 +165,15 @@ func (s *TLSFingerprintProfileService) GetProfileByID(id int64) *tlsfingerprint.
 // getRandomProfile 从本地缓存中随机选择一个 Profile
 func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profile {
 	s.localMu.RLock()
-	defer s.localMu.RUnlock()
-
-	if len(s.localCache) == 0 {
-		return nil
-	}
-
-	// 收集所有 profile
 	profiles := make([]*model.TLSFingerprintProfile, 0, len(s.localCache))
 	for _, p := range s.localCache {
 		if p != nil {
 			profiles = append(profiles, p)
 		}
 	}
+	s.localMu.RUnlock()
+
+	profiles = append(profiles, builtInTLSFingerprintProfiles()...)
 	if len(profiles) == 0 {
 		return nil
 	}
@@ -184,14 +197,22 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsf
 			return p
 		}
 	}
+	if id < -1 {
+		if p, ok := builtInRuntimeTLSProfileByID(id); ok {
+			return p
+		}
+	}
 	if id == -1 {
 		// 随机选择一个 profile
 		if p := s.getRandomProfile(); p != nil {
 			return p
 		}
 	}
-	// TLS 启用但无绑定 profile → 空 Profile → dialer 使用内置默认值
-	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+	// TLS 启用但无绑定 profile → 使用内置 Claude Code / Node.js 24.x。
+	if p, ok := builtInRuntimeTLSProfileByID(tlsBuiltinClaudeCodeNode24ID); ok {
+		return p
+	}
+	return tlsfingerprint.DefaultNode24Profile()
 }
 
 // --- 缓存管理 ---

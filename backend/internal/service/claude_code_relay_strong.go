@@ -88,6 +88,7 @@ func buildClaudeMimicDiagnosticData(
 		"tls_profile":          strings.TrimSpace(tlsProfileName),
 		"has_claude_code_beta": strings.Contains(beta, claude.BetaClaudeCode),
 		"has_oauth_beta":       strings.Contains(beta, claude.BetaOAuth),
+		"has_advanced_tool":    strings.Contains(beta, claude.BetaAdvancedToolUse),
 		"has_extended_ttl":     strings.Contains(beta, claude.BetaExtendedCacheTTL),
 		"metadata_user_id":     strings.TrimSpace(extractMetadataUserID(body)) != "",
 		"billing_header":       strings.Contains(systemPreview, "x-anthropic-billing-header"),

@@ -12,6 +12,10 @@ export interface TLSFingerprintProfile {
   id: number
   name: string
   description: string | null
+  builtin?: boolean
+  builtin_key?: string
+  ja3_hash?: string
+  ja4?: string
   enable_grease: boolean
   cipher_suites: number[]
   curves: number[]

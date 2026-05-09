@@ -3112,7 +3112,7 @@ export default {
         title: 'Claude Code 伪装诊断',
         modeLine: '模式：伪装 {mimic} / 强模式 {strong} / 鉴权 {auth} / token {token}',
         fingerprintLine: '指纹：HTTP 样本 {sample} / TLS {tls}',
-        betaLine: 'beta：claude-code {claudeCode} / oauth {oauth} / extended-cache {ttl}',
+        betaLine: 'beta：claude-code {claudeCode} / oauth {oauth} / advanced-tool {advanced} / extended-cache {ttl}',
         bodyLine: 'body：metadata.user_id {metadata} / billing header {billing} / CCH {cch}',
         uaLine: 'UA：{ua}',
         sampleActive: '已套用',
@@ -3212,7 +3212,7 @@ export default {
         tlsFingerprint: {
           label: 'TLS 指纹模拟',
           hint: '模拟 Node.js/Claude Code 客户端的 TLS 指纹',
-          defaultProfile: '内置默认',
+          defaultProfile: '内置 Claude Code / Node.js 24.x',
           randomProfile: '随机'
         },
         sessionIdMasking: {
@@ -5928,6 +5928,10 @@ export default {
       deleteProfile: '删除模板',
       noProfiles: '暂无模板',
       createFirstProfile: '创建你的第一个 TLS 指纹模板',
+      builtinTitle: '已内置成熟 Node.js / Claude Code 指纹',
+      builtinDescription: '即使没有自定义采集模板，也可以直接绑定内置 Claude Code / Node.js 24.x 模板；来源采用 uTLS 可控 ClientHello 思路，并显式展开 JA3/JA4 关键字段。',
+      builtinBadge: '内置',
+      builtinReadonly: '只读',
 
       columns: {
         name: '名称',

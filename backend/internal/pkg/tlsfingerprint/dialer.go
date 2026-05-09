@@ -32,6 +32,85 @@ type Profile struct {
 	Extensions          []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
 }
 
+// Clone returns a deep copy of the profile.
+func (p *Profile) Clone() *Profile {
+	if p == nil {
+		return nil
+	}
+	return &Profile{
+		Name:                p.Name,
+		CipherSuites:        cloneUint16s(p.CipherSuites),
+		Curves:              cloneUint16s(p.Curves),
+		PointFormats:        cloneUint16s(p.PointFormats),
+		EnableGREASE:        p.EnableGREASE,
+		SignatureAlgorithms: cloneUint16s(p.SignatureAlgorithms),
+		ALPNProtocols:       cloneStrings(p.ALPNProtocols),
+		SupportedVersions:   cloneUint16s(p.SupportedVersions),
+		KeyShareGroups:      cloneUint16s(p.KeyShareGroups),
+		PSKModes:            cloneUint16s(p.PSKModes),
+		Extensions:          cloneUint16s(p.Extensions),
+	}
+}
+
+// DefaultNode24Profile returns the built-in Claude Code / Node.js 24.x profile
+// with every default field expanded. Keeping it explicit makes the profile
+// visible in admin UI and avoids the "empty template" ambiguity.
+func DefaultNode24Profile() *Profile {
+	return &Profile{
+		Name:                "Claude Code / Node.js 24.x",
+		CipherSuites:        cloneUint16s(defaultCipherSuites),
+		Curves:              curvesToUint16s(defaultCurves),
+		PointFormats:        cloneUint16s(defaultPointFormats),
+		EnableGREASE:        false,
+		SignatureAlgorithms: signatureSchemesToUint16s(defaultSignatureAlgorithms),
+		ALPNProtocols:       []string{"http/1.1"},
+		SupportedVersions:   []uint16{utls.VersionTLS13, utls.VersionTLS12},
+		KeyShareGroups:      []uint16{uint16(utls.X25519)},
+		PSKModes:            []uint16{uint16(utls.PskModeDHE)},
+		Extensions:          cloneUint16s(defaultExtensionOrder),
+	}
+}
+
+func cloneUint16s(in []uint16) []uint16 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]uint16, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func curvesToUint16s(in []utls.CurveID) []uint16 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]uint16, len(in))
+	for i, v := range in {
+		out[i] = uint16(v)
+	}
+	return out
+}
+
+func signatureSchemesToUint16s(in []utls.SignatureScheme) []uint16 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]uint16, len(in))
+	for i, v := range in {
+		out[i] = uint16(v)
+	}
+	return out
+}
+
 // Dialer creates TLS connections with custom fingerprints.
 type Dialer struct {
 	profile    *Profile

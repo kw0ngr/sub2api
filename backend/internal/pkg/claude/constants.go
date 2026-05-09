@@ -13,6 +13,7 @@ const (
 	BetaContext1M                = "context-1m-2025-08-07"
 	BetaFastMode                 = "fast-mode-2026-02-01"
 	BetaPromptCachingScope       = "prompt-caching-scope-2026-01-05"
+	BetaAdvancedToolUse          = "advanced-tool-use-2025-11-20"
 	BetaEffort                   = "effort-2025-11-24"
 	BetaRedactThinking           = "redact-thinking-2026-02-12"
 	BetaContextManagement        = "context-management-2025-06-27"
@@ -61,10 +62,11 @@ func FullClaudeCodeMimicryBetas() []string {
 		BetaClaudeCode,
 		BetaOAuth,
 		BetaInterleavedThinking,
+		BetaContextManagement,
 		BetaPromptCachingScope,
+		BetaAdvancedToolUse,
 		BetaEffort,
 		BetaRedactThinking,
-		BetaContextManagement,
 		BetaExtendedCacheTTL,
 	}
 }

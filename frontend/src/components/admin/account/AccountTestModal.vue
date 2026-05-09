@@ -571,6 +571,7 @@ const renderMimicDiagnostic = (data?: Record<string, unknown>) => {
     t('admin.accounts.mimicDiagnostic.betaLine', {
       claudeCode: yesNo(data.has_claude_code_beta),
       oauth: yesNo(data.has_oauth_beta),
+      advanced: yesNo(data.has_advanced_tool),
       ttl: yesNo(data.has_extended_ttl)
     }),
     'text-gray-300'

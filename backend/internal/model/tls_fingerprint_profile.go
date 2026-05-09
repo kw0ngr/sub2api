@@ -13,6 +13,10 @@ type TLSFingerprintProfile struct {
 	ID                  int64     `json:"id"`
 	Name                string    `json:"name"`
 	Description         *string   `json:"description"`
+	Builtin             bool      `json:"builtin,omitempty"`
+	BuiltinKey          string    `json:"builtin_key,omitempty"`
+	JA3Hash             string    `json:"ja3_hash,omitempty"`
+	JA4                 string    `json:"ja4,omitempty"`
 	EnableGREASE        bool      `json:"enable_grease"`
 	CipherSuites        []uint16  `json:"cipher_suites"`
 	Curves              []uint16  `json:"curves"`

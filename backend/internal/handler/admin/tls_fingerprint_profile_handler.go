@@ -132,6 +132,10 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid profile ID")
 		return
 	}
+	if id < 0 {
+		response.BadRequest(c, "Built-in TLS fingerprint profiles cannot be modified")
+		return
+	}
 
 	var req UpdateTLSFingerprintProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -222,6 +226,10 @@ func (h *TLSFingerprintProfileHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid profile ID")
+		return
+	}
+	if id < 0 {
+		response.BadRequest(c, "Built-in TLS fingerprint profiles cannot be deleted")
 		return
 	}
 

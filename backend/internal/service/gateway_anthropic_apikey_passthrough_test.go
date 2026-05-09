@@ -251,6 +251,7 @@ data: {"type":"message_stop"}
 	beta := getHeaderRaw(req.Header, "anthropic-beta")
 	require.Contains(t, beta, claude.BetaClaudeCode)
 	require.Contains(t, beta, claude.BetaPromptCachingScope)
+	require.Contains(t, beta, claude.BetaAdvancedToolUse)
 	require.Contains(t, beta, claude.BetaExtendedCacheTTL)
 	require.NotContains(t, beta, claude.BetaOAuth)
 
@@ -964,6 +965,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ClaudeCodeMimicAppliesFingerp
 	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
 	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaClaudeCode)
 	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaInterleavedThinking)
+	require.Contains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaAdvancedToolUse)
 
 	rawBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
@@ -1002,6 +1004,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ClaudeCodeRelayStrongUsesBear
 	beta := getHeaderRaw(req.Header, "anthropic-beta")
 	require.Contains(t, beta, claude.BetaClaudeCode)
 	require.Contains(t, beta, claude.BetaOAuth)
+	require.Contains(t, beta, claude.BetaAdvancedToolUse)
 }
 
 func TestClaudeMimicDebugLineUsesRawHeadersAndRedactsSecrets(t *testing.T) {
@@ -1091,6 +1094,7 @@ func TestGatewayService_AnthropicAPIKeyMimic_RelayStrongUsesBearerAndOAuthBeta(t
 	beta := getHeaderRaw(req.Header, "anthropic-beta")
 	require.Contains(t, beta, claude.BetaClaudeCode)
 	require.Contains(t, beta, claude.BetaOAuth)
+	require.Contains(t, beta, claude.BetaAdvancedToolUse)
 	debugLine, ok := c.Get(claudeMimicDebugInfoKey)
 	require.True(t, ok)
 	require.Contains(t, debugLine.(string), "tokenType=apikey-relay-strong")

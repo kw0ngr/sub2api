@@ -177,7 +177,7 @@ func TestGatewayService_BuildUpstreamRequest_OAuthMimicUsesDynamicBetas(t *testi
 	require.Contains(t, beta, claude.BetaPromptCachingScope)
 	require.Contains(t, beta, claude.BetaExtendedCacheTTL)
 	require.Contains(t, beta, claude.BetaEffort)
-	require.NotContains(t, beta, betaAdvancedToolUse)
+	require.Contains(t, beta, claude.BetaAdvancedToolUse)
 	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
 	require.Equal(t, claude.DefaultHeaders["X-Stainless-OS"], getHeaderRaw(req.Header, "X-Stainless-OS"))
 	require.Equal(t, "application/json", getHeaderRaw(req.Header, "Accept"))

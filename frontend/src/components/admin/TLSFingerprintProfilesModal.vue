@@ -18,6 +18,22 @@
       </div>
 
       <!-- Profiles Table -->
+      <div class="rounded-xl border border-primary-200 bg-primary-50/70 p-4 dark:border-primary-900/60 dark:bg-primary-950/20">
+        <div class="flex items-start gap-3">
+          <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-primary-600 shadow-sm dark:bg-dark-800 dark:text-primary-300">
+            <Icon name="shield" size="sm" />
+          </div>
+          <div class="min-w-0">
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.tlsFingerprintProfiles.builtinTitle') }}
+            </h4>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              {{ t('admin.tlsFingerprintProfiles.builtinDescription') }}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div v-if="loading" class="flex items-center justify-center py-8">
         <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
       </div>
@@ -58,7 +74,17 @@
           <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
             <tr v-for="profile in profiles" :key="profile.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
               <td class="px-3 py-2">
-                <div class="font-medium text-gray-900 dark:text-white text-sm">{{ profile.name }}</div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="font-medium text-gray-900 dark:text-white text-sm">{{ profile.name }}</div>
+                  <span v-if="profile.builtin" class="badge badge-primary text-xs">
+                    {{ t('admin.tlsFingerprintProfiles.builtinBadge') }}
+                  </span>
+                </div>
+                <div v-if="profile.ja3_hash || profile.ja4" class="mt-1 max-w-xs truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                  <span v-if="profile.ja3_hash">JA3 {{ profile.ja3_hash }}</span>
+                  <span v-if="profile.ja3_hash && profile.ja4"> · </span>
+                  <span v-if="profile.ja4">JA4 {{ profile.ja4 }}</span>
+                </div>
               </td>
               <td class="px-3 py-2">
                 <div v-if="profile.description" class="text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
@@ -91,6 +117,7 @@
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1">
                   <button
+                    v-if="!profile.builtin"
                     @click="handleEdit(profile)"
                     class="p-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
                     :title="t('common.edit')"
@@ -98,12 +125,16 @@
                     <Icon name="edit" size="sm" />
                   </button>
                   <button
+                    v-if="!profile.builtin"
                     @click="handleDelete(profile)"
                     class="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
                     :title="t('common.delete')"
                   >
                     <Icon name="trash" size="sm" />
                   </button>
+                  <span v-if="profile.builtin" class="text-xs text-gray-400 dark:text-gray-500">
+                    {{ t('admin.tlsFingerprintProfiles.builtinReadonly') }}
+                  </span>
                 </div>
               </td>
             </tr>

@@ -67,7 +67,7 @@ const (
 	betaRedactThinking               = "redact-thinking-2026-02-12"
 	betaContextManagement            = "context-management-2025-06-27"
 	betaPromptCachingScope           = "prompt-caching-scope-2026-01-05"
-	betaAdvancedToolUse              = "advanced-tool-use-2025-11-20"
+	betaAdvancedToolUse              = claude.BetaAdvancedToolUse
 	betaEffort                       = "effort-2025-11-24"
 	betaStructuredOutputs            = "structured-outputs-2025-12-15"
 	claudeCodeSessionTTLMin          = 30 * time.Minute
@@ -1478,6 +1478,7 @@ func claudeCodeAPIKeyMimicryBetas(modelID string, body []byte) []string {
 		claude.BetaInterleavedThinking,
 		claude.BetaFineGrainedToolStreaming,
 		claude.BetaPromptCachingScope,
+		claude.BetaAdvancedToolUse,
 		claude.BetaEffort,
 		claude.BetaRedactThinking,
 		claude.BetaContextManagement,

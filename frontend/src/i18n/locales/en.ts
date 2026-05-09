@@ -2969,7 +2969,7 @@ export default {
         title: 'Claude Code mimic diagnostic',
         modeLine: 'mode: mimic {mimic} / strong {strong} / auth {auth} / token {token}',
         fingerprintLine: 'fingerprint: HTTP sample {sample} / TLS {tls}',
-        betaLine: 'beta: claude-code {claudeCode} / oauth {oauth} / extended-cache {ttl}',
+        betaLine: 'beta: claude-code {claudeCode} / oauth {oauth} / advanced-tool {advanced} / extended-cache {ttl}',
         bodyLine: 'body: metadata.user_id {metadata} / billing header {billing} / CCH {cch}',
         uaLine: 'UA: {ua}',
         sampleActive: 'active',
@@ -3073,7 +3073,7 @@ export default {
         tlsFingerprint: {
           label: 'TLS Fingerprint Simulation',
           hint: 'Simulate Node.js/Claude Code client TLS fingerprint',
-          defaultProfile: 'Built-in Default',
+          defaultProfile: 'Built-in Claude Code / Node.js 24.x',
           randomProfile: 'Random'
         },
         sessionIdMasking: {
@@ -5769,6 +5769,10 @@ export default {
       deleteProfile: 'Delete Profile',
       noProfiles: 'No profiles configured',
       createFirstProfile: 'Create your first TLS fingerprint profile',
+      builtinTitle: 'Built-in Node.js / Claude Code fingerprints',
+      builtinDescription: 'You can bind the built-in Claude Code / Node.js 24.x profile even without custom captures. It follows the uTLS controllable ClientHello approach and exposes the key JA3/JA4 fields explicitly.',
+      builtinBadge: 'Built-in',
+      builtinReadonly: 'Read-only',
 
       columns: {
         name: 'Name',
