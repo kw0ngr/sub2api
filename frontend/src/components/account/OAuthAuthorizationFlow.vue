@@ -168,6 +168,99 @@
           </div>
         </div>
 
+        <!-- Codex Session / Access Token Import (OpenAI) -->
+        <div v-if="inputMethod === 'access_token'" class="space-y-4">
+          <div
+            class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
+          >
+            <p class="mb-3 text-sm text-blue-700 dark:text-blue-300">
+              {{
+                t(
+                  'admin.accounts.oauth.openai.accessTokenDesc',
+                  '粘贴 Codex session JSON、access_token，或每行一个导入项。包含 refresh_token 时可自动续期；仅 access_token 会按过期时间自动暂停。'
+                )
+              }}
+            </p>
+
+            <div class="mb-4">
+              <label
+                class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                <Icon name="key" size="sm" class="text-blue-500" />
+                Codex Session / Access Token
+                <span
+                  v-if="parsedAccessTokenCount > 1"
+                  class="rounded-full bg-blue-500 px-2 py-0.5 text-xs text-white"
+                >
+                  {{ t('admin.accounts.oauth.keysCount', { count: parsedAccessTokenCount }) }}
+                </span>
+              </label>
+              <textarea
+                v-model="accessTokenInput"
+                rows="6"
+                class="input w-full resize-y font-mono text-sm"
+                :placeholder="
+                  t(
+                    'admin.accounts.oauth.openai.accessTokenPlaceholder',
+                    '粘贴 Codex session JSON，或直接粘贴 access_token'
+                  )
+                "
+              ></textarea>
+              <p class="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                {{
+                  t(
+                    'admin.accounts.oauth.openai.accessTokenHint',
+                    '导入会复用当前表单的名称、分组、代理、并发、倍率、过期和 OpenAI 高级配置。'
+                  )
+                }}
+              </p>
+            </div>
+
+            <div
+              v-if="error"
+              class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30"
+            >
+              <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">
+                {{ error }}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-primary w-full"
+              :disabled="loading || !accessTokenInput.trim()"
+              @click="handleImportAccessToken"
+            >
+              <svg
+                v-if="loading"
+                class="-ml-1 mr-2 h-4 w-4 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <Icon v-else name="sparkles" size="sm" class="mr-2" />
+              {{
+                loading
+                  ? t('admin.accounts.oauth.openai.importingAccessToken', '正在导入')
+                  : t('admin.accounts.oauth.openai.importAccessToken', '导入并创建账号')
+              }}
+            </button>
+          </div>
+        </div>
+
         <!-- Cookie Auto-Auth Form -->
         <div v-if="inputMethod === 'cookie'" class="space-y-4">
           <div
@@ -630,6 +723,7 @@ const authCodeInput = ref('')
 const sessionKeyInput = ref('')
 const refreshTokenInput = ref('')
 const sessionTokenInput = ref('')
+const accessTokenInput = ref('')
 const showHelpDialog = ref(false)
 const oauthState = ref('')
 const projectId = ref('')
@@ -654,6 +748,13 @@ const parsedRefreshTokenCount = computed(() => {
     .split('\n')
     .map((rt) => rt.trim())
     .filter((rt) => rt).length
+})
+
+const parsedAccessTokenCount = computed(() => {
+  return accessTokenInput.value
+    .split('\n')
+    .map((token) => token.trim())
+    .filter((token) => token).length
 })
 
 // Watchers
@@ -727,6 +828,12 @@ const handleValidateRefreshToken = () => {
   }
 }
 
+const handleImportAccessToken = () => {
+  if (accessTokenInput.value.trim()) {
+    emit('import-access-token', accessTokenInput.value.trim())
+  }
+}
+
 // Expose methods and state
 defineExpose({
   authCode: authCodeInput,
@@ -735,6 +842,7 @@ defineExpose({
   sessionKey: sessionKeyInput,
   refreshToken: refreshTokenInput,
   sessionToken: sessionTokenInput,
+  accessToken: accessTokenInput,
   inputMethod,
   reset: () => {
     authCodeInput.value = ''
@@ -743,6 +851,7 @@ defineExpose({
     sessionKeyInput.value = ''
     refreshTokenInput.value = ''
     sessionTokenInput.value = ''
+    accessTokenInput.value = ''
     inputMethod.value = 'manual'
     showHelpDialog.value = false
   }

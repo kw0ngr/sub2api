@@ -2626,7 +2626,7 @@
         :show-refresh-token-option="form.platform === 'openai' || form.platform === 'antigravity'"
         :show-mobile-refresh-token-option="form.platform === 'openai'"
         :show-session-token-option="false"
-        :show-access-token-option="false"
+        :show-access-token-option="form.platform === 'openai'"
         :platform="form.platform"
         :show-project-id="geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
@@ -2634,6 +2634,7 @@
         @validate-refresh-token="handleValidateRefreshToken"
         @validate-mobile-refresh-token="handleOpenAIValidateMobileRT"
         @validate-session-token="handleValidateSessionToken"
+        @import-access-token="handleOpenAIImportCodexSession"
       />
 
     </div>
@@ -3012,6 +3013,7 @@ interface OAuthFlowExposed {
   sessionKey: string
   refreshToken: string
   sessionToken: string
+  accessToken: string
   inputMethod: AuthInputMethod
   reset: () => void
 }
@@ -4238,6 +4240,66 @@ const handleValidateRefreshToken = (rt: string) => {
 
 const handleValidateSessionToken = (_sessionToken: string) => {
   // Session token validation removed
+}
+
+const handleOpenAIImportCodexSession = async (content: string) => {
+  if (form.platform !== 'openai' || !content.trim()) {
+    return
+  }
+
+  const credentialExtras: Record<string, unknown> = {}
+  if (!isOpenAIModelRestrictionDisabled.value) {
+    const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    if (modelMapping) {
+      credentialExtras.model_mapping = modelMapping
+    }
+  }
+  if (!applyTempUnschedConfig(credentialExtras)) {
+    return
+  }
+
+  openaiOAuth.loading.value = true
+  openaiOAuth.error.value = ''
+
+  try {
+    const result = await adminAPI.accounts.importCodexSession({
+      content: content.trim(),
+      name: form.name,
+      notes: form.notes,
+      group_ids: form.group_ids,
+      proxy_id: form.proxy_id,
+      concurrency: form.concurrency,
+      load_factor: form.load_factor ?? undefined,
+      priority: form.priority,
+      rate_multiplier: form.rate_multiplier,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value,
+      credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
+      extra: buildOpenAIExtra(),
+      update_existing: true
+    })
+
+    const summary = `Codex 导入完成：新增 ${result.created}，更新 ${result.updated}，跳过 ${result.skipped}，失败 ${result.failed}`
+    if (result.failed > 0) {
+      openaiOAuth.error.value = (result.errors || [])
+        .map((item) => `#${item.index}${item.name ? ` ${item.name}` : ''}: ${item.message}`)
+        .join('\n')
+      appStore.showWarning(summary)
+      if (result.created > 0 || result.updated > 0) {
+        emit('created')
+      }
+      return
+    }
+
+    appStore.showSuccess(summary)
+    emit('created')
+    handleClose()
+  } catch (error: any) {
+    openaiOAuth.error.value = error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.oauth.authFailed')
+    appStore.showError(openaiOAuth.error.value)
+  } finally {
+    openaiOAuth.loading.value = false
+  }
 }
 
 const formatDateTimeLocal = formatDateTimeLocalInput

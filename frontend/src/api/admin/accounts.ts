@@ -16,6 +16,8 @@ import type {
   TempUnschedulableStatus,
   AdminDataPayload,
   AdminDataImportResult,
+  CodexSessionImportRequest,
+  CodexSessionImportResult,
   CheckMixedChannelRequest,
   CheckMixedChannelResponse
 } from '@/types'
@@ -710,6 +712,13 @@ export async function importData(payload: {
   return data
 }
 
+export async function importCodexSession(payload: CodexSessionImportRequest): Promise<CodexSessionImportResult> {
+  const { data } = await apiClient.post<CodexSessionImportResult>('/admin/accounts/import/codex-session', payload, {
+    timeout: 120000
+  })
+  return data
+}
+
 export async function importRawAPIKeys(payload: {
   raw_text: string
   validate_after_import?: boolean
@@ -851,6 +860,7 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
+  importCodexSession,
   importRawAPIKeys,
   startAPIKeysHealthCheck,
   getAPIKeysHealthStatus,

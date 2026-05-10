@@ -59,6 +59,50 @@ describe('admin accounts API key tooling', () => {
     expect(config.timeout).toBe(120000)
   })
 
+  it('posts Codex session import payload to the admin codex-session endpoint', async () => {
+    const resultPayload = {
+      total: 1,
+      created: 1,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      items: [{ index: 1, action: 'created', account_id: 101 }]
+    }
+    const adapter = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { code: 0, data: resultPayload },
+      headers: {},
+      config: {},
+      statusText: 'OK'
+    })
+    apiClient.defaults.adapter = adapter
+
+    const result = await accountsAPI.importCodexSession({
+      content: '{"accessToken":"token"}',
+      name: 'Codex account',
+      group_ids: [2],
+      update_existing: true,
+      credential_extras: {
+        model_mapping: { from: 'gpt-5.4', to: 'gpt-5.5' }
+      }
+    })
+
+    expect(result).toEqual(resultPayload)
+    const config = adapter.mock.calls[0][0]
+    expect(config.method).toBe('post')
+    expect(config.url).toBe('/admin/accounts/import/codex-session')
+    expect(JSON.parse(config.data)).toEqual({
+      content: '{"accessToken":"token"}',
+      name: 'Codex account',
+      group_ids: [2],
+      update_existing: true,
+      credential_extras: {
+        model_mapping: { from: 'gpt-5.4', to: 'gpt-5.5' }
+      }
+    })
+    expect(config.timeout).toBe(120000)
+  })
+
   it('starts API key health check using the async health endpoint', async () => {
     const startPayload = {
       status: 'running',
