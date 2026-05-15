@@ -4988,23 +4988,22 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
-	if s.resolver != nil && apiKey.Group != nil {
-		gid := apiKey.Group.ID
-		cost, err = s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			Tokens:         tokens,
-			RequestCount:   1,
-			RateMultiplier: multiplier,
-			ServiceTier:    serviceTier,
-			Resolver:       s.resolver,
-		})
-	} else {
-		cost, err = s.billingService.CalculateCostWithServiceTier(billingModel, tokens, multiplier, serviceTier)
-	}
+	billingModels := openAIRecordUsageBillingModelCandidates(result, input, billingModel)
+	cost, err = s.calculateOpenAIRecordUsageCost(ctx, apiKey, billingModels, tokens, multiplier, serviceTier)
 	if err != nil {
-		cost = &CostBreakdown{ActualCost: 0}
+		if !isUsagePricingUnavailableError(err) {
+			return err
+		}
+		logger.L().With(
+			zap.String("component", "service.openai_gateway"),
+			zap.Strings("billing_models", billingModels),
+			zap.String("requested_model", input.OriginalModel),
+			zap.String("mapped_model", input.ChannelMappedModel),
+			zap.String("upstream_model", result.UpstreamModel),
+			zap.Int64("api_key_id", apiKey.ID),
+			zap.Int64("account_id", account.ID),
+		).Warn("openai_usage.pricing_missing_record_zero_cost", zap.Error(err))
+		cost = &CostBreakdown{BillingMode: string(BillingModeToken)}
 	}
 
 	// Determine billing type
@@ -5127,6 +5126,83 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil
+}
+
+func openAIRecordUsageBillingModelCandidates(result *OpenAIForwardResult, input *OpenAIRecordUsageInput, primary string) []string {
+	seen := make(map[string]struct{}, 6)
+	candidates := make([]string, 0, 6)
+	add := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return
+		}
+		key := strings.ToLower(model)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, model)
+	}
+
+	add(primary)
+	if result != nil {
+		add(result.BillingModel)
+	}
+	if input != nil {
+		add(input.ChannelMappedModel)
+		add(input.OriginalModel)
+	}
+	if result != nil {
+		add(result.UpstreamModel)
+		add(result.Model)
+	}
+	return candidates
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(ctx context.Context, apiKey *APIKey, billingModels []string, tokens UsageTokens, multiplier float64, serviceTier string) (*CostBreakdown, error) {
+	if len(billingModels) == 0 {
+		return nil, fmt.Errorf("calculate OpenAI usage cost failed: %w for model: empty", ErrModelPricingUnavailable)
+	}
+
+	var lastErr error
+	for _, model := range billingModels {
+		var cost *CostBreakdown
+		var err error
+		if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+			gid := apiKey.Group.ID
+			cost, err = s.billingService.CalculateCostUnified(CostInput{
+				Ctx:            ctx,
+				Model:          model,
+				GroupID:        &gid,
+				Tokens:         tokens,
+				RequestCount:   1,
+				RateMultiplier: multiplier,
+				ServiceTier:    serviceTier,
+				Resolver:       s.resolver,
+			})
+		} else {
+			cost, err = s.billingService.CalculateCostWithServiceTier(model, tokens, multiplier, serviceTier)
+		}
+		if err == nil {
+			return cost, nil
+		}
+		if !isUsagePricingUnavailableError(err) {
+			return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing model %s: %w", model, err)
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing models %s: %w", strings.Join(billingModels, ","), lastErr)
+}
+
+func isUsagePricingUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrModelPricingUnavailable) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no pricing available") || strings.Contains(msg, "pricing not found")
 }
 
 // ParseCodexRateLimitHeaders extracts Codex usage limits from response headers.

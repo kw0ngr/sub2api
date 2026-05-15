@@ -6488,6 +6488,16 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	} else if account.IsOAuth() {
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
 	}
+
+	if mimicClaudeCode && (account.IsOAuth() || isAnthropicAPIKeyMimic) {
+		if rw := buildToolNameRewriteFromBody(body); rw != nil {
+			body = applyToolNameRewriteToBody(body, rw)
+			if c != nil {
+				c.Set(toolNameRewriteKey, rw)
+			}
+		}
+	}
+
 	// CCH 签名：将 cch=00000 占位符替换为 xxHash64 签名（需在所有 body 修改之后）
 	if enableCCH || mimicClaudeCode {
 		body = signBillingHeaderCCH(body)
@@ -7947,6 +7957,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
+						block = string(reverseToolNamesIfPresent(c, []byte(block)))
 						if _, werr := fmt.Fprint(w, block); werr != nil {
 							clientDisconnected = true
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
@@ -8292,6 +8303,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	if originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
+	body = reverseToolNamesIfPresent(c, body)
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -9786,6 +9798,14 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	} else if account.IsOAuth() {
 		body = syncBillingHeaderVersion(body, getHeaderRaw(clientHeaders, "User-Agent"))
+	}
+	if mimicClaudeCode && (account.IsOAuth() || ctAnthropicAPIKeyMimic) {
+		if rw := buildToolNameRewriteFromBody(body); rw != nil {
+			body = applyToolNameRewriteToBody(body, rw)
+			if c != nil {
+				c.Set(toolNameRewriteKey, rw)
+			}
+		}
 	}
 	if ctEnableCCH || mimicClaudeCode {
 		body = signBillingHeaderCCH(body)

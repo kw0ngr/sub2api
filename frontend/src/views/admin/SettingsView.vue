@@ -3104,6 +3104,41 @@
                   class="shrink-0"
                 />
               </div>
+
+              <!-- Message cache_control Rewrite -->
+              <div
+                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div class="min-w-0 pr-0 sm:pr-6">
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.rewriteMessageCacheControl",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.rewriteMessageCacheControlHint",
+                      )
+                    }}
+                  </p>
+                  <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.rewriteMessageCacheControlNote",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.rewrite_message_cache_control"
+                  class="shrink-0"
+                />
+              </div>
             </div>
           </div>
           <!-- Web Search Emulation -->
@@ -5444,6 +5479,7 @@ const form = reactive<SettingsForm>({
   enable_metadata_passthrough: false,
   enable_cch_signing: true,
   enable_anthropic_cache_ttl_1h_injection: false,
+  rewrite_message_cache_control: false,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6345,6 +6381,7 @@ async function saveSettings() {
       enable_cch_signing: form.enable_cch_signing,
       enable_anthropic_cache_ttl_1h_injection:
         form.enable_anthropic_cache_ttl_1h_injection,
+      rewrite_message_cache_control: form.rewrite_message_cache_control,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,

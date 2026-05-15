@@ -5196,6 +5196,9 @@ export default {
         anthropicCacheTTL1hInjection: 'Anthropic 缓存 TTL 1h',
         anthropicCacheTTL1hInjectionHint: '仅对 Anthropic OAuth/SetupToken 请求中已经存在的 cache_control: ephemeral 写入 ttl=1h，不新增缓存断点。',
         anthropicCacheTTL1hInjectionNote: '默认关闭；开启后建议观察缓存命中和响应 usage 统计，异常时可随时关闭。',
+        rewriteMessageCacheControl: '消息 cache_control 改写',
+        rewriteMessageCacheControlHint: '允许网关主动整理 messages 中的 cache_control 断点。关闭时保留客户端原始消息缓存控制。',
+        rewriteMessageCacheControlNote: '默认关闭。自用场景建议仅在确认需要官方式缓存断点改写时开启。',
       },
       webSearchEmulation: {
         title: 'Web Search 模拟',

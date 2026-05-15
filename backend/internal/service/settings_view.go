@@ -107,6 +107,7 @@ type SystemSettings struct {
 	EnableMetadataPassthrough          bool // 是否透传客户端原始 metadata（默认 false）
 	EnableCCHSigning                   bool // 是否对 billing header cch 进行签名（默认 true）
 	EnableAnthropicCacheTTL1hInjection bool // 是否对 Anthropic OAuth/SetupToken 已有 ephemeral cache_control 注入 ttl=1h（默认 false）
+	RewriteMessageCacheControl         bool // 是否主动改写 messages cache_control 断点（默认 false）
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool // 是否启用 web search 模拟

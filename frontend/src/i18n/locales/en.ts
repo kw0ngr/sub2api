@@ -5038,6 +5038,9 @@ export default {
         anthropicCacheTTL1hInjection: 'Anthropic Cache TTL 1h',
         anthropicCacheTTL1hInjectionHint: 'For Anthropic OAuth/SetupToken requests, write ttl=1h only to existing cache_control: ephemeral blocks without adding new cache breakpoints.',
         anthropicCacheTTL1hInjectionNote: 'Off by default. After enabling, watch cache hit rate and response usage stats; turn it off anytime if behavior looks abnormal.',
+        rewriteMessageCacheControl: 'Message cache_control Rewrite',
+        rewriteMessageCacheControlHint: 'Allow the gateway to actively rearrange message cache_control breakpoints. When disabled, client message cache_control is preserved.',
+        rewriteMessageCacheControlNote: 'Disabled by default. For self-use deployments, enable only when you intentionally need official-style cache breakpoint rewriting.',
       },
       webSearchEmulation: {
         title: 'Web Search Emulation',
