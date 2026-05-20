@@ -623,6 +623,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
+	processFrame := func(frame openAICompatSSEFrame) bool {
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+		return processDataLine(payload)
+	}
 
 	// ── Determine keepalive interval ──
 	keepaliveInterval := time.Duration(0)
@@ -632,22 +636,31 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// ── No keepalive: fast synchronous path (no goroutine overhead) ──
 	if streamInterval <= 0 && keepaliveInterval <= 0 {
+		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 		}
 		if err := scanner.Err(); err != nil {
 			handleScanErr(err)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+		}
+		if frame, ok := parser.Finish(); ok {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
+				return missingTerminalErr()
+			}
+			if processFrame(frame) {
+				return finalizeStream()
+			}
 		}
 		return missingTerminalErr()
 	}
@@ -693,12 +706,21 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		keepaliveCh = keepaliveTicker.C
 	}
 	lastDataAt := time.Now()
+	var parser openAICompatSSEFrameParser
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
 				// Upstream closed
+				if frame, ok := parser.Finish(); ok {
+					if strings.TrimSpace(frame.Data) == "[DONE]" {
+						return missingTerminalErr()
+					}
+					if processFrame(frame) {
+						return finalizeStream()
+					}
+				}
 				return missingTerminalErr()
 			}
 			if ev.err != nil {
@@ -708,14 +730,14 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			lastDataAt = time.Now()
 			line := ev.line
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 

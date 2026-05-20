@@ -705,10 +705,42 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	}()
 	defer close(done)
 
+	processFrame := func(frame openAICompatSSEFrame) (*apicompat.ResponsesResponse, bool) {
+		if strings.TrimSpace(frame.Data) == "[DONE]" {
+			return nil, true
+		}
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+
+		var event apicompat.ResponsesStreamEvent
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			logger.L().Warn(logPrefix+": failed to parse event",
+				zap.Error(err),
+				zap.String("request_id", requestID),
+			)
+			return nil, false
+		}
+
+		acc.ProcessEvent(&event)
+
+		if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+			if event.Response.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+			}
+			return event.Response, true
+		}
+		return nil, false
+	}
+
+	var parser openAICompatSSEFrameParser
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if frame, ok := parser.Finish(); ok {
+					if finalResponse, done := processFrame(frame); done {
+						return finalResponse, usage, acc, nil
+					}
+				}
 				return nil, usage, acc, nil
 			}
 			resetTimeout()
@@ -722,30 +754,12 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				return nil, usage, acc, ev.err
 			}
 
-			if isOpenAICompatDoneSentinelLine(ev.line) {
-				return nil, usage, acc, nil
-			}
-			payload, ok := extractOpenAISSEDataLine(ev.line)
-			if !ok || strings.TrimSpace(payload) == "" {
+			frame, ok := parser.AddLine(ev.line)
+			if !ok {
 				continue
 			}
-
-			var event apicompat.ResponsesStreamEvent
-			if err := json.Unmarshal([]byte(payload), &event); err != nil {
-				logger.L().Warn(logPrefix+": failed to parse event",
-					zap.Error(err),
-					zap.String("request_id", requestID),
-				)
-				continue
-			}
-
-			acc.ProcessEvent(&event)
-
-			if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
-				if event.Response.Usage != nil {
-					usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
-				}
-				return event.Response, usage, acc, nil
+			if finalResponse, done := processFrame(frame); done {
+				return finalResponse, usage, acc, nil
 			}
 
 		case <-timeoutCh:
@@ -927,6 +941,13 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
+	processFrame := func(frame openAICompatSSEFrame) bool {
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+		if strings.TrimSpace(payload) == "[DONE]" {
+			return false
+		}
+		return processDataLine(payload)
+	}
 
 	// Determine keepalive interval
 	keepaliveInterval := time.Duration(0)
@@ -936,22 +957,31 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	// No keepalive/timeout: fast synchronous path
 	if streamInterval <= 0 && keepaliveInterval <= 0 {
+		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 		}
 		if err := scanner.Err(); err != nil {
 			handleScanErr(err)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+		}
+		if frame, ok := parser.Finish(); ok {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
+				return missingTerminalErr()
+			}
+			if processFrame(frame) {
+				return finalizeStream()
+			}
 		}
 		return missingTerminalErr()
 	}
@@ -997,11 +1027,20 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		keepaliveCh = keepaliveTicker.C
 	}
 	lastDataAt := time.Now()
+	var parser openAICompatSSEFrameParser
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if frame, ok := parser.Finish(); ok {
+					if strings.TrimSpace(frame.Data) == "[DONE]" {
+						return missingTerminalErr()
+					}
+					if processFrame(frame) {
+						return finalizeStream()
+					}
+				}
 				return missingTerminalErr()
 			}
 			if ev.err != nil {
@@ -1011,14 +1050,14 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			lastDataAt = time.Now()
 			line := ev.line
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 
