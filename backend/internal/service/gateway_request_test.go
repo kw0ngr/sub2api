@@ -404,6 +404,34 @@ func TestFilterThinkingBlocksForRetry_EmptyContentGetsPlaceholder(t *testing.T) 
 	require.NotEmpty(t, content0["text"])
 }
 
+func TestFilterThinkingBlocksForRetry_DropsThinkingBlockWithEmptyContent(t *testing.T) {
+	input := []byte(`{
+		"thinking":{"type":"enabled"},
+		"messages":[
+			{"role":"assistant","content":[
+				{"type":"thinking","thinking":"","signature":"sig"},
+				{"type":"text","text":"Visible"}
+			]}
+		]
+	}`)
+
+	out := FilterThinkingBlocksForRetry(input)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(out, &req))
+	msgs, ok := req["messages"].([]any)
+	require.True(t, ok)
+	msg0, ok := msgs[0].(map[string]any)
+	require.True(t, ok)
+	content, ok := msg0["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	content0, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "text", content0["type"])
+	require.Equal(t, "Visible", content0["text"])
+}
+
 func TestFilterThinkingBlocksForRetry_StripsEmptyTextBlocks(t *testing.T) {
 	// Empty text blocks cause upstream 400: "text content blocks must be non-empty"
 	input := []byte(`{
@@ -563,6 +591,12 @@ func TestFilterThinkingBlocksForRetry_PreservesNonEmptyTextBlocks(t *testing.T) 
 
 	// Fast path: no thinking content, no empty content, no empty text blocks → unchanged
 	require.Equal(t, input, out)
+}
+
+func TestGatewayService_IsThinkingBlockSignatureError_DetectsMissingThinkingContent(t *testing.T) {
+	body := []byte(`{"type":"error","error":{"message":"messages.1.content.0.thinking: thinking block must contain thinking"}}`)
+
+	require.True(t, (&GatewayService{}).isThinkingBlockSignatureError(body))
 }
 
 func TestFilterSignatureSensitiveBlocksForRetry_DowngradesTools(t *testing.T) {

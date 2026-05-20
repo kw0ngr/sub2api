@@ -22,12 +22,15 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	}
 
 	out := &ResponsesRequest{
-		Model:       req.Model,
-		Input:       inputJSON,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Stream:      req.Stream,
-		Include:     []string{"reasoning.encrypted_content"},
+		Model:   req.Model,
+		Input:   inputJSON,
+		Stream:  req.Stream,
+		Include: []string{"reasoning.encrypted_content"},
+	}
+
+	if !isReasoningModel(req.Model) {
+		out.Temperature = req.Temperature
+		out.TopP = req.TopP
 	}
 
 	storeFalse := false
@@ -409,6 +412,10 @@ func mapAnthropicEffortToResponses(effort string) string {
 		return "xhigh"
 	}
 	return effort // low→low, medium→medium, high→high, unknown→passthrough
+}
+
+func isReasoningModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-5")
 }
 
 // convertAnthropicToolsToResponses maps Anthropic tool definitions to

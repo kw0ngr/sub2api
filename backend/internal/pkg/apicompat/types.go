@@ -70,6 +70,30 @@ type AnthropicContentBlock struct {
 	IsError   bool            `json:"is_error,omitempty"`
 }
 
+func (b AnthropicContentBlock) MarshalJSON() ([]byte, error) {
+	type alias AnthropicContentBlock
+	switch b.Type {
+	case "text":
+		return json.Marshal(struct {
+			Text string `json:"text"`
+			alias
+		}{
+			Text:  b.Text,
+			alias: alias(b),
+		})
+	case "thinking":
+		return json.Marshal(struct {
+			Thinking string `json:"thinking"`
+			alias
+		}{
+			Thinking: b.Thinking,
+			alias:    alias(b),
+		})
+	default:
+		return json.Marshal(alias(b))
+	}
+}
+
 // AnthropicImageSource describes the source data for an image content block.
 type AnthropicImageSource struct {
 	Type      string `json:"type"` // "base64"

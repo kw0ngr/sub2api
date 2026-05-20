@@ -157,4 +157,26 @@ describe('admin accounts API key tooling', () => {
     expect(config.method).toBe('get')
     expect(config.url).toBe('/admin/accounts/apikey-health-check')
   })
+
+  it('passes force=true when refreshing account usage explicitly', async () => {
+    const usagePayload = {
+      updated_at: '2026-05-21T00:00:00Z'
+    }
+    const adapter = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { code: 0, data: usagePayload },
+      headers: {},
+      config: {},
+      statusText: 'OK'
+    })
+    apiClient.defaults.adapter = adapter
+
+    const result = await accountsAPI.getUsage(42, 'active', true)
+
+    expect(result).toEqual(usagePayload)
+    const config = adapter.mock.calls[0][0]
+    expect(config.method).toBe('get')
+    expect(config.url).toBe('/admin/accounts/42/usage')
+    expect(config.params).toMatchObject({ source: 'active', force: 'true' })
+  })
 })

@@ -30,11 +30,14 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 		Model:        req.Model,
 		Instructions: req.Instructions,
 		Input:        inputJSON,
-		Temperature:  req.Temperature,
-		TopP:         req.TopP,
 		Stream:       true, // upstream always streams
 		Include:      []string{"reasoning.encrypted_content"},
 		ServiceTier:  req.ServiceTier,
+	}
+
+	if !isReasoningModel(req.Model) {
+		out.Temperature = req.Temperature
+		out.TopP = req.TopP
 	}
 
 	storeFalse := false
@@ -307,6 +310,9 @@ func parseChatMessageContent(raw json.RawMessage) (chatMessageContent, error) {
 	if len(raw) == 0 {
 		return chatMessageContent{Text: stringPtr("")}, nil
 	}
+	if strings.TrimSpace(string(raw)) == "null" {
+		return chatMessageContent{Text: stringPtr("")}, nil
+	}
 
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
@@ -325,7 +331,11 @@ func marshalChatInputContent(content chatMessageContent) (json.RawMessage, error
 	if content.Text != nil {
 		return json.Marshal(*content.Text)
 	}
-	return json.Marshal(convertChatContentPartsToResponses(content.Parts))
+	parts := convertChatContentPartsToResponses(content.Parts)
+	if len(parts) == 0 {
+		return json.Marshal("")
+	}
+	return json.Marshal(parts)
 }
 
 func convertChatContentPartsToResponses(parts []ChatContentPart) []ResponsesContentPart {

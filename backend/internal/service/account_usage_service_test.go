@@ -66,6 +66,22 @@ func TestShouldRefreshOpenAICodexSnapshot(t *testing.T) {
 	}
 }
 
+func TestAccountUsageService_ShouldProbeOpenAICodexSnapshotForceBypassesCache(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	svc := &AccountUsageService{cache: NewUsageCache()}
+	if !svc.shouldProbeOpenAICodexSnapshot(123, now) {
+		t.Fatal("first probe should be allowed")
+	}
+	if svc.shouldProbeOpenAICodexSnapshot(123, now.Add(time.Minute)) {
+		t.Fatal("cached probe should be skipped without force")
+	}
+	if !svc.shouldProbeOpenAICodexSnapshot(123, now.Add(2*time.Minute), true) {
+		t.Fatal("manual refresh should bypass probe cache")
+	}
+}
+
 func TestExtractOpenAICodexProbeUpdatesAccepts429WithCodexHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -140,7 +156,7 @@ func TestAccountUsageService_GetOpenAIUsage_DoesNotPromoteCodexExtraToRateLimit(
 		},
 	}
 
-	usage, err := svc.getOpenAIUsage(context.Background(), account)
+	usage, err := svc.getOpenAIUsage(context.Background(), account, false)
 	if err != nil {
 		t.Fatalf("getOpenAIUsage() error = %v", err)
 	}

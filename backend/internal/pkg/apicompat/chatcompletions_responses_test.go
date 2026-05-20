@@ -32,6 +32,70 @@ func TestChatCompletionsToResponses_BasicText(t *testing.T) {
 	assert.Equal(t, "user", items[0].Role)
 }
 
+func TestChatCompletionsToResponses_TemperatureAndTopPStrippedForReasoningModel(t *testing.T) {
+	temperature := 0.7
+	topP := 0.9
+	req := &ChatCompletionsRequest{
+		Model:       "gpt-5.4",
+		Temperature: &temperature,
+		TopP:        &topP,
+		Messages:    []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	assert.Nil(t, resp.Temperature)
+	assert.Nil(t, resp.TopP)
+}
+
+func TestChatCompletionsToResponses_TemperatureAndTopPPreservedForNonReasoningModel(t *testing.T) {
+	temperature := 0.7
+	topP := 0.9
+	req := &ChatCompletionsRequest{
+		Model:       "gpt-4o",
+		Temperature: &temperature,
+		TopP:        &topP,
+		Messages:    []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Temperature)
+	require.NotNil(t, resp.TopP)
+	assert.Equal(t, temperature, *resp.Temperature)
+	assert.Equal(t, topP, *resp.TopP)
+}
+
+func TestChatCompletionsToResponses_EmptyContentNeverNull(t *testing.T) {
+	tests := []struct {
+		name    string
+		content json.RawMessage
+	}{
+		{name: "null", content: json.RawMessage(`null`)},
+		{name: "empty_array", content: json.RawMessage(`[]`)},
+		{name: "empty_text_part", content: json.RawMessage(`[{"type":"text","text":""}]`)},
+		{name: "empty_image_part", content: json.RawMessage(`[{"type":"image_url","image_url":{"url":"data:image/png;base64,"}}]`)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ChatCompletionsRequest{
+				Model:    "gpt-4o",
+				Messages: []ChatMessage{{Role: "user", Content: tt.content}},
+			}
+
+			resp, err := ChatCompletionsToResponses(req)
+			require.NoError(t, err)
+			assert.NotContains(t, string(resp.Input), `"content":null`)
+
+			var items []ResponsesInputItem
+			require.NoError(t, json.Unmarshal(resp.Input, &items))
+			require.Len(t, items, 1)
+			assert.JSONEq(t, `""`, string(items[0].Content))
+		})
+	}
+}
+
 func TestChatCompletionsToResponses_SystemMessage(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",

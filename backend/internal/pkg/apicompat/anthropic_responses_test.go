@@ -191,6 +191,42 @@ func TestAnthropicToResponses_MaxTokensFloor(t *testing.T) {
 	assert.Equal(t, 128, *resp.MaxOutputTokens)
 }
 
+func TestAnthropicToResponses_TemperatureAndTopPStrippedForReasoningModel(t *testing.T) {
+	temperature := 0.7
+	topP := 0.9
+	req := &AnthropicRequest{
+		Model:       "gpt-5.2",
+		MaxTokens:   1024,
+		Temperature: &temperature,
+		TopP:        &topP,
+		Messages:    []AnthropicMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	assert.Nil(t, resp.Temperature)
+	assert.Nil(t, resp.TopP)
+}
+
+func TestAnthropicToResponses_TemperatureAndTopPPreservedForNonReasoningModel(t *testing.T) {
+	temperature := 0.7
+	topP := 0.9
+	req := &AnthropicRequest{
+		Model:       "gpt-4o",
+		MaxTokens:   1024,
+		Temperature: &temperature,
+		TopP:        &topP,
+		Messages:    []AnthropicMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Temperature)
+	require.NotNil(t, resp.TopP)
+	assert.Equal(t, temperature, *resp.Temperature)
+	assert.Equal(t, topP, *resp.TopP)
+}
+
 // ---------------------------------------------------------------------------
 // ResponsesToAnthropic (non-streaming) tests
 // ---------------------------------------------------------------------------
@@ -631,6 +667,10 @@ func TestStreamingReasoning(t *testing.T) {
 	require.Len(t, events, 1)
 	assert.Equal(t, "content_block_start", events[0].Type)
 	assert.Equal(t, "thinking", events[0].ContentBlock.Type)
+	sse, err := ResponsesAnthropicEventToSSE(events[0])
+	require.NoError(t, err)
+	assert.Contains(t, sse, `"type":"thinking"`)
+	assert.Contains(t, sse, `"thinking":""`)
 
 	// reasoning text delta
 	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
