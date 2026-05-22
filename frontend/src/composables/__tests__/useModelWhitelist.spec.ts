@@ -43,6 +43,13 @@ describe('useModelWhitelist', () => {
     expect(models.indexOf('gemini-2.5-flash-image')).toBeLessThan(models.indexOf('gemini-2.5-flash'))
   })
 
+  it('deepseek 模型列表包含 v4 pro/flash', () => {
+    const models = getModelsByPlatform('deepseek')
+
+    expect(models).toContain('deepseek-v4-pro')
+    expect(models).toContain('deepseek-v4-flash')
+  })
+
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {
     const models = getModelsByPlatform('antigravity')
 

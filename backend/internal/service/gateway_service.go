@@ -3911,12 +3911,44 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 	if account.Platform == PlatformOpenAI && account.IsOpenAIPassthroughEnabled() {
 		return true
 	}
+	if requiresExplicitMappingForForeignProviderModel(account, requestedModel) && !accountHasExplicitMappingForModel(account, requestedModel) {
+		return false
+	}
 	// OAuth/SetupToken 账号使用 Anthropic 标准映射（短ID → 长ID）
 	if account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
 		requestedModel = claude.NormalizeModelID(requestedModel)
 	}
 	// 其他平台使用账户的模型支持检查
 	return account.IsModelSupported(requestedModel)
+}
+
+func requiresExplicitMappingForForeignProviderModel(account *Account, requestedModel string) bool {
+	if account == nil {
+		return false
+	}
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		return false
+	}
+	if strings.HasPrefix(model, "deepseek-") && account.Platform != PlatformDeepSeek {
+		return true
+	}
+	return false
+}
+
+func accountHasExplicitMappingForModel(account *Account, requestedModel string) bool {
+	if account == nil {
+		return false
+	}
+	mapping := account.GetModelMapping()
+	if len(mapping) == 0 {
+		return false
+	}
+	if mappingSupportsRequestedModel(mapping, requestedModel) {
+		return true
+	}
+	normalized := normalizeRequestedModelForLookup(account.Platform, requestedModel)
+	return normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized)
 }
 
 // GetAccessToken 获取账号凭证
