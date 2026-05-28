@@ -1332,7 +1332,7 @@ func (s *OpenAIGatewayService) tryStickySessionHitForPlatform(ctx context.Contex
 
 	// 验证账号是否可用于当前请求
 	// Verify account is usable for current request
-	if !isSchedulableOpenAICompatibleAccountForPlatform(account, platform) {
+	if !isSchedulableOpenAICompatibleAccountForRequest(ctx, account, platform, requestedModel) {
 		return nil
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
@@ -1511,7 +1511,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwarenessForPlatform(ctx con
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && isSchedulableOpenAICompatibleAccountForPlatform(account, platform) &&
+				if !clearSticky && isSchedulableOpenAICompatibleAccountForRequest(ctx, account, platform, requestedModel) &&
 					(requestedModel == "" || account.IsModelSupported(requestedModel)) {
 					account = s.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, account, requestedModel, platform)
 					if account == nil {
@@ -1550,7 +1550,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwarenessForPlatform(ctx con
 		// Scheduler snapshots can be temporarily stale (bucket rebuild is throttled);
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
-		if !acc.IsSchedulable() {
+		if !isSchedulableOpenAICompatibleAccountForRequest(ctx, acc, platform, requestedModel) {
 			continue
 		}
 		if requestedModel != "" && !acc.IsModelSupported(requestedModel) {
@@ -1718,7 +1718,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountForPlatform(c
 		fresh = current
 	}
 
-	if !isSchedulableOpenAICompatibleAccountForPlatform(fresh, platform) {
+	if !isSchedulableOpenAICompatibleAccountForRequest(ctx, fresh, platform, requestedModel) {
 		return nil
 	}
 	if requestedModel != "" && !fresh.IsModelSupported(requestedModel) {
@@ -1737,6 +1737,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForPlatform(ctx
 		return nil
 	}
 	if s.schedulerSnapshot == nil || s.accountRepo == nil {
+		if !isSchedulableOpenAICompatibleAccountForRequest(ctx, account, platform, requestedModel) {
+			return nil
+		}
 		return account
 	}
 
@@ -1744,7 +1747,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForPlatform(ctx
 	if err != nil || latest == nil {
 		return nil
 	}
-	if !isSchedulableOpenAICompatibleAccountForPlatform(latest, platform) {
+	if !isSchedulableOpenAICompatibleAccountForRequest(ctx, latest, platform, requestedModel) {
 		return nil
 	}
 	if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
@@ -1759,6 +1762,13 @@ func isSchedulableOpenAICompatibleAccountForPlatform(account *Account, platform 
 	}
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	return account.Platform == platform && account.IsOpenAICompatible()
+}
+
+func isSchedulableOpenAICompatibleAccountForRequest(ctx context.Context, account *Account, platform string, requestedModel string) bool {
+	if !isSchedulableOpenAICompatibleAccountForPlatform(account, platform) {
+		return false
+	}
+	return account.IsSchedulableForModelWithContext(ctx, requestedModel)
 }
 
 func (s *OpenAIGatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
@@ -1863,9 +1873,22 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
 }
 
-func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account) {
+func openAIModelForUpstreamError(requestBody []byte, requestedModel ...string) string {
+	if len(requestedModel) > 0 {
+		if model := strings.TrimSpace(requestedModel[0]); model != "" {
+			return model
+		}
+	}
+	if len(requestBody) == 0 {
+		return ""
+	}
+	model, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
+	return strings.TrimSpace(model)
+}
+
+func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account, requestedModel ...string) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+	s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(nil, requestedModel...))
 }
 
 // Forward forwards request to OpenAI API
@@ -2574,14 +2597,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					Detail:             upstreamDetail,
 				})
 
-				s.handleFailoverSideEffects(ctx, resp, account)
+				s.handleFailoverSideEffects(ctx, resp, account, upstreamModel)
 				return nil, &UpstreamFailoverError{
 					StatusCode:             resp.StatusCode,
 					ResponseBody:           respBody,
 					RetryableOnSameAccount: account.IsPoolMode() && (isPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				}
 			}
-			return s.handleErrorResponse(ctx, resp, c, account, body)
+			return s.handleErrorResponse(ctx, resp, c, account, body, upstreamModel)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
@@ -2993,7 +3016,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
 	if s.rateLimitService != nil {
-		_ = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		_ = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(requestBody))
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform:             account.Platform,
@@ -3035,11 +3058,16 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
+	shouldFailover := false
 	if s.rateLimitService != nil {
 		// Passthrough mode preserves the raw upstream error response, but runtime
 		// account state still needs to be updated so sticky routing can stop
 		// reusing a freshly rate-limited account.
-		_ = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		shouldFailover = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(requestBody))
+	}
+	kind := "http_error"
+	if shouldFailover {
+		kind = "failover"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform:             account.Platform,
@@ -3048,11 +3076,18 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		UpstreamStatusCode:   resp.StatusCode,
 		UpstreamRequestID:    resp.Header.Get("x-request-id"),
 		Passthrough:          true,
-		Kind:                 "http_error",
+		Kind:                 kind,
 		Message:              upstreamMsg,
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: upstreamDetail,
 	})
+	if shouldFailover {
+		return &UpstreamFailoverError{
+			StatusCode:      resp.StatusCode,
+			ResponseBody:    body,
+			ResponseHeaders: resp.Header.Clone(),
+		}
+	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := resp.Header.Get("Content-Type")
@@ -3701,6 +3736,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	c *gin.Context,
 	account *Account,
 	requestBody []byte,
+	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 
@@ -3779,7 +3815,8 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	// Handle upstream error (mark account status)
 	shouldDisable := false
 	if s.rateLimitService != nil {
-		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		modelForCooldown := openAIModelForUpstreamError(requestBody, requestedModel...)
+		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, modelForCooldown)
 	}
 	kind := "http_error"
 	if shouldDisable {
@@ -3838,6 +3875,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	account *Account,
 	writeError compatErrorWriter,
 	faultFormat UpstreamFaultFormat,
+	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 
@@ -3895,8 +3933,12 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	// Track rate limits and decide whether to trigger secondary failover.
 	shouldDisable := false
 	if s.rateLimitService != nil {
+		ctx := context.Background()
+		if c != nil && c.Request != nil {
+			ctx = c.Request.Context()
+		}
 		shouldDisable = s.rateLimitService.HandleUpstreamError(
-			c.Request.Context(), account, resp.StatusCode, resp.Header, body,
+			ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(nil, requestedModel...),
 		)
 	}
 	kind := "http_error"
@@ -4505,20 +4547,21 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if isEventStreamResponse(resp.Header) {
 		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
 	}
+	bodyLooksLikeSSE := bytes.Contains(body, []byte("data:")) || bytes.Contains(body, []byte("event:"))
+
 	// For OAuth accounts, also fall back to a body-content heuristic because
 	// the upstream may omit the Content-Type header while still sending SSE.
-	// This heuristic is NOT applied to API-key accounts to avoid false
-	// positives on JSON responses that coincidentally contain "data:" or
-	// "event:" in their text content.
-	if account.Type == AccountTypeOAuth {
-		bodyLooksLikeSSE := bytes.Contains(body, []byte("data:")) || bytes.Contains(body, []byte("event:"))
-		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
-		}
+	// API-key traffic only uses it after JSON usage parsing fails, avoiding
+	// false positives when ordinary response text contains SSE-looking text.
+	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
+		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
 	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
+		if bodyLooksLikeSSE {
+			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
 	usage := &usageValue

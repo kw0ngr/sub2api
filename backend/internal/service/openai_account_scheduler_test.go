@@ -84,6 +84,36 @@ func TestOpenAIGatewayService_SelectAccountForModelWithExclusions_SkipsFreshlyRa
 	require.Equal(t, int64(32002), account.ID)
 }
 
+func TestOpenAIGatewayService_SelectAccountForModelWithExclusions_SkipsModelCooledCandidate(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10105)
+	future := time.Now().Add(30 * time.Minute).Format(time.RFC3339)
+	primary := Account{
+		ID:          35001,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    0,
+		Extra: map[string]any{
+			modelRateLimitsKey: map[string]any{
+				"gpt-5.1": map[string]any{"rate_limit_reset_at": future},
+			},
+		},
+	}
+	secondary := Account{ID: 35002, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5}
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{accounts: []Account{primary, secondary}},
+		cfg:         &config.Config{},
+	}
+
+	account, err := svc.SelectAccountForModelWithExclusions(ctx, &groupID, "", "gpt-5.1", nil)
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(35002), account.ID)
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyDBRuntimeRecheckSkipsStaleCachedAccount(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(10103)

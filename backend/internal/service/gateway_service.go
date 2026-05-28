@@ -5059,7 +5059,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if resp.StatusCode == 400 && account.Type == AccountTypeAPIKey {
 			respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			if readErr != nil {
-				return s.handleErrorResponse(ctx, resp, c, account)
+				return s.handleErrorResponse(ctx, resp, c, account, reqModel)
 			}
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -5091,7 +5091,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			if readErr != nil {
 				// ReadAll failed, fall back to normal error handling without consuming the stream
-				return s.handleErrorResponse(ctx, resp, c, account)
+				return s.handleErrorResponse(ctx, resp, c, account, reqModel)
 			}
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -5131,7 +5131,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
 			}
 		}
-		return s.handleErrorResponse(ctx, resp, c, account)
+		return s.handleErrorResponse(ctx, resp, c, account, reqModel)
 	}
 
 	// 处理正常响应
@@ -5425,7 +5425,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	if resp.StatusCode == 400 && account.Type == AccountTypeAPIKey {
 		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		if readErr != nil {
-			return s.handleErrorResponse(ctx, resp, c, account)
+			return s.handleErrorResponse(ctx, resp, c, account, input.RequestModel)
 		}
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -5449,7 +5449,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 
 	if resp.StatusCode >= 400 {
-		return s.handleErrorResponse(ctx, resp, c, account)
+		return s.handleErrorResponse(ctx, resp, c, account, input.RequestModel)
 	}
 
 	var usage *ClaudeUsage
@@ -7393,7 +7393,7 @@ func isCountTokensUnsupported404(statusCode int, body []byte) bool {
 	return strings.Contains(msg, "count_tokens") && strings.Contains(msg, "not found")
 }
 
-func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account) (*ForwardResult, error) {
+func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, requestedModel ...string) (*ForwardResult, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 
 	// 调试日志：打印上游错误响应
@@ -7440,7 +7440,11 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 	// 处理上游错误，标记账号状态
 	shouldDisable := false
 	if s.rateLimitService != nil {
-		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		modelForCooldown := ""
+		if len(requestedModel) > 0 {
+			modelForCooldown = strings.TrimSpace(requestedModel[0])
+		}
+		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, modelForCooldown)
 	}
 	if shouldDisable {
 		return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: body}

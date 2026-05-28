@@ -1320,6 +1320,9 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	if streamStarted {
+		if inboundIsResponses(c) && writeResponsesFailedSSE(c, errType, message) {
+			return
+		}
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -1337,10 +1340,13 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 	h.errorResponse(c, status, errType, message)
 }
 
-// ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
+// ensureForwardErrorResponse appends an SSE terminal error when headers were already flushed.
 func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
-	if c == nil || c.Writer == nil || c.Writer.Written() {
+	if c == nil || c.Writer == nil {
 		return false
+	}
+	if c.Writer.Written() {
+		streamStarted = true
 	}
 	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed", streamStarted)
 	return true

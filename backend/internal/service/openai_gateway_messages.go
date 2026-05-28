@@ -336,7 +336,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				Detail:             upstreamDetail,
 			})
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
@@ -345,7 +345,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 		}
 		// Non-failover error: return Anthropic-formatted error to client
-		return s.handleAnthropicErrorResponse(resp, c, account)
+		return s.handleAnthropicErrorResponse(resp, c, account, upstreamModel)
 	}
 
 	if account.Type == AccountTypeOAuth && promptCacheKey != "" {
@@ -412,6 +412,7 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
+	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	return s.handleCompatErrorResponse(
 		resp,
@@ -419,6 +420,7 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 		account,
 		writeAnthropicError,
 		UpstreamFaultFormatAnthropicMessages,
+		requestedModel...,
 	)
 }
 
@@ -557,8 +559,13 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
-		if isTerminalEvent && event.Response != nil && event.Response.Usage != nil {
-			usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+		if isTerminalEvent {
+			if event.Response != nil && event.Response.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+			}
+			if event.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+			}
 		}
 
 		// Convert to Anthropic events

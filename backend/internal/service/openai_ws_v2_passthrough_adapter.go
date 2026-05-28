@@ -21,6 +21,36 @@ type openAIWSClientFrameConn struct {
 	conn *coderws.Conn
 }
 
+// openAIWSPrefetchedFrameConn lets the adapter inspect the first upstream
+// event before exposing it to the client while keeping the relay API stable.
+type openAIWSPrefetchedFrameConn struct {
+	inner             openaiwsv2.FrameConn
+	firstMessageType  coderws.MessageType
+	firstPayload      []byte
+	firstReadDone     bool
+	firstWriteSkipped bool
+}
+
+func (c *openAIWSPrefetchedFrameConn) ReadFrame(ctx context.Context) (coderws.MessageType, []byte, error) {
+	if !c.firstReadDone {
+		c.firstReadDone = true
+		return c.firstMessageType, append([]byte(nil), c.firstPayload...), nil
+	}
+	return c.inner.ReadFrame(ctx)
+}
+
+func (c *openAIWSPrefetchedFrameConn) WriteFrame(ctx context.Context, msgType coderws.MessageType, payload []byte) error {
+	if !c.firstWriteSkipped {
+		c.firstWriteSkipped = true
+		return nil
+	}
+	return c.inner.WriteFrame(ctx, msgType, payload)
+}
+
+func (c *openAIWSPrefetchedFrameConn) Close() error {
+	return c.inner.Close()
+}
+
 // openAIWSPolicyEnforcingFrameConn wraps a client-side FrameConn and runs
 // every client→upstream frame through the OpenAI Fast Policy. It is the
 // passthrough-relay equivalent of the parseClientPayload integration in the
@@ -359,6 +389,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			statusCode,
 			truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
 		)
+		if statusCode == http.StatusTooManyRequests {
+			s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
+			return &UpstreamFailoverError{
+				StatusCode:      http.StatusTooManyRequests,
+				ResponseHeaders: cloneHeader(handshakeHeaders),
+			}
+		}
 		return s.mapOpenAIWSPassthroughDialError(err, statusCode, handshakeHeaders)
 	}
 	defer func() {
@@ -442,10 +479,52 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			cancel()
 		},
 	}
+
+	// Hold the initial upstream event until it is known not to be a 429.
+	// This keeps a retryable account failure invisible to the client, allowing
+	// the handler to replay the untouched first request on a healthy account.
+	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
+	firstWriteErr := upstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
+	cancelFirstWrite()
+	if firstWriteErr != nil {
+		return wrapOpenAIWSIngressTurnError(
+			"write_upstream",
+			fmt.Errorf("write first upstream websocket request: %w", firstWriteErr),
+			false,
+		)
+	}
+	firstReadCtx, cancelFirstRead := context.WithTimeout(ctx, s.openAIWSReadTimeout())
+	firstMessageType, firstUpstreamMessage, firstReadErr := upstreamFrameConn.ReadFrame(firstReadCtx)
+	cancelFirstRead()
+	if firstReadErr != nil {
+		return wrapOpenAIWSIngressTurnError(
+			"read_upstream",
+			fmt.Errorf("read first upstream websocket event: %w", firstReadErr),
+			false,
+		)
+	}
+	if firstMessageType == coderws.MessageText {
+		if eventType, _, _ := parseOpenAIWSEventEnvelope(firstUpstreamMessage); eventType == "error" {
+			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(firstUpstreamMessage)
+			if isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
+				s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, firstUpstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				return &UpstreamFailoverError{
+					StatusCode:      http.StatusTooManyRequests,
+					ResponseBody:    append([]byte(nil), firstUpstreamMessage...),
+					ResponseHeaders: cloneHeader(handshakeHeaders),
+				}
+			}
+		}
+	}
+	relayUpstreamConn := &openAIWSPrefetchedFrameConn{
+		inner:            upstreamFrameConn,
+		firstMessageType: firstMessageType,
+		firstPayload:     firstUpstreamMessage,
+	}
 	relayResult, relayExit := openaiwsv2.RunEntry(openaiwsv2.EntryInput{
 		Ctx:                ctx,
 		ClientConn:         policyClientConn,
-		UpstreamConn:       upstreamFrameConn,
+		UpstreamConn:       relayUpstreamConn,
 		FirstClientMessage: firstClientMessage,
 		Options: openaiwsv2.RelayOptions{
 			WriteTimeout:     s.openAIWSWriteTimeout(),

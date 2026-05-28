@@ -25,6 +25,8 @@ type rateLimitAccountRepoStub struct {
 	lastTempUntil          *time.Time
 	lastRateLimitResetAt   *time.Time
 	lastOverloadedUntil    *time.Time
+	modelRateLimitScopes   []string
+	modelRateLimitResets   []time.Time
 }
 
 func (r *rateLimitAccountRepoStub) SetError(ctx context.Context, id int64, errorMsg string) error {
@@ -48,6 +50,12 @@ func (r *rateLimitAccountRepoStub) SetRateLimited(ctx context.Context, id int64,
 func (r *rateLimitAccountRepoStub) SetOverloaded(ctx context.Context, id int64, until time.Time) error {
 	r.overloadedCalls++
 	r.lastOverloadedUntil = &until
+	return nil
+}
+
+func (r *rateLimitAccountRepoStub) SetModelRateLimit(ctx context.Context, id int64, scope string, resetAt time.Time) error {
+	r.modelRateLimitScopes = append(r.modelRateLimitScopes, scope)
+	r.modelRateLimitResets = append(r.modelRateLimitResets, resetAt)
 	return nil
 }
 

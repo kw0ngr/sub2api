@@ -172,7 +172,7 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	assert.Equal(t, "Upstream request failed", errorObj["message"])
 }
 
-func TestOpenAIEnsureForwardErrorResponse_DoesNotOverrideWrittenResponse(t *testing.T) {
+func TestOpenAIEnsureForwardErrorResponse_AppendsStreamingErrorAfterWrittenResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -182,9 +182,10 @@ func TestOpenAIEnsureForwardErrorResponse_DoesNotOverrideWrittenResponse(t *test
 	h := &OpenAIGatewayHandler{}
 	wrote := h.ensureForwardErrorResponse(c, false)
 
-	require.False(t, wrote)
+	require.True(t, wrote)
 	require.Equal(t, http.StatusTeapot, w.Code)
-	assert.Equal(t, "already written", w.Body.String())
+	assert.Contains(t, w.Body.String(), "already written")
+	assert.Contains(t, w.Body.String(), "event: error\n")
 }
 
 func TestShouldLogOpenAIForwardFailureAsWarn(t *testing.T) {
@@ -264,7 +265,7 @@ func TestOpenAIRecoverResponsesPanic_NoPanicNoWrite(t *testing.T) {
 	assert.Equal(t, "", w.Body.String())
 }
 
-func TestOpenAIRecoverResponsesPanic_DoesNotOverrideWrittenResponse(t *testing.T) {
+func TestOpenAIRecoverResponsesPanic_AppendsResponseFailedAfterWrittenResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	w := httptest.NewRecorder()
@@ -282,7 +283,8 @@ func TestOpenAIRecoverResponsesPanic_DoesNotOverrideWrittenResponse(t *testing.T
 	})
 
 	require.Equal(t, http.StatusTeapot, w.Code)
-	assert.Equal(t, "already written", w.Body.String())
+	assert.Contains(t, w.Body.String(), "already written")
+	assert.Contains(t, w.Body.String(), "event: response.failed\n")
 }
 
 func TestOpenAIMissingResponsesDependencies(t *testing.T) {

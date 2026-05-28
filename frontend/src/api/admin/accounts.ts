@@ -304,6 +304,22 @@ export async function refreshCredentials(id: number): Promise<Account> {
 }
 
 /**
+ * Apply credentials obtained through an OAuth reauthorization flow.
+ * Extra is merged server-side so existing account runtime settings remain intact.
+ */
+export async function applyOAuthCredentials(
+  id: number,
+  payload: {
+    type: 'oauth' | 'setup-token'
+    credentials: Record<string, unknown>
+    extra?: Record<string, unknown>
+  }
+): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/apply-oauth-credentials`, payload)
+  return data
+}
+
+/**
  * Get account usage statistics
  * @param id - Account ID
  * @param days - Number of days (default: 30)
@@ -841,6 +857,7 @@ export const accountsAPI = {
   toggleStatus,
   testAccount,
   refreshCredentials,
+  applyOAuthCredentials,
   getStats,
   clearError,
   getUsage,

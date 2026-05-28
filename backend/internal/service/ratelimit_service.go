@@ -121,7 +121,11 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
-func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) (shouldDisable bool) {
+func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if account != nil && !(account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()) &&
+		len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
+		return true
+	}
 	if account != nil && account.Type == AccountTypeAPIKey {
 		if account.Platform == PlatformOpenAI && (statusCode == http.StatusTooManyRequests || statusCode == 529) {
 			if !(account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()) {
@@ -1552,8 +1556,39 @@ func (s *RateLimitService) HandleTempUnschedulable(ctx context.Context, account 
 	return s.tryTempUnschedulable(ctx, account, statusCode, responseBody)
 }
 
+const upstreamModelNotFoundCooldown = 30 * time.Minute
 const tempUnschedBodyMaxBytes = 64 << 10
 const tempUnschedMessageMaxBytes = 2048
+
+// HandleUpstreamModelNotFound records only the failed account-model pair.
+// This avoids disabling a healthy API key merely because one routed model is unavailable.
+func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, account *Account, requestedModel string, statusCode int, responseBody []byte) bool {
+	if s == nil || s.accountRepo == nil || account == nil || !account.ShouldHandleErrorCode(statusCode) {
+		return false
+	}
+	if !isUpstreamModelNotFoundError(statusCode, responseBody) {
+		return false
+	}
+	modelKey := strings.TrimSpace(requestedModel)
+	if modelKey == "" {
+		return false
+	}
+	if account.Platform == PlatformAntigravity {
+		modelKey = strings.TrimSpace(resolveFinalAntigravityModelKey(ctx, account, modelKey))
+	} else {
+		modelKey = strings.TrimSpace(account.GetMappedModel(modelKey))
+	}
+	if modelKey == "" {
+		return false
+	}
+	resetAt := time.Now().Add(upstreamModelNotFoundCooldown)
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt); err != nil {
+		slog.Warn("upstream_model_not_found_set_model_rate_limit_failed", "account_id", account.ID, "model", modelKey, "error", err)
+		return true
+	}
+	slog.Info("upstream_model_not_found_model_rate_limited", "account_id", account.ID, "model", modelKey, "reset_at", resetAt)
+	return true
+}
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte) bool {
 	if account == nil {

@@ -60,7 +60,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 	originalModel := chatReq.Model
 	clientStream := chatReq.Stream
-	includeUsage := chatReq.StreamOptions != nil && chatReq.StreamOptions.IncludeUsage
 
 	// 2. Resolve model mapping early so compat prompt_cache_key injection can
 	// derive a stable seed from the final upstream model family.
@@ -256,7 +255,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 				Detail:             upstreamDetail,
 			})
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
@@ -264,14 +263,14 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 				RetryableOnSameAccount: account.IsPoolMode() && (isPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 			}
 		}
-		return s.handleChatCompletionsErrorResponse(resp, c, account)
+		return s.handleChatCompletionsErrorResponse(resp, c, account, upstreamModel)
 	}
 
 	// 9. Handle normal response
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleChatStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, includeUsage, startTime)
+		result, handleErr = s.handleChatStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
 	}
@@ -394,7 +393,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 				Detail:             upstreamDetail,
 			})
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
@@ -403,7 +402,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 				RetryableOnSameAccount: account.IsPoolMode() && isPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
-		return s.handleChatCompletionsErrorResponse(resp, c, account)
+		return s.handleChatCompletionsErrorResponse(resp, c, account, upstreamModel)
 	}
 
 	clientStream := chatReq != nil && chatReq.Stream
@@ -557,6 +556,7 @@ func (s *OpenAIGatewayService) handleChatCompletionsErrorResponse(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
+	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	return s.handleCompatErrorResponse(
 		resp,
@@ -564,6 +564,7 @@ func (s *OpenAIGatewayService) handleChatCompletionsErrorResponse(
 		account,
 		writeChatCompletionsError,
 		UpstreamFaultFormatOpenAIChatCompletions,
+		requestedModel...,
 	)
 }
 
@@ -723,6 +724,12 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 		acc.ProcessEvent(&event)
 
 		if isOpenAICompatResponsesTerminalEvent(event.Type) && event.Response != nil {
+			if event.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+				if event.Response.Usage == nil {
+					event.Response.Usage = event.Usage
+				}
+			}
 			if event.Response.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
 			}
@@ -795,7 +802,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
-	includeUsage bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -811,7 +817,8 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	state := apicompat.NewResponsesEventToChatState()
 	state.Model = originalModel
-	state.IncludeUsage = includeUsage
+	// Always forward terminal usage so downstream gateways can account usage.
+	state.IncludeUsage = true
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
@@ -869,8 +876,13 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
-		if isTerminalEvent && event.Response != nil && event.Response.Usage != nil {
-			usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+		if isTerminalEvent {
+			if event.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
+			}
+			if event.Response != nil && event.Response.Usage != nil {
+				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+			}
 		}
 
 		chunks := apicompat.ResponsesEventToChatChunks(&event, state)

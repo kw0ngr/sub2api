@@ -179,4 +179,40 @@ describe('admin accounts API key tooling', () => {
     expect(config.url).toBe('/admin/accounts/42/usage')
     expect(config.params).toMatchObject({ source: 'active', force: 'true' })
   })
+
+  it('posts reauthorized OAuth credentials through the merge-safe endpoint', async () => {
+    const accountPayload = {
+      id: 33,
+      platform: 'openai',
+      type: 'oauth',
+      extra: {
+        codex_cli_only: true,
+        account_uuid: 'acct-new'
+      }
+    }
+    const adapter = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { code: 0, data: accountPayload },
+      headers: {},
+      config: {},
+      statusText: 'OK'
+    })
+    apiClient.defaults.adapter = adapter
+
+    const result = await accountsAPI.applyOAuthCredentials(33, {
+      type: 'oauth',
+      credentials: { access_token: 'new-token' },
+      extra: { account_uuid: 'acct-new' }
+    })
+
+    expect(result).toEqual(accountPayload)
+    const config = adapter.mock.calls[0][0]
+    expect(config.method).toBe('post')
+    expect(config.url).toBe('/admin/accounts/33/apply-oauth-credentials')
+    expect(JSON.parse(config.data)).toEqual({
+      type: 'oauth',
+      credentials: { access_token: 'new-token' },
+      extra: { account_uuid: 'acct-new' }
+    })
+  })
 })

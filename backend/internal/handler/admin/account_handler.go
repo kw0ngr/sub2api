@@ -1218,6 +1218,83 @@ func (h *AccountHandler) Refresh(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), updatedAccount))
 }
 
+// ApplyOAuthCredentialsRequest stores credentials obtained from a user-driven reauthorization flow.
+type ApplyOAuthCredentialsRequest struct {
+	Type        string         `json:"type" binding:"required,oneof=oauth setup-token"`
+	Credentials map[string]any `json:"credentials" binding:"required"`
+	Extra       map[string]any `json:"extra"`
+}
+
+// ApplyOAuthCredentials updates OAuth credentials without replacing account Extra state.
+// POST /api/v1/admin/accounts/:id/apply-oauth-credentials
+func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req ApplyOAuthCredentialsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+	existing, err := h.adminService.GetAccount(ctx, accountID)
+	if err != nil {
+		response.NotFound(c, "Account not found")
+		return
+	}
+	if !existing.IsOAuth() {
+		response.ErrorFrom(c, infraerrors.BadRequest("NOT_OAUTH", "cannot apply oauth credentials to non-OAuth account"))
+		return
+	}
+
+	updatedAccount, err := h.adminService.UpdateAccount(ctx, accountID, &service.UpdateAccountInput{
+		Type:        req.Type,
+		Credentials: req.Credentials,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	if len(req.Extra) > 0 {
+		if extraErr := h.adminService.UpdateAccountExtra(ctx, accountID, req.Extra); extraErr != nil {
+			extraKeys := make([]string, 0, len(req.Extra))
+			for key := range req.Extra {
+				extraKeys = append(extraKeys, key)
+			}
+			slog.Error("apply_oauth_credentials.update_extra_failed",
+				"account_id", accountID,
+				"extra_keys", extraKeys,
+				"err", extraErr,
+			)
+		}
+	}
+
+	if cleared, clearErr := h.adminService.ClearAccountError(ctx, accountID); clearErr != nil {
+		slog.Warn("apply_oauth_credentials.clear_error_failed",
+			"account_id", accountID,
+			"err", clearErr,
+		)
+	} else if cleared != nil {
+		updatedAccount = cleared
+	}
+
+	if h.tokenCacheInvalidator != nil && updatedAccount.IsOAuth() {
+		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
+			slog.Warn("apply_oauth_credentials.invalidate_token_failed",
+				"account_id", accountID,
+				"err", invalidateErr,
+			)
+		}
+	}
+
+	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updatedAccount))
+}
+
 // GetStats handles getting account statistics
 // GET /api/v1/admin/accounts/:id/stats
 func (h *AccountHandler) GetStats(c *gin.Context) {
