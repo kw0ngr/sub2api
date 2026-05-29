@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform } from '../useModelWhitelist'
+import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -48,6 +48,22 @@ describe('useModelWhitelist', () => {
 
     expect(models).toContain('deepseek-v4-pro')
     expect(models).toContain('deepseek-v4-flash')
+  })
+
+  it('anthropic/antigravity 模型列表包含 Claude Opus 4.8', () => {
+    expect(getModelsByPlatform('anthropic')).toContain('claude-opus-4-8')
+    expect(getModelsByPlatform('antigravity')).toContain('claude-opus-4-8')
+  })
+
+  it('antigravity 和 bedrock 预设映射包含 Claude Opus 4.8', () => {
+    expect(getPresetMappingsByPlatform('antigravity')).toContainEqual(expect.objectContaining({
+      from: 'claude-opus-4-8',
+      to: 'claude-opus-4-8'
+    }))
+    expect(getPresetMappingsByPlatform('bedrock')).toContainEqual(expect.objectContaining({
+      from: 'claude-opus-4-8',
+      to: 'us.anthropic.claude-opus-4-8-v1'
+    }))
   })
 
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {
