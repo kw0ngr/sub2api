@@ -4485,54 +4485,58 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 		return
 	}
 	if chatUsage := gjson.GetBytes(data, "usage"); chatUsage.Exists() && chatUsage.Type != gjson.Null {
-		usage.InputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens").Int())
-		usage.OutputTokens = int(gjson.GetBytes(data, "usage.completion_tokens").Int())
-		usage.CacheReadInputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens").Int())
-		return
-	}
-	// 选择性解析：仅在数据中包含终止事件标识时才进入字段提取。
-	if len(data) < 72 {
-		return
+		if chatUsage.Get("prompt_tokens").Exists() || chatUsage.Get("completion_tokens").Exists() {
+			usage.InputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens").Int())
+			usage.OutputTokens = int(gjson.GetBytes(data, "usage.completion_tokens").Int())
+			usage.CacheReadInputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens").Int())
+			return
+		}
 	}
 	eventType := gjson.GetBytes(data, "type").String()
-	if eventType != "response.completed" && eventType != "response.done" &&
+	if eventType != "response.completed" && eventType != "response.done" && eventType != "response.failed" &&
 		eventType != "response.incomplete" && eventType != "response.cancelled" && eventType != "response.canceled" {
 		return
 	}
 
-	usage.InputTokens = int(gjson.GetBytes(data, "response.usage.input_tokens").Int())
-	usage.OutputTokens = int(gjson.GetBytes(data, "response.usage.output_tokens").Int())
-	usage.CacheReadInputTokens = int(gjson.GetBytes(data, "response.usage.input_tokens_details.cached_tokens").Int())
-	usage.ImageOutputTokens = int(gjson.GetBytes(data, "response.usage.output_tokens_details.image_tokens").Int())
+	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(data); ok {
+		*usage = parsedUsage
+	}
 }
 
 func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return OpenAIUsage{}, false
 	}
-	if usage := gjson.GetBytes(body, "usage"); usage.Exists() && usage.Type != gjson.Null {
-		if gjson.GetBytes(body, "usage.prompt_tokens").Exists() ||
-			gjson.GetBytes(body, "usage.completion_tokens").Exists() {
+	for _, usagePath := range []string{"usage", "response.usage"} {
+		if usage := gjson.GetBytes(body, usagePath); usage.Exists() && usage.Type != gjson.Null {
+			promptTokens := usagePath + ".prompt_tokens"
+			completionTokens := usagePath + ".completion_tokens"
+			if gjson.GetBytes(body, promptTokens).Exists() || gjson.GetBytes(body, completionTokens).Exists() {
+				return OpenAIUsage{
+					InputTokens:          int(gjson.GetBytes(body, promptTokens).Int()),
+					OutputTokens:         int(gjson.GetBytes(body, completionTokens).Int()),
+					CacheReadInputTokens: int(gjson.GetBytes(body, usagePath+".prompt_tokens_details.cached_tokens").Int()),
+				}, true
+			}
+			values := gjson.GetManyBytes(
+				body,
+				usagePath+".input_tokens",
+				usagePath+".output_tokens",
+				usagePath+".input_tokens_details.cached_tokens",
+				usagePath+".output_tokens_details.image_tokens",
+			)
+			if !values[0].Exists() && !values[1].Exists() && !values[2].Exists() && !values[3].Exists() {
+				continue
+			}
 			return OpenAIUsage{
-				InputTokens:          int(gjson.GetBytes(body, "usage.prompt_tokens").Int()),
-				OutputTokens:         int(gjson.GetBytes(body, "usage.completion_tokens").Int()),
-				CacheReadInputTokens: int(gjson.GetBytes(body, "usage.prompt_tokens_details.cached_tokens").Int()),
+				InputTokens:          int(values[0].Int()),
+				OutputTokens:         int(values[1].Int()),
+				CacheReadInputTokens: int(values[2].Int()),
+				ImageOutputTokens:    int(values[3].Int()),
 			}, true
 		}
 	}
-	values := gjson.GetManyBytes(
-		body,
-		"usage.input_tokens",
-		"usage.output_tokens",
-		"usage.input_tokens_details.cached_tokens",
-		"usage.output_tokens_details.image_tokens",
-	)
-	return OpenAIUsage{
-		InputTokens:          int(values[0].Int()),
-		OutputTokens:         int(values[1].Int()),
-		CacheReadInputTokens: int(values[2].Int()),
-		ImageOutputTokens:    int(values[3].Int()),
-	}, true
+	return OpenAIUsage{}, false
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, error) {

@@ -477,7 +477,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	c.Request.Header.Set("X-Api-Key", "inbound-api-key")
 	c.Request.Header.Set("Cookie", "secret=1")
 
-	body := []byte(`{"model":"claude-3-5-sonnet-latest","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"thinking":{"type":"enabled"}}`)
+	body := []byte(`{"model":"claude-3-5-sonnet-latest","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"thinking":{"type":"enabled"},"temperature":0.7,"top_p":0.9,"top_k":50,"stream":true,"stop_sequences":["END"],"stop":["STOP"]}`)
 	parsed := &ParsedRequest{
 		Body:  body,
 		Model: "claude-3-5-sonnet-latest",
@@ -530,6 +530,13 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-3-opus-20240229", gjson.GetBytes(upstream.lastBody, "model").String(), "count_tokens 透传模式应应用账号级模型映射")
+	require.False(t, gjson.GetBytes(upstream.lastBody, "temperature").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "top_p").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "top_k").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "stop_sequences").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "stop").Exists())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "thinking").Exists(), "非 generation-only 字段应保留")
 	require.Equal(t, "upstream-anthropic-key", getHeaderRaw(upstream.lastReq.Header, "x-api-key"))
 	require.Empty(t, getHeaderRaw(upstream.lastReq.Header, "authorization"))
 	require.Empty(t, getHeaderRaw(upstream.lastReq.Header, "cookie"))

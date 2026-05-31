@@ -470,6 +470,17 @@ const props = withDefaults(
 const { t } = useI18n()
 const desktopViewportQuery = '(min-width: 768px)'
 
+function getDesktopViewportMediaQuery(): MediaQueryList | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return null
+  }
+  return window.matchMedia(desktopViewportQuery)
+}
+
+function getDesktopViewportMatches(): boolean {
+  return getDesktopViewportMediaQuery()?.matches ?? true
+}
+
 const unmounted = ref(false)
 onBeforeUnmount(() => { unmounted.value = true })
 
@@ -478,9 +489,7 @@ const activeQueryLoading = ref(false)
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
 const rootRef = ref<HTMLElement | null>(null)
-const isDesktopViewport = ref(
-  typeof window === 'undefined' ? true : window.matchMedia(desktopViewportQuery).matches
-)
+const isDesktopViewport = ref(getDesktopViewportMatches())
 const hasEnteredViewport = ref(false)
 const pendingAutoLoad = ref(false)
 const pendingAutoLoadSource = ref<'passive' | 'active' | undefined>(undefined)
@@ -1133,8 +1142,8 @@ const formatKeyUserCost = computed(() => {
 })
 
 onMounted(() => {
-  if (typeof window !== 'undefined') {
-    desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
+  desktopViewportMediaQuery = getDesktopViewportMediaQuery()
+  if (desktopViewportMediaQuery) {
     isDesktopViewport.value = desktopViewportMediaQuery.matches
     desktopViewportListener = (event: MediaQueryListEvent) => {
       isDesktopViewport.value = event.matches

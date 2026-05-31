@@ -49,30 +49,3 @@ func TestDataManagementHandler_AgentHealthAlways200(t *testing.T) {
 	require.Equal(t, service.DataManagementDeprecatedReason, data.Reason)
 	require.Equal(t, svc.SocketPath(), data.SocketPath)
 }
-
-func TestDataManagementHandler_NonHealthRouteReturns503WhenDisabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	svc := service.NewDataManagementServiceWithOptions(filepath.Join(t.TempDir(), "missing.sock"), 50*time.Millisecond)
-	h := NewDataManagementHandler(svc)
-
-	r := gin.New()
-	r.GET("/api/v1/admin/data-management/config", h.GetConfig)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/data-management/config", nil)
-	r.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
-
-	var envelope apiEnvelope
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
-	require.Equal(t, http.StatusServiceUnavailable, envelope.Code)
-	require.Equal(t, service.DataManagementDeprecatedReason, envelope.Reason)
-}
-
-func TestNormalizeBackupIdempotencyKey(t *testing.T) {
-	require.Equal(t, "from-header", normalizeBackupIdempotencyKey("from-header", "from-body"))
-	require.Equal(t, "from-body", normalizeBackupIdempotencyKey(" ", " from-body "))
-	require.Equal(t, "", normalizeBackupIdempotencyKey("", ""))
-}

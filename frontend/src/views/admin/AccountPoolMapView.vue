@@ -152,6 +152,12 @@
           >
             当前仅展示前 {{ sourceInfo.returned }} / {{ sourceInfo.total }} 个账号；可以通过搜索或平台筛选缩小范围。
           </div>
+          <div
+            v-if="usingFallback"
+            class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+          >
+            当前使用账号列表聚合数据；账号池地图 API 恢复后会自动回到服务端聚合结果。
+          </div>
         </div>
 
         <div v-if="loading && !accounts.length" class="grid gap-3">
@@ -486,11 +492,11 @@ import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, wa
 import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import { useAccountPoolMapData } from '@/composables/useAccountPoolMapData'
 import type { Account } from '@/types'
 import type {
   AccountPoolMapAccount,
   AccountPoolMapPool,
-  AccountPoolMapResponse,
   AccountPoolMapStatusKind,
   AccountPoolMapSummary,
   APIKeyProbeQuotaSnapshot
@@ -537,21 +543,12 @@ const InspectorRow = defineComponent({
 })
 
 const router = useRouter()
-const accounts = ref<AccountPoolMapAccount[]>([])
-const pools = ref<AccountPoolMapPool[]>([])
-const serverSummary = ref<AccountPoolMapSummary | null>(null)
-const sourceInfo = ref<AccountPoolMapResponse['source'] | null>(null)
-const generatedAt = ref('')
-const errorMessage = ref('')
-const knownPlatforms = ref<string[]>([])
-const loading = ref(false)
 const selectedAccountId = ref<number | null>(null)
 const selectedPoolKey = ref<string | null>(null)
 const expandedPoolKeys = ref<Set<string>>(new Set())
 const checkingHealth = ref(false)
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let healthPollTimer: ReturnType<typeof setTimeout> | null = null
-let refreshSeq = 0
 const POOL_PREVIEW_LIMIT = 12
 
 const filters = reactive<{
@@ -571,6 +568,26 @@ const viewModes: Array<{ value: ViewMode; label: string }> = [
   { value: 'traffic', label: '流量' },
   { value: 'error', label: '错误' }
 ]
+
+const {
+  accounts,
+  pools,
+  serverSummary,
+  sourceInfo,
+  generatedAt,
+  errorMessage,
+  knownPlatforms,
+  loading,
+  usingFallback,
+  refresh: refreshPoolMap
+} = useAccountPoolMapData({
+  groupAccounts,
+  buildSummary,
+  createEmptySummary,
+  enrichFallbackAccount,
+  normalizeError,
+  afterLoad: pruneSelection
+})
 
 const platformOptions = computed(() => {
   const set = new Set(knownPlatforms.value)
@@ -1208,36 +1225,11 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 async function refresh() {
-  const seq = ++refreshSeq
-  loading.value = true
-  errorMessage.value = ''
-  try {
-    const response = await adminAPI.accounts.getPoolMap({
-      platform: filters.platform !== 'all' ? filters.platform : undefined,
-      status: filters.status !== 'all' ? filters.status : undefined,
-      search: filters.search || undefined,
-      limit: 3000
-    })
-    if (seq !== refreshSeq) return
-    loadPoolMapResponse(response)
-  } catch (error) {
-    if (seq !== refreshSeq) return
-    try {
-      await loadFallbackAccounts()
-      errorMessage.value = normalizeError(error) || '账号池地图接口暂不可用，已回退到账号列表聚合。'
-    } catch (fallbackError) {
-      errorMessage.value = normalizeError(fallbackError) || normalizeError(error) || '账号池地图加载失败。'
-      accounts.value = []
-      pools.value = []
-      serverSummary.value = createEmptySummary()
-      sourceInfo.value = null
-      generatedAt.value = ''
-    }
-  } finally {
-    if (seq === refreshSeq) {
-      loading.value = false
-    }
-  }
+  await refreshPoolMap({
+    search: filters.search,
+    platform: filters.platform,
+    status: filters.status
+  })
 }
 
 function clearHealthPollTimer() {
@@ -1294,47 +1286,11 @@ async function pollHealthCheckStatus() {
   }
 }
 
-function loadPoolMapResponse(response: AccountPoolMapResponse) {
-  const nextAccounts = response.accounts || []
-  accounts.value = nextAccounts
-  pools.value = response.pools || groupAccounts(nextAccounts)
-  serverSummary.value = response.summary || buildSummary(nextAccounts, pools.value)
-  sourceInfo.value = response.source || null
-  generatedAt.value = response.generated_at || ''
-  mergeKnownPlatforms(nextAccounts)
+function pruneSelection(nextAccounts: AccountPoolMapAccount[], nextPools: AccountPoolMapPool[]) {
   if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
     selectedAccountId.value = null
   }
-  if (selectedPoolKey.value && !pools.value.some((pool) => pool.key === selectedPoolKey.value)) {
-    selectedPoolKey.value = null
-  }
-}
-
-async function loadFallbackAccounts() {
-  const response = await adminAPI.accounts.list(1, 1000, {
-    platform: filters.platform !== 'all' ? filters.platform : undefined,
-    search: filters.search || undefined,
-    sort_by: 'platform',
-    sort_order: 'asc'
-  })
-  const nextAccounts = (response.items || [])
-    .map(enrichFallbackAccount)
-    .filter((account) => filters.status === 'all' || statusKind(account) === filters.status)
-  accounts.value = nextAccounts
-  pools.value = groupAccounts(nextAccounts)
-  serverSummary.value = buildSummary(nextAccounts, pools.value)
-  sourceInfo.value = {
-    total: response.total,
-    returned: response.items?.length || 0,
-    limit: 1000,
-    truncated: response.total > (response.items?.length || 0)
-  }
-  generatedAt.value = new Date().toISOString()
-  mergeKnownPlatforms(nextAccounts)
-  if (selectedAccountId.value && !nextAccounts.some((item) => item.id === selectedAccountId.value)) {
-    selectedAccountId.value = null
-  }
-  if (selectedPoolKey.value && !pools.value.some((pool) => pool.key === selectedPoolKey.value)) {
+  if (selectedPoolKey.value && !nextPools.some((pool) => pool.key === selectedPoolKey.value)) {
     selectedPoolKey.value = null
   }
 }
@@ -1417,14 +1373,6 @@ function incrementSummary(summary: AccountPoolMapSummary, account: AccountPoolMa
   summary.concurrency += account.current_concurrency || 0
   summary.active_sessions += account.active_sessions || 0
   if (quotaHasAnySignal(quotaSnapshot(account))) summary.quota_signals += 1
-}
-
-function mergeKnownPlatforms(items: AccountPoolMapAccount[]) {
-  const set = new Set(knownPlatforms.value)
-  for (const account of items) {
-    if (account.platform) set.add(account.platform)
-  }
-  knownPlatforms.value = Array.from(set).sort()
 }
 
 function normalizeError(error: unknown): string {

@@ -622,6 +622,46 @@ func TestResponsesToChatCompletions_CachedTokens(t *testing.T) {
 	assert.Equal(t, 80, chat.Usage.PromptTokensDetails.CachedTokens)
 }
 
+func TestResponsesToChatCompletions_AllTokenDetailsPassThrough(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_token_details",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type:    "message",
+				Content: []ResponsesContentPart{{Type: "output_text", Text: "details"}},
+			},
+		},
+		Usage: &ResponsesUsage{
+			InputTokens:  10,
+			OutputTokens: 20,
+			TotalTokens:  30,
+			InputTokensDetails: &ResponsesInputTokensDetails{
+				CachedTokens: 3,
+				AudioTokens:  4,
+			},
+			OutputTokensDetails: &ResponsesOutputTokensDetails{
+				ReasoningTokens:          5,
+				AudioTokens:              6,
+				AcceptedPredictionTokens: 7,
+				RejectedPredictionTokens: 8,
+			},
+		},
+	}
+
+	chat := ResponsesToChatCompletions(resp, "gpt-5.4")
+
+	require.NotNil(t, chat.Usage)
+	require.NotNil(t, chat.Usage.PromptTokensDetails)
+	require.NotNil(t, chat.Usage.CompletionTokensDetails)
+	assert.Equal(t, 3, chat.Usage.PromptTokensDetails.CachedTokens)
+	assert.Equal(t, 4, chat.Usage.PromptTokensDetails.AudioTokens)
+	assert.Equal(t, 5, chat.Usage.CompletionTokensDetails.ReasoningTokens)
+	assert.Equal(t, 6, chat.Usage.CompletionTokensDetails.AudioTokens)
+	assert.Equal(t, 7, chat.Usage.CompletionTokensDetails.AcceptedPredictionTokens)
+	assert.Equal(t, 8, chat.Usage.CompletionTokensDetails.RejectedPredictionTokens)
+}
+
 func TestResponsesToChatCompletions_WebSearch(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_ws",

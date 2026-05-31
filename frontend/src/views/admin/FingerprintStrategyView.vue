@@ -114,6 +114,12 @@
               </span>
             </button>
           </div>
+          <div class="fingerprint-preset-impact">
+            <span>保存后将应用</span>
+            <ul>
+              <li v-for="change in activePresetChanges" :key="change">{{ change }}</li>
+            </ul>
+          </div>
         </div>
 
         <div class="fingerprint-panel">
@@ -523,7 +529,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { CreateProfileRequest, TLSFingerprintProfile } from '@/api/admin'
@@ -531,6 +537,7 @@ import type { ClaudeCodeFingerprintDriftStatus, ClaudeCodeFingerprintLabDiagnosi
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import { useFingerprintStrategyForm } from '@/composables/useFingerprintStrategyForm'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
@@ -551,8 +558,6 @@ const tlsCollectorImporting = ref(false)
 const tlsCollectorFingerprints = ref<TLSCollectorFingerprint[]>([])
 const tlsCollectorCapturePort = ref('8090')
 const tlsCollectorToken = ref(loadTLSCollectorToken())
-
-type PresetID = 'stable' | 'compatible' | 'debug'
 
 interface TLSCollectorFingerprint {
   id?: string
@@ -585,67 +590,18 @@ interface TLSCollectorFingerprint {
 const TLS_COLLECTOR_BASE_URL = 'https://tls.sub2api.org'
 const TLS_COLLECTOR_TOKEN_STORAGE_KEY = 'sub2api_tls_fingerprint_token'
 
-const form = reactive({
-  min_claude_code_version: '',
-  max_claude_code_version: '',
-  enable_fingerprint_unification: true,
-  enable_metadata_passthrough: false,
-  enable_cch_signing: true
-})
-
-const presets = [
-  {
-    id: 'stable',
-    badge: '推荐',
-    title: '稳定模式',
-    description: '大多数团队直接选它。统一关键指纹，减少 Claude Code 客户端限制和共享账号漂移。',
-    tone: 'good'
-  },
-  {
-    id: 'compatible',
-    badge: '兼容',
-    title: '兼容模式',
-    description: '尽量尊重原客户端 metadata，适合 Cline、Cherry Studio、自研脚本混用时排查问题。',
-    tone: 'neutral'
-  },
-  {
-    id: 'debug',
-    badge: '排查',
-    title: '调试模式',
-    description: '尽量少改请求，只保留必要签名。适合短时间定位上游为什么拒绝请求。',
-    tone: 'warn'
-  }
-] as const
-
-const activePreset = computed<PresetID | 'custom'>(() => {
-  if (
-    form.enable_fingerprint_unification &&
-    !form.enable_metadata_passthrough &&
-    form.enable_cch_signing
-  ) {
-    return 'stable'
-  }
-  if (
-    form.enable_fingerprint_unification &&
-    form.enable_metadata_passthrough &&
-    form.enable_cch_signing
-  ) {
-    return 'compatible'
-  }
-  if (
-    !form.enable_fingerprint_unification &&
-    form.enable_metadata_passthrough &&
-    form.enable_cch_signing
-  ) {
-    return 'debug'
-  }
-  return 'custom'
-})
-
-const activePresetLabel = computed(() => {
-  const preset = presets.find((item) => item.id === activePreset.value)
-  return preset?.title || '自定义模式'
-})
+const {
+  form,
+  presets,
+  activePreset,
+  activePresetLabel,
+  activePresetChanges,
+  validationErrors,
+  applyPreset,
+  applyRecommendedPreset,
+  loadSettings: loadFingerprintSettings,
+  buildPayload: buildFingerprintPayload
+} = useFingerprintStrategyForm()
 
 const visibleProfiles = computed(() => profiles.value.slice(0, 4))
 
@@ -1345,28 +1301,6 @@ function formatBetaTokens(beta: string | undefined) {
   return `${tokens.slice(0, 3).join(', ')} +${tokens.length - 3}`
 }
 
-function applyPreset(preset: PresetID) {
-  if (preset === 'stable') {
-    form.enable_fingerprint_unification = true
-    form.enable_metadata_passthrough = false
-    form.enable_cch_signing = true
-    return
-  }
-  if (preset === 'compatible') {
-    form.enable_fingerprint_unification = true
-    form.enable_metadata_passthrough = true
-    form.enable_cch_signing = true
-    return
-  }
-  form.enable_fingerprint_unification = false
-  form.enable_metadata_passthrough = true
-  form.enable_cch_signing = true
-}
-
-function applyRecommendedPreset() {
-  applyPreset('stable')
-}
-
 async function loadData() {
   loading.value = true
   try {
@@ -1377,11 +1311,7 @@ async function loadData() {
       adminAPI.settings.getClaudeCodeFingerprintDrift(),
       adminAPI.settings.getClaudeCodeFingerprintLabDiagnosis().catch(() => null)
     ])
-    form.min_claude_code_version = settings.min_claude_code_version || ''
-    form.max_claude_code_version = settings.max_claude_code_version || ''
-    form.enable_fingerprint_unification = settings.enable_fingerprint_unification !== false
-    form.enable_metadata_passthrough = settings.enable_metadata_passthrough === true
-    form.enable_cch_signing = settings.enable_cch_signing !== false
+    loadFingerprintSettings(settings)
     profiles.value = tlsProfiles
     applyFingerprintLibrary(fingerprintLibrary)
     fingerprintLabDiagnosis.value = labDiagnosis
@@ -1394,15 +1324,13 @@ async function loadData() {
 }
 
 async function saveSettings() {
+  if (validationErrors.value.length) {
+    appStore.showError(validationErrors.value[0])
+    return
+  }
   saving.value = true
   try {
-    await adminAPI.settings.updateSettings({
-      min_claude_code_version: form.min_claude_code_version,
-      max_claude_code_version: form.max_claude_code_version,
-      enable_fingerprint_unification: form.enable_fingerprint_unification,
-      enable_metadata_passthrough: form.enable_metadata_passthrough,
-      enable_cch_signing: form.enable_cch_signing
-    })
+    await adminAPI.settings.updateSettings(buildFingerprintPayload())
     appStore.showSuccess('指纹策略已保存')
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, '保存指纹策略失败'))
@@ -1811,6 +1739,54 @@ onMounted(async () => {
 
 :global(.dark) .fingerprint-preset-card small {
   color: rgb(148 163 184);
+}
+
+.fingerprint-preset-impact {
+  margin-top: 1rem;
+  border: 1px dashed rgb(125 211 252 / 0.8);
+  border-radius: 1rem;
+  background: rgb(240 249 255 / 0.62);
+  padding: 0.85rem 1rem;
+}
+
+:global(.dark) .fingerprint-preset-impact {
+  border-color: rgb(56 189 248 / 0.42);
+  background: rgb(8 47 73 / 0.24);
+}
+
+.fingerprint-preset-impact span {
+  display: block;
+  color: rgb(2 132 199);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+:global(.dark) .fingerprint-preset-impact span {
+  color: rgb(125 211 252);
+}
+
+.fingerprint-preset-impact ul {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  color: rgb(51 65 85);
+  font-size: 0.82rem;
+}
+
+:global(.dark) .fingerprint-preset-impact ul {
+  color: rgb(203 213 225);
+}
+
+.fingerprint-preset-impact li {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.fingerprint-preset-impact li::before {
+  position: absolute;
+  left: 0;
+  color: rgb(14 165 233);
+  content: "•";
 }
 
 .fingerprint-preset-mark,

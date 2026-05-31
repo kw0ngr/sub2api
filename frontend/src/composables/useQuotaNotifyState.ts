@@ -20,14 +20,16 @@ export function useQuotaNotifyState() {
   })
 
   function loadGlobalState() {
-    adminAPI.settings
-      .getSettings()
-      .then((settings) => {
-        globalEnabled.value = settings.account_quota_notify_enabled === true
-      })
-      .catch(() => {
-        globalEnabled.value = false
-      })
+    const settingsPromise = adminAPI.settings?.getSettings?.()
+    if (!settingsPromise) {
+      globalEnabled.value = false
+      return
+    }
+    settingsPromise.then((settings) => {
+      globalEnabled.value = settings.account_quota_notify_enabled === true
+    }).catch(() => {
+      globalEnabled.value = false
+    })
   }
 
   function loadFromExtra(extra: Record<string, unknown> | null | undefined) {

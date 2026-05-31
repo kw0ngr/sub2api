@@ -152,6 +152,35 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
+func TestAnthropicToResponsesResponse_OpenAISemanticInputTokensIncludesCache(t *testing.T) {
+	resp := &AnthropicResponse{
+		ID:         "msg_cache",
+		Type:       "message",
+		Role:       "assistant",
+		Model:      "claude-sonnet-4-5",
+		StopReason: "end_turn",
+		Content: []AnthropicContentBlock{{
+			Type: "text",
+			Text: "cached response",
+		}},
+		Usage: AnthropicUsage{
+			InputTokens:              10,
+			OutputTokens:             5,
+			CacheReadInputTokens:     3,
+			CacheCreationInputTokens: 2,
+		},
+	}
+
+	out := AnthropicToResponsesResponse(resp)
+
+	require.NotNil(t, out.Usage)
+	assert.Equal(t, 15, out.Usage.InputTokens)
+	assert.Equal(t, 5, out.Usage.OutputTokens)
+	assert.Equal(t, 20, out.Usage.TotalTokens)
+	require.NotNil(t, out.Usage.InputTokensDetails)
+	assert.Equal(t, 3, out.Usage.InputTokensDetails.CachedTokens)
+}
+
 func TestAnthropicToResponses_ThinkingIgnored(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.2",
