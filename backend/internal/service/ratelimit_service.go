@@ -122,13 +122,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
-	if account != nil && !(account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()) &&
-		len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
-		return true
-	}
-	if account != nil && account.Type == AccountTypeAPIKey {
+	if account != nil {
+		customErrorCodesDisabledPool := account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()
+		if !customErrorCodesDisabledPool &&
+			len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
+			return true
+		}
 		if account.Platform == PlatformOpenAI && (statusCode == http.StatusTooManyRequests || statusCode == 529) {
-			if !(account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()) {
+			if account.Type == AccountTypeAPIKey && !customErrorCodesDisabledPool {
 				action := ClassifyAPIKeyStatusAction(account, statusCode, responseBody)
 				if action == APIKeyStatusActionPermanentDisable {
 					if s == nil || s.accountRepo == nil {
@@ -140,29 +141,34 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 			}
 			goto genericRuntimePath
 		}
-		// Pool mode without custom error codes: upstream manages key state, skip local marking.
-		if account.IsPoolMode() && !account.IsCustomErrorCodesEnabled() {
-			slog.Info("pool_mode_error_skipped", "account_id", account.ID, "status_code", statusCode)
-			return false
-		}
-		action := ClassifyAPIKeyStatusAction(account, statusCode, responseBody)
-		if s == nil || s.accountRepo == nil {
-			return action == APIKeyStatusActionPermanentDisable || action == APIKeyStatusActionTemporaryCooldown
-		}
-		switch action {
-		case APIKeyStatusActionPermanentDisable:
-			s.handleAPIKeyPermanentDisable(ctx, account, statusCode, responseBody)
-			return true
-		case APIKeyStatusActionTemporaryCooldown:
-			s.handleAPIKeyTemporaryCooldown(ctx, account, statusCode, headers, responseBody)
-			return true
-		default:
-			// Ignore or Valid: do not fall through to OAuth-oriented logic below.
-			return false
+		if account.Type == AccountTypeAPIKey {
+			// Pool mode without custom error codes: upstream manages key state, skip local marking.
+			if customErrorCodesDisabledPool {
+				slog.Info("pool_mode_error_skipped", "account_id", account.ID, "status_code", statusCode)
+				return false
+			}
+			action := ClassifyAPIKeyStatusAction(account, statusCode, responseBody)
+			if s == nil || s.accountRepo == nil {
+				return action == APIKeyStatusActionPermanentDisable || action == APIKeyStatusActionTemporaryCooldown
+			}
+			switch action {
+			case APIKeyStatusActionPermanentDisable:
+				s.handleAPIKeyPermanentDisable(ctx, account, statusCode, responseBody)
+				return true
+			case APIKeyStatusActionTemporaryCooldown:
+				s.handleAPIKeyTemporaryCooldown(ctx, account, statusCode, headers, responseBody)
+				return true
+			default:
+				// Ignore or Valid: do not fall through to OAuth-oriented logic below.
+				return false
+			}
 		}
 	}
 
 genericRuntimePath:
+	if account == nil {
+		return false
+	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；仅当用户显式配置自定义错误码时按本地策略处理。

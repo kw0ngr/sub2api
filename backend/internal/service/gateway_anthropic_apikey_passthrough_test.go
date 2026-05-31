@@ -1104,7 +1104,9 @@ func TestGatewayService_AnthropicAPIKeyMimic_RelayStrongUsesBearerAndOAuthBeta(t
 	require.Contains(t, beta, claude.BetaAdvancedToolUse)
 	debugLine, ok := c.Get(claudeMimicDebugInfoKey)
 	require.True(t, ok)
-	require.Contains(t, debugLine.(string), "tokenType=apikey-relay-strong")
+	debugText, ok := debugLine.(string)
+	require.True(t, ok)
+	require.Contains(t, debugText, "tokenType=apikey-relay-strong")
 }
 
 func TestGatewayService_AnthropicOAuth_NotAffectedByAPIKeyPassthroughToggle(t *testing.T) {

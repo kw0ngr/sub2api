@@ -25,18 +25,18 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 
 	var payload strings.Builder
 	payload.Grow(256 + len(message) + len(model))
-	payload.WriteString(`{"type":"response.failed","response":{"id":`)
-	payload.WriteString(strconv.Quote(responseID))
-	payload.WriteString(`,"object":"response"`)
+	_, _ = payload.WriteString(`{"type":"response.failed","response":{"id":`)
+	_, _ = payload.WriteString(strconv.Quote(responseID))
+	_, _ = payload.WriteString(`,"object":"response"`)
 	if model != "" {
-		payload.WriteString(`,"model":`)
-		payload.WriteString(strconv.Quote(model))
+		_, _ = payload.WriteString(`,"model":`)
+		_, _ = payload.WriteString(strconv.Quote(model))
 	}
-	payload.WriteString(`,"status":"failed","output":[],"error":{"code":`)
-	payload.WriteString(strconv.Quote(code))
-	payload.WriteString(`,"message":`)
-	payload.WriteString(strconv.Quote(message))
-	payload.WriteString(`}}}`)
+	_, _ = payload.WriteString(`,"status":"failed","output":[],"error":{"code":`)
+	_, _ = payload.WriteString(strconv.Quote(code))
+	_, _ = payload.WriteString(`,"message":`)
+	_, _ = payload.WriteString(strconv.Quote(message))
+	_, _ = payload.WriteString(`}}}`)
 
 	if _, err := fmt.Fprintf(c.Writer, "event: response.failed\ndata: %s\n\n", payload.String()); err != nil {
 		_ = c.Error(err)

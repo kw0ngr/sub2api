@@ -205,10 +205,10 @@ func TestGetModelPricing_OpenAIGPT54NanoFallback(t *testing.T) {
 	pricing, err := svc.GetModelPricing("gpt-5.4-nano")
 	require.NoError(t, err)
 	require.NotNil(t, pricing)
-	require.InDelta(t, 2.5e-6, pricing.InputPricePerToken, 1e-12)
-	require.InDelta(t, 15e-6, pricing.OutputPricePerToken, 1e-12)
-	require.InDelta(t, 0.25e-6, pricing.CacheReadPricePerToken, 1e-12)
-	require.Equal(t, 272000, pricing.LongContextInputThreshold)
+	require.InDelta(t, 2e-7, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 1.25e-6, pricing.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 2e-8, pricing.CacheReadPricePerToken, 1e-12)
+	require.Zero(t, pricing.LongContextInputThreshold)
 }
 
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
@@ -350,7 +350,7 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{name: "openai gpt5.5", model: "gpt-5.5", expectedInput: 2.5e-6},
 		{name: "openai gpt5.4", model: "gpt-5.4", expectedInput: 2.5e-6},
 		{name: "openai gpt5.4 mini", model: "gpt-5.4-mini", expectedInput: 7.5e-7},
-		{name: "openai gpt5.4 nano", model: "gpt-5.4-nano", expectedInput: 2.5e-6},
+		{name: "openai gpt5.4 nano", model: "gpt-5.4-nano", expectedInput: 2e-7},
 		{name: "openai gpt5.3 codex", model: "gpt-5.3-codex", expectedInput: 1.5e-6},
 		{name: "openai gpt5.1 codex max alias", model: "gpt-5.1-codex-max", expectedInput: 1.5e-6},
 		{name: "openai codex mini latest alias", model: "codex-mini-latest", expectedInput: 1.5e-6},

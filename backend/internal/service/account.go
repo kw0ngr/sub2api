@@ -1308,7 +1308,9 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 // 启用后将模拟 Claude Code (Node.js) 客户端的 TLS 握手特征
 func (a *Account) IsTLSFingerprintEnabled() bool {
 	// 仅支持 Anthropic 家族账号
-	if !a.IsAnthropicOAuthOrSetupToken() && !(a.Platform == PlatformAnthropic && a.Type == AccountTypeAPIKey) {
+	isAnthropicAPIKey := a.Platform == PlatformAnthropic && a.Type == AccountTypeAPIKey
+	supportedAccountType := a.IsAnthropicOAuthOrSetupToken() || isAnthropicAPIKey
+	if !supportedAccountType {
 		return false
 	}
 	if a.Extra == nil {

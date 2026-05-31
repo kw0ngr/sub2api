@@ -25,7 +25,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
+	"golang.org/x/net/http2/h2c" //nolint:staticcheck // Keep x/net h2c for preconfigured cleartext HTTP/2 handler behavior.
 )
 
 //go:embed VERSION
@@ -118,7 +118,7 @@ func runSetupServer() {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           h2c.NewHandler(r, &http2.Server{}),
+		Handler:           h2c.NewHandler(r, &http2.Server{}), //nolint:staticcheck // Keep compatibility with existing h2c setup server path.
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

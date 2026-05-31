@@ -197,7 +197,7 @@ func TestForwardAsAnthropic_EventNamedTerminalReturns(t *testing.T) {
 		"",
 	}, "\n")
 	upstreamStream := newOpenAIChatBlockingReadCloser([]byte(upstreamBody))
-	defer upstreamStream.Close()
+	defer func() { _ = upstreamStream.Close() }()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_messages_event_terminal"}},
@@ -256,7 +256,7 @@ func TestForwardAsAnthropic_BufferedEventNamedTerminalReturns(t *testing.T) {
 		"",
 	}, "\n")
 	upstreamStream := newOpenAIChatBlockingReadCloser([]byte(upstreamBody))
-	defer upstreamStream.Close()
+	defer func() { _ = upstreamStream.Close() }()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_messages_buffered_event_terminal"}},

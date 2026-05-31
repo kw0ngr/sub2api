@@ -622,11 +622,6 @@ func isOpenAICompatResponsesTerminalEvent(eventType string) bool {
 	}
 }
 
-func isOpenAICompatDoneSentinelLine(line string) bool {
-	payload, ok := extractOpenAISSEDataLine(line)
-	return ok && strings.TrimSpace(payload) == "[DONE]"
-}
-
 func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	resp *http.Response,
 	logPrefix string,

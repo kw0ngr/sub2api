@@ -1699,10 +1699,6 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
 }
 
-func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.Context, account *Account, requestedModel string) *Account {
-	return s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, account, requestedModel, PlatformOpenAI)
-}
-
 func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountForPlatform(ctx context.Context, account *Account, requestedModel string, platform string) *Account {
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	if account == nil {

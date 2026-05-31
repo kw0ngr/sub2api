@@ -609,11 +609,6 @@ func parseOpenRouterCredits(body []byte) (balance, total, used, remaining string
 	return "available", total, used, remaining
 }
 
-func parseDeepSeekBalance(body []byte) (balance, currency string) {
-	balance, currency, _ = parseDeepSeekBalanceDetails(body)
-	return balance, currency
-}
-
 func parseDeepSeekBalanceDetails(body []byte) (balance, currency string, amounts []float64) {
 	var payload struct {
 		BalanceInfos []struct {

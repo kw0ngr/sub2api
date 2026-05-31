@@ -350,7 +350,7 @@ func TestForwardAsChatCompletions_EventNamedTerminalReturns(t *testing.T) {
 		"",
 	}, "\n")
 	upstreamStream := newOpenAIChatBlockingReadCloser([]byte(upstreamBody))
-	defer upstreamStream.Close()
+	defer func() { _ = upstreamStream.Close() }()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_event_terminal"}},
@@ -441,7 +441,7 @@ func TestForwardAsChatCompletions_BufferedTerminalWithoutUpstreamCloseReturns(t 
 
 	upstreamBody := []byte(`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":17,"output_tokens":8,"total_tokens":25,"input_tokens_details":{"cached_tokens":6}}}}` + "\n\n")
 	upstreamStream := newOpenAIChatBlockingReadCloser(upstreamBody)
-	defer upstreamStream.Close()
+	defer func() { _ = upstreamStream.Close() }()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_buffered_terminal_no_close"}},
