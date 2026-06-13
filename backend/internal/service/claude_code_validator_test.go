@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const claudeCodeMetadataUserIDJSON = `{"device_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","account_uuid":"","session_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`
+
 func TestClaudeCodeValidator_ProbeBypass(t *testing.T) {
 	validator := NewClaudeCodeValidator()
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
@@ -55,6 +57,94 @@ func TestClaudeCodeValidator_NonMessagesPathUAOnly(t *testing.T) {
 
 	ok := validator.Validate(req, nil)
 	require.True(t, ok)
+}
+
+func TestClaudeCodeValidator_MessagesCountTokensUAOnly(t *testing.T) {
+	validator := NewClaudeCodeValidator()
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages/count_tokens", nil)
+	req.Header.Set("User-Agent", "claude-cli/1.2.3 (darwin; arm64)")
+
+	ok := validator.Validate(req, map[string]any{
+		"model": "claude-sonnet-4-6",
+	})
+	require.True(t, ok)
+}
+
+func TestClaudeCodeValidator_BillingBlockRecognizedWithoutIdentityPrompt(t *testing.T) {
+	validator := NewClaudeCodeValidator()
+	unrelatedPrompt := "You are a background monitor. Inspect recent tool use and decide whether it is allowed."
+	require.Less(t, validator.bestSimilarityScore(unrelatedPrompt), systemPromptThreshold)
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
+	req.Header.Set("User-Agent", "claude-cli/2.1.162 (external, cli)")
+	req.Header.Set("X-App", "cli")
+	req.Header.Set("anthropic-beta", "claude-code-20250219")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	ok := validator.Validate(req, map[string]any{
+		"model": "claude-3-5-haiku-20241022",
+		"system": []any{
+			map[string]any{
+				"type": "text",
+				"text": "x-anthropic-billing-header: cc_version=2.1.162.884; cc_entrypoint=cli; cch=d8726;",
+			},
+			map[string]any{
+				"type": "text",
+				"text": unrelatedPrompt,
+			},
+		},
+		"metadata": map[string]any{
+			"user_id": claudeCodeMetadataUserIDJSON,
+		},
+	})
+	require.True(t, ok)
+}
+
+func TestClaudeCodeValidator_BillingBlockNonCLIEntrypointFallsThrough(t *testing.T) {
+	validator := NewClaudeCodeValidator()
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
+	req.Header.Set("User-Agent", "claude-cli/2.1.162 (external, cli)")
+	req.Header.Set("X-App", "cli")
+	req.Header.Set("anthropic-beta", "claude-code-20250219")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	ok := validator.Validate(req, map[string]any{
+		"model": "claude-3-5-haiku-20241022",
+		"system": []any{
+			map[string]any{
+				"type": "text",
+				"text": "x-anthropic-billing-header: cc_version=2.1.162.884; cc_entrypoint=sdk; cch=d8726;",
+			},
+			map[string]any{
+				"type": "text",
+				"text": "Some unrelated system prompt that does not resemble Claude Code.",
+			},
+		},
+		"metadata": map[string]any{
+			"user_id": claudeCodeMetadataUserIDJSON,
+		},
+	})
+	require.False(t, ok)
+}
+
+func TestClaudeCodeValidator_BillingBlockStillRequiresClaudeCodeUA(t *testing.T) {
+	validator := NewClaudeCodeValidator()
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
+	req.Header.Set("User-Agent", "curl/8.0.0")
+	req.Header.Set("X-App", "cli")
+	req.Header.Set("anthropic-beta", "claude-code-20250219")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	ok := validator.Validate(req, map[string]any{
+		"model": "claude-3-5-haiku-20241022",
+		"system": []any{
+			map[string]any{
+				"type": "text",
+				"text": "x-anthropic-billing-header: cc_version=2.1.162.884; cc_entrypoint=cli; cch=d8726;",
+			},
+		},
+	})
+	require.False(t, ok)
 }
 
 func TestExtractVersion(t *testing.T) {

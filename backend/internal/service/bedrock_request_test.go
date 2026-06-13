@@ -9,7 +9,7 @@ import (
 )
 
 func TestPrepareBedrockRequestBody_BasicFields(t *testing.T) {
-	input := `{"model":"claude-opus-4-6","stream":true,"max_tokens":1024,"messages":[{"role":"user","content":"hi"}]}`
+	input := `{"model":"claude-opus-4-6","stream":true,"provider":"anthropic","metadata":{"user_id":"u"},"anthropic_beta":["unsupported-token"],"max_tokens":1024,"messages":[{"role":"user","content":"hi"}]}`
 	result, err := PrepareBedrockRequestBody([]byte(input), "us.anthropic.claude-opus-4-6-v1", "")
 	require.NoError(t, err)
 
@@ -18,8 +18,20 @@ func TestPrepareBedrockRequestBody_BasicFields(t *testing.T) {
 	// model 和 stream 应被移除
 	assert.False(t, gjson.GetBytes(result, "model").Exists())
 	assert.False(t, gjson.GetBytes(result, "stream").Exists())
+	assert.False(t, gjson.GetBytes(result, "provider").Exists())
+	assert.False(t, gjson.GetBytes(result, "metadata").Exists())
+	assert.False(t, gjson.GetBytes(result, "anthropic_beta").Exists())
 	// max_tokens 应保留
 	assert.Equal(t, int64(1024), gjson.GetBytes(result, "max_tokens").Int())
+}
+
+func TestPrepareBedrockRequestBody_Fable5ThinkingAdaptive(t *testing.T) {
+	input := `{"model":"claude-fable-5","thinking":{"type":"enabled","budget_tokens":10000},"messages":[{"role":"user","content":"hi"}]}`
+	result, err := PrepareBedrockRequestBody([]byte(input), "anthropic.claude-fable-5", "")
+	require.NoError(t, err)
+
+	assert.Equal(t, "adaptive", gjson.GetBytes(result, "thinking.type").String())
+	assert.False(t, gjson.GetBytes(result, "thinking.budget_tokens").Exists())
 }
 
 func TestPrepareBedrockRequestBody_OutputFormatInlineSchema(t *testing.T) {

@@ -19,6 +19,7 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 			"openai_oauth_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
 			"openai_ws_force_http":                         true,
 			"mixed_scheduling":                             true,
+			"model_rate_limits":                            map[string]any{"gemini-3.1-pro-preview": map[string]any{"rate_limit_reset_at": "2026-06-02T00:00:00Z"}},
 			"unused_large_field":                           "drop-me",
 		},
 	}
@@ -29,5 +30,6 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Equal(t, service.OpenAIWSIngressModePassthrough, got.Extra["openai_oauth_responses_websockets_v2_mode"])
 	require.Equal(t, true, got.Extra["openai_ws_force_http"])
 	require.Equal(t, true, got.Extra["mixed_scheduling"])
+	require.NotNil(t, got.Extra["model_rate_limits"])
 	require.Nil(t, got.Extra["unused_large_field"])
 }

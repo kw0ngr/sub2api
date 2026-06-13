@@ -328,9 +328,8 @@ func TestHandleSmartRetry_ShortDelay_SmartRetryFailed_ReturnsSwitchError(t *test
 	require.Equal(t, "gemini-3-flash", result.switchError.RateLimitedModel)
 	require.False(t, result.switchError.IsStickySession)
 
-	// 验证模型限流已设置
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gemini-3-flash", repo.modelRateLimitCalls[0].modelKey)
+	// 验证模型限流已设置；Gemini 同时写具体模型和 capability 级避让 key。
+	requireModelRateLimitKeys(t, repo.modelRateLimitCalls, "gemini-3-flash", antigravityGeminiModelRateLimitKey)
 	require.Len(t, upstream.calls, 1, "should have made one retry call (max attempts)")
 }
 
@@ -1308,9 +1307,8 @@ func TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_ClearsSession
 	require.Equal(t, int64(77), cache.deleteCalls[0].groupID)
 	require.Equal(t, "sticky-503-short", cache.deleteCalls[0].sessionHash)
 
-	// 验证模型限流已设置
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gemini-3-pro", repo.modelRateLimitCalls[0].modelKey)
+	// 验证模型限流已设置；Gemini 同时写具体模型和 capability 级避让 key。
+	requireModelRateLimitKeys(t, repo.modelRateLimitCalls, "gemini-3-pro", antigravityGeminiModelRateLimitKey)
 }
 
 // TestAntigravityRetryLoop_SmartRetryFailed_StickySession_SwitchErrorPropagates

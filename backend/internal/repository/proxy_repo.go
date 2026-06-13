@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"sort"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -15,20 +17,16 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 )
 
-type sqlQuerier interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
 type proxyRepository struct {
 	client *dbent.Client
-	sql    sqlQuerier
+	sql    sqlExecutor
 }
 
 func NewProxyRepository(client *dbent.Client, sqlDB *sql.DB) service.ProxyRepository {
 	return newProxyRepositoryWithSQL(client, sqlDB)
 }
 
-func newProxyRepositoryWithSQL(client *dbent.Client, sqlq sqlQuerier) *proxyRepository {
+func newProxyRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *proxyRepository {
 	return &proxyRepository{client: client, sql: sqlq}
 }
 
@@ -49,6 +47,9 @@ func (r *proxyRepository) Create(ctx context.Context, proxyIn *service.Proxy) er
 	created, err := builder.Save(ctx)
 	if err == nil {
 		applyProxyEntityToService(proxyIn, created)
+		if saveErr := r.saveProxyExtraFields(ctx, proxyIn); saveErr != nil {
+			return saveErr
+		}
 	}
 	return err
 }
@@ -61,7 +62,11 @@ func (r *proxyRepository) GetByID(ctx context.Context, id int64) (*service.Proxy
 		}
 		return nil, err
 	}
-	return proxyEntityToService(m), nil
+	out := proxyEntityToService(m)
+	if err := r.loadProxyExtraFields(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *proxyRepository) ListByIDs(ctx context.Context, ids []int64) ([]service.Proxy, error) {
@@ -78,7 +83,11 @@ func (r *proxyRepository) ListByIDs(ctx context.Context, ids []int64) ([]service
 
 	out := make([]service.Proxy, 0, len(proxies))
 	for i := range proxies {
-		out = append(out, *proxyEntityToService(proxies[i]))
+		item := proxyEntityToService(proxies[i])
+		if err := r.loadProxyExtraFields(ctx, item); err != nil {
+			return nil, err
+		}
+		out = append(out, *item)
 	}
 	return out, nil
 }
@@ -104,6 +113,9 @@ func (r *proxyRepository) Update(ctx context.Context, proxyIn *service.Proxy) er
 	updated, err := builder.Save(ctx)
 	if err == nil {
 		applyProxyEntityToService(proxyIn, updated)
+		if saveErr := r.saveProxyExtraFields(ctx, proxyIn); saveErr != nil {
+			return saveErr
+		}
 		return nil
 	}
 	if dbent.IsNotFound(err) {
@@ -153,7 +165,11 @@ func (r *proxyRepository) ListWithFilters(ctx context.Context, params pagination
 
 	outProxies := make([]service.Proxy, 0, len(proxies))
 	for i := range proxies {
-		outProxies = append(outProxies, *proxyEntityToService(proxies[i]))
+		item := proxyEntityToService(proxies[i])
+		if err := r.loadProxyExtraFields(ctx, item); err != nil {
+			return nil, nil, err
+		}
+		outProxies = append(outProxies, *item)
 	}
 
 	return outProxies, paginationResultFromTotal(int64(total), params), nil
@@ -235,6 +251,9 @@ func (r *proxyRepository) buildProxyWithAccountCountResult(ctx context.Context, 
 		if proxyOut == nil {
 			continue
 		}
+		if err := r.loadProxyExtraFields(ctx, proxyOut); err != nil {
+			return nil, nil, err
+		}
 		result = append(result, service.ProxyWithAccountCount{
 			Proxy:        *proxyOut,
 			AccountCount: counts[proxyOut.ID],
@@ -258,6 +277,8 @@ func proxyListOrder(params pagination.PaginationParams) []func(*entsql.Selector)
 		field = proxy.FieldStatus
 	case "created_at":
 		field = proxy.FieldCreatedAt
+	case "expiry":
+		field = "expires_at"
 	default:
 		field = proxy.FieldID
 	}
@@ -277,7 +298,11 @@ func (r *proxyRepository) ListActive(ctx context.Context) ([]service.Proxy, erro
 	}
 	outProxies := make([]service.Proxy, 0, len(proxies))
 	for i := range proxies {
-		outProxies = append(outProxies, *proxyEntityToService(proxies[i]))
+		item := proxyEntityToService(proxies[i])
+		if err := r.loadProxyExtraFields(ctx, item); err != nil {
+			return nil, err
+		}
+		outProxies = append(outProxies, *item)
 	}
 	return outProxies, nil
 }
@@ -403,6 +428,9 @@ func (r *proxyRepository) ListActiveWithAccountCount(ctx context.Context) ([]ser
 		if proxyOut == nil {
 			continue
 		}
+		if err := r.loadProxyExtraFields(ctx, proxyOut); err != nil {
+			return nil, err
+		}
 		result = append(result, service.ProxyWithAccountCount{
 			Proxy:        *proxyOut,
 			AccountCount: counts[proxyOut.ID],
@@ -432,6 +460,8 @@ func proxyEntityToService(m *dbent.Proxy) *service.Proxy {
 	if m.Password != nil {
 		out.Password = *m.Password
 	}
+	out.FallbackMode = service.FallbackModeNone
+	out.ExpiryWarnDays = 7
 	return out
 }
 
@@ -442,4 +472,244 @@ func applyProxyEntityToService(dst *service.Proxy, src *dbent.Proxy) {
 	dst.ID = src.ID
 	dst.CreatedAt = src.CreatedAt
 	dst.UpdatedAt = src.UpdatedAt
+}
+
+func (r *proxyRepository) saveProxyExtraFields(ctx context.Context, p *service.Proxy) error {
+	if r.sql == nil || p == nil || p.ID == 0 {
+		return nil
+	}
+	mode := normalizeProxyFallbackMode(p.FallbackMode)
+	warnDays := p.ExpiryWarnDays
+	if warnDays <= 0 {
+		warnDays = 7
+	}
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE proxies
+		SET expires_at=$1, fallback_mode=$2, backup_proxy_id=$3, expiry_warn_days=$4, updated_at=NOW()
+		WHERE id=$5 AND deleted_at IS NULL
+	`, p.ExpiresAt, mode, p.BackupProxyID, warnDays, p.ID)
+	if err != nil {
+		return err
+	}
+	p.FallbackMode = mode
+	p.ExpiryWarnDays = warnDays
+	return nil
+}
+
+func (r *proxyRepository) loadProxyExtraFields(ctx context.Context, p *service.Proxy) error {
+	if r.sql == nil || p == nil || p.ID == 0 {
+		return nil
+	}
+	var (
+		expiresAt     sql.NullTime
+		fallbackMode  sql.NullString
+		backupProxyID sql.NullInt64
+		warnDays      sql.NullInt64
+	)
+	if err := scanSingleRow(ctx, r.sql, `
+		SELECT expires_at, fallback_mode, backup_proxy_id, expiry_warn_days
+		FROM proxies
+		WHERE id=$1 AND deleted_at IS NULL
+	`, []any{p.ID}, &expiresAt, &fallbackMode, &backupProxyID, &warnDays); err != nil {
+		return err
+	}
+	if expiresAt.Valid {
+		t := expiresAt.Time
+		p.ExpiresAt = &t
+	} else {
+		p.ExpiresAt = nil
+	}
+	if fallbackMode.Valid {
+		p.FallbackMode = normalizeProxyFallbackMode(fallbackMode.String)
+	} else {
+		p.FallbackMode = service.FallbackModeNone
+	}
+	if backupProxyID.Valid {
+		id := backupProxyID.Int64
+		p.BackupProxyID = &id
+	} else {
+		p.BackupProxyID = nil
+	}
+	if warnDays.Valid {
+		p.ExpiryWarnDays = int(warnDays.Int64)
+	} else {
+		p.ExpiryWarnDays = 7
+	}
+	return nil
+}
+
+func normalizeProxyFallbackMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case service.FallbackModeProxy:
+		return service.FallbackModeProxy
+	case service.FallbackModeDirect:
+		return service.FallbackModeDirect
+	default:
+		return service.FallbackModeNone
+	}
+}
+
+// ListAllForFallback returns every non-deleted proxy, including inactive and
+// expired proxies, so fallback chain resolution has a complete snapshot.
+func (r *proxyRepository) ListAllForFallback(ctx context.Context) ([]service.Proxy, error) {
+	if r.sql == nil {
+		return []service.Proxy{}, nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT id, name, protocol, host, port, username, password, status, created_at, updated_at,
+		       expires_at, fallback_mode, backup_proxy_id, expiry_warn_days
+		FROM proxies
+		WHERE deleted_at IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]service.Proxy, 0)
+	for rows.Next() {
+		p, err := scanProxyFallbackRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func scanProxyFallbackRow(rows *sql.Rows) (*service.Proxy, error) {
+	var (
+		p             service.Proxy
+		username      sql.NullString
+		password      sql.NullString
+		expiresAt     sql.NullTime
+		fallbackMode  sql.NullString
+		backupProxyID sql.NullInt64
+		warnDays      sql.NullInt64
+	)
+	if err := rows.Scan(
+		&p.ID, &p.Name, &p.Protocol, &p.Host, &p.Port, &username, &password, &p.Status, &p.CreatedAt, &p.UpdatedAt,
+		&expiresAt, &fallbackMode, &backupProxyID, &warnDays,
+	); err != nil {
+		return nil, err
+	}
+	if username.Valid {
+		p.Username = username.String
+	}
+	if password.Valid {
+		p.Password = password.String
+	}
+	if expiresAt.Valid {
+		t := expiresAt.Time
+		p.ExpiresAt = &t
+	}
+	if fallbackMode.Valid {
+		p.FallbackMode = normalizeProxyFallbackMode(fallbackMode.String)
+	} else {
+		p.FallbackMode = service.FallbackModeNone
+	}
+	if backupProxyID.Valid {
+		id := backupProxyID.Int64
+		p.BackupProxyID = &id
+	}
+	if warnDays.Valid {
+		p.ExpiryWarnDays = int(warnDays.Int64)
+	} else {
+		p.ExpiryWarnDays = 7
+	}
+	return &p, nil
+}
+
+func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	all, err := r.ListAllForFallback(ctx)
+	if err != nil {
+		return 0, err
+	}
+	byID := make(map[int64]service.Proxy, len(all))
+	for _, p := range all {
+		byID[p.ID] = p
+	}
+
+	var totalChanged int64
+	accountsTouched := false
+	for _, p := range all {
+		if p.Status != service.StatusActive || !p.IsExpired(now) {
+			continue
+		}
+		target, change := service.ResolveProxyFallbackTarget(p, byID, now)
+		if !change && p.FallbackMode == service.FallbackModeProxy {
+			logger.LegacyPrintf("repository.proxy", "[ProxyExpiry] proxy %d expired but fallback chain unresolved; accounts kept", p.ID)
+		}
+		changed, sweepErr := r.sweepOneExpiredProxy(ctx, p.ID, target, change)
+		if sweepErr != nil {
+			return totalChanged, sweepErr
+		}
+		if changed > 0 {
+			totalChanged += changed
+			accountsTouched = true
+		}
+	}
+	if accountsTouched {
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventFullRebuild, nil, nil, nil); err != nil {
+			logger.LegacyPrintf("repository.proxy", "[SchedulerOutbox] enqueue proxy expiry rebuild failed: err=%v", err)
+		}
+	}
+	return totalChanged, nil
+}
+
+func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, proxyID int64, target *int64, change bool) (int64, error) {
+	if r.sql == nil {
+		return 0, nil
+	}
+	if _, err := r.sql.ExecContext(ctx,
+		`UPDATE proxies SET status=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL`,
+		service.StatusExpired, proxyID); err != nil {
+		return 0, err
+	}
+	if !change {
+		return 0, nil
+	}
+	var (
+		res sql.Result
+		err error
+	)
+	if target == nil {
+		res, err = r.sql.ExecContext(ctx, `
+			UPDATE accounts SET proxy_id=NULL, proxy_fallback_origin_id=$1, updated_at=NOW()
+			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL`, proxyID)
+	} else {
+		res, err = r.sql.ExecContext(ctx, `
+			UPDATE accounts SET proxy_id=$2, proxy_fallback_origin_id=$1, updated_at=NOW()
+			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL`, proxyID, *target)
+	}
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (r *proxyRepository) CountExpired(ctx context.Context) (int64, error) {
+	if r.sql == nil {
+		return 0, nil
+	}
+	var count int64
+	err := scanSingleRow(ctx, r.sql, `SELECT COUNT(*) FROM proxies WHERE status=$1 AND deleted_at IS NULL`, []any{service.StatusExpired}, &count)
+	return count, err
+}
+
+func (r *proxyRepository) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	if r.sql == nil {
+		return 0, nil
+	}
+	var count int64
+	err := scanSingleRow(ctx, r.sql, `
+		SELECT COUNT(*) FROM proxies
+		WHERE deleted_at IS NULL AND status=$1 AND expires_at IS NOT NULL
+		  AND expires_at > $2 AND expires_at <= $2 + (expiry_warn_days || ' days')::interval
+	`, []any{service.StatusActive, now}, &count)
+	return count, err
 }

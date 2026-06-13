@@ -266,6 +266,45 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
+func TestAdminService_UpdateGroup_ClearsDescriptionWhenEmptyString(t *testing.T) {
+	existingGroup := &Group{
+		ID:          1,
+		Name:        "existing-group",
+		Description: "Auto-created default group",
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	empty := ""
+	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Description: &empty,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.updated)
+	require.Equal(t, "", repo.updated.Description)
+}
+
+func TestAdminService_UpdateGroup_PreservesDescriptionWhenNil(t *testing.T) {
+	existingGroup := &Group{
+		ID:          1,
+		Name:        "existing-group",
+		Description: "keep me",
+		Platform:    PlatformOpenAI,
+		Status:      StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Description: nil,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.updated)
+	require.Equal(t, "keep me", repo.updated.Description)
+}
+
 func TestAdminService_CreateGroup_NormalizesMessagesDispatchModelConfig(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}

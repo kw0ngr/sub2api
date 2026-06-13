@@ -32,7 +32,7 @@ func TestHandleAnthropicStreamingResponse_TopLevelTerminalUsage(t *testing.T) {
 	}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	result, err := svc.handleAnthropicStreamingResponse(resp, c, "claude-sonnet-4", "gpt-5.4", "gpt-5.4", time.Now())
+	result, err := svc.handleAnthropicStreamingResponse(resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "openai"}, "claude-sonnet-4", "gpt-5.4", "gpt-5.4", time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 20, result.Usage.InputTokens)

@@ -492,6 +492,214 @@ func buildOpenAIImagesStreamErrorBody(message string) []byte {
 	return body
 }
 
+type OpenAIImagesUpstreamError struct {
+	StatusCode        int
+	ErrorType         string
+	Code              string
+	Message           string
+	Param             string
+	UpstreamRequestID string
+}
+
+func (e *OpenAIImagesUpstreamError) Error() string {
+	if e == nil {
+		return "openai images upstream error"
+	}
+	msg := strings.TrimSpace(e.Message)
+	if msg == "" {
+		msg = "OpenAI images upstream error"
+	}
+	if e.StatusCode > 0 {
+		return fmt.Sprintf("openai images upstream error: %d %s", e.StatusCode, msg)
+	}
+	return "openai images upstream error: " + msg
+}
+
+func writeOpenAIImagesUpstreamErrorResponse(c *gin.Context, upErr *OpenAIImagesUpstreamError) {
+	if c == nil {
+		return
+	}
+	if upErr == nil {
+		upErr = &OpenAIImagesUpstreamError{
+			StatusCode: http.StatusBadGateway,
+			ErrorType:  "upstream_error",
+			Message:    "Upstream request failed",
+		}
+	}
+	status := upErr.StatusCode
+	if status <= 0 {
+		status = http.StatusBadGateway
+	}
+	errType := strings.TrimSpace(upErr.ErrorType)
+	if errType == "" {
+		errType = openAIImagesErrorTypeForStatus(status)
+	}
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(upErr.Message))
+	if message == "" {
+		message = fmt.Sprintf("Upstream request failed (status %d)", status)
+	}
+	if requestID := strings.TrimSpace(upErr.UpstreamRequestID); requestID != "" {
+		c.Writer.Header().Set("x-request-id", requestID)
+	}
+	errObj := gin.H{
+		"type":    errType,
+		"message": message,
+	}
+	if code := strings.TrimSpace(upErr.Code); code != "" {
+		errObj["code"] = code
+	}
+	if param := strings.TrimSpace(upErr.Param); param != "" {
+		errObj["param"] = param
+	}
+	c.JSON(status, gin.H{"error": errObj})
+}
+
+func openAIImagesErrorTypeForStatus(status int) string {
+	switch {
+	case status == http.StatusBadRequest:
+		return "invalid_request_error"
+	case status == http.StatusUnauthorized:
+		return "authentication_error"
+	case status == http.StatusForbidden:
+		return "permission_error"
+	case status == http.StatusNotFound:
+		return "not_found_error"
+	case status == http.StatusTooManyRequests:
+		return "rate_limit_error"
+	case status >= 500:
+		return "api_error"
+	default:
+		return "upstream_error"
+	}
+}
+
+func openAIImagesUpstreamErrorFromHTTP(statusCode int, header http.Header, body []byte) *OpenAIImagesUpstreamError {
+	errType := strings.TrimSpace(extractUpstreamErrorType(body))
+	code := strings.TrimSpace(extractUpstreamErrorCode(body))
+	param := strings.TrimSpace(gjson.GetBytes(body, "error.param").String())
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	if message == "" {
+		message = fmt.Sprintf("Upstream request failed (status %d)", statusCode)
+	}
+	if errType == "" {
+		errType = openAIImagesErrorTypeForStatus(statusCode)
+	}
+	requestID := ""
+	if header != nil {
+		requestID = strings.TrimSpace(header.Get("x-request-id"))
+	}
+	return &OpenAIImagesUpstreamError{
+		StatusCode:        statusCode,
+		ErrorType:         errType,
+		Code:              code,
+		Message:           message,
+		Param:             param,
+		UpstreamRequestID: requestID,
+	}
+}
+
+func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
+	ctx context.Context,
+	resp *http.Response,
+	c *gin.Context,
+	account *Account,
+	requestedModel ...string,
+) (*OpenAIForwardResult, error) {
+	body := s.readUpstreamErrorBody(resp)
+
+	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	upstreamDetail := ""
+	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = 2048
+		}
+		upstreamDetail = truncateString(string(body), maxBytes)
+	}
+	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
+
+	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		logger.LegacyPrintf("service.openai_gateway",
+			"OpenAI images upstream error %d (account=%d platform=%s type=%s): %s",
+			resp.StatusCode,
+			account.ID,
+			account.Platform,
+			account.Type,
+			truncateForLog(body, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes),
+		)
+	}
+
+	if status, errType, errMsg, matched := applyErrorPassthroughRule(
+		c,
+		account.Platform,
+		resp.StatusCode,
+		body,
+		http.StatusBadGateway,
+		"upstream_error",
+		"Upstream request failed",
+	); matched {
+		upErr := &OpenAIImagesUpstreamError{
+			StatusCode:        status,
+			ErrorType:         errType,
+			Message:           errMsg,
+			UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
+		}
+		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+		return nil, upErr
+	}
+
+	if !account.ShouldHandleErrorCode(resp.StatusCode) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "http_error",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		upErr := &OpenAIImagesUpstreamError{
+			StatusCode:        http.StatusInternalServerError,
+			ErrorType:         "upstream_error",
+			Message:           "Upstream gateway error",
+			UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
+		}
+		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+		return nil, upErr
+	}
+
+	shouldDisable := false
+	if s.rateLimitService != nil {
+		shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(nil, requestedModel...))
+	}
+	kind := "http_error"
+	if shouldDisable {
+		kind = "failover"
+	}
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		Platform:           account.Platform,
+		AccountID:          account.ID,
+		AccountName:        account.Name,
+		UpstreamStatusCode: resp.StatusCode,
+		UpstreamRequestID:  resp.Header.Get("x-request-id"),
+		Kind:               kind,
+		Message:            upstreamMsg,
+		Detail:             upstreamDetail,
+	})
+	if shouldDisable {
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           body,
+			RetryableOnSameAccount: account.IsPoolMode() && isPoolModeRetryableStatus(resp.StatusCode),
+		}
+	}
+
+	upErr := openAIImagesUpstreamErrorFromHTTP(resp.StatusCode, resp.Header, body)
+	writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+	return nil, upErr
+}
+
 func (s *OpenAIGatewayService) writeOpenAIImagesStreamEvent(c *gin.Context, flusher http.Flusher, eventName string, payload []byte) error {
 	if strings.TrimSpace(eventName) != "" {
 		if _, err := fmt.Fprintf(c.Writer, "event: %s\n", eventName); err != nil {
@@ -815,7 +1023,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 				RetryableOnSameAccount: account.IsPoolMode() && isPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
-		return s.handleErrorResponse(ctx, resp, c, account, responsesBody, requestModel)
+		return s.handleOpenAIImagesErrorResponse(ctx, resp, c, account, requestModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

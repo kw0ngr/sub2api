@@ -252,6 +252,36 @@ func (s *UserRepoSuite) TestListWithFilters_CombinedFilters() {
 	s.Require().Equal(target.ID, users[0].ID, "ListWithFilters result mismatch")
 }
 
+func (s *UserRepoSuite) TestListWithFilters_APIKeyGroupID() {
+	groupA := s.mustCreateGroup("api-key-group-a")
+	groupB := s.mustCreateGroup("api-key-group-b")
+	target := s.mustCreateUser(&service.User{Email: "api-key-group-target@test.com", Status: service.StatusActive})
+	other := s.mustCreateUser(&service.User{Email: "api-key-group-other@test.com", Status: service.StatusActive})
+	softDeletedOnly := s.mustCreateUser(&service.User{Email: "api-key-group-soft-deleted@test.com", Status: service.StatusActive})
+	disabledTarget := s.mustCreateUser(&service.User{Email: "api-key-group-disabled@test.com", Status: service.StatusDisabled})
+
+	groupAID := groupA.ID
+	groupBID := groupB.ID
+	mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: target.ID, Key: "sk-user-filter-target", Name: "target", GroupID: &groupAID})
+	mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: other.ID, Key: "sk-user-filter-other", Name: "other", GroupID: &groupBID})
+	softDeletedKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: softDeletedOnly.ID, Key: "sk-user-filter-soft-deleted", Name: "soft-deleted", GroupID: &groupAID})
+	mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: disabledTarget.ID, Key: "sk-user-filter-disabled", Name: "disabled", GroupID: &groupAID})
+	_, err := s.client.APIKey.UpdateOneID(softDeletedKey.ID).SetDeletedAt(time.Now()).Save(s.ctx)
+	s.Require().NoError(err, "soft delete api key")
+
+	users, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, service.UserListFilters{APIKeyGroupID: groupA.ID})
+	s.Require().NoError(err, "ListWithFilters api key group")
+	s.Require().Equal(int64(2), page.Total, "active + disabled users with a non-deleted key should match")
+	s.Require().Len(users, 2)
+	s.Require().ElementsMatch([]int64{target.ID, disabledTarget.ID}, []int64{users[0].ID, users[1].ID})
+
+	activeUsers, activePage, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, service.UserListFilters{APIKeyGroupID: groupA.ID, Status: service.StatusActive})
+	s.Require().NoError(err, "ListWithFilters api key group + status")
+	s.Require().Equal(int64(1), activePage.Total)
+	s.Require().Len(activeUsers, 1)
+	s.Require().Equal(target.ID, activeUsers[0].ID)
+}
+
 // --- Balance operations ---
 
 func (s *UserRepoSuite) TestUpdateBalance() {

@@ -45,6 +45,10 @@ func (s *userRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
 	return s.user, nil
 }
 
+func (s *userRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return s.GetByID(ctx, id)
+}
+
 func (s *userRepoStub) GetByEmail(ctx context.Context, email string) (*User, error) {
 	panic("unexpected GetByEmail call")
 }
@@ -247,6 +251,22 @@ func (s *proxyRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxy
 	panic("unexpected ListAccountSummariesByProxyID call")
 }
 
+func (s *proxyRepoStub) ListAllForFallback(ctx context.Context) ([]Proxy, error) {
+	panic("unexpected ListAllForFallback call")
+}
+
+func (s *proxyRepoStub) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	panic("unexpected SweepExpiredProxies call")
+}
+
+func (s *proxyRepoStub) CountExpired(ctx context.Context) (int64, error) {
+	panic("unexpected CountExpired call")
+}
+
+func (s *proxyRepoStub) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	panic("unexpected CountExpiringSoon call")
+}
+
 type redeemRepoStub struct {
 	deleteErrByID map[int64]error
 	deletedIDs    []int64
@@ -387,6 +407,31 @@ func TestAdminService_DeleteUser_Success(t *testing.T) {
 	err := svc.DeleteUser(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, []int64{7}, repo.deletedIDs)
+}
+
+func TestAdminService_DeleteUser_DeletesOwnedAPIKeys(t *testing.T) {
+	repo := &userRepoStub{user: &User{ID: 7, Role: RoleUser}}
+	apiKeyRepo := &apiKeyRepoStub{
+		allowListByUserID: true,
+		listByUserIDKeys: []APIKey{
+			{ID: 11, UserID: 7, Key: "sk-user-1"},
+			{ID: 12, UserID: 7, Key: "sk-user-2"},
+		},
+	}
+	invalidator := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{
+		userRepo:             repo,
+		apiKeyRepo:           apiKeyRepo,
+		authCacheInvalidator: invalidator,
+	}
+
+	err := svc.DeleteUser(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, []int64{7}, repo.deletedIDs)
+	require.Equal(t, []int64{7}, apiKeyRepo.listByUserIDCalls)
+	require.Equal(t, []int64{11, 12}, apiKeyRepo.deletedIDs)
+	require.ElementsMatch(t, []string{"sk-user-1", "sk-user-2"}, invalidator.keys)
+	require.Equal(t, []int64{7}, invalidator.userIDs)
 }
 
 func TestAdminService_DeleteUser_NotFound(t *testing.T) {

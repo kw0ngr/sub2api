@@ -2,9 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -139,6 +143,37 @@ func TestGetOpenAIRequestBodyMap_WriteBackContextCache(t *testing.T) {
 	cachedMap, ok := cached.(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, got, cachedMap)
+}
+
+func TestOpenAIRequestViewMetadataAndPatches(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","stream":true,"prompt_cache_key":" key-1 ","service_tier":"fast","previous_response_id":"resp_old"}`)
+	view := newOpenAIRequestView(body)
+
+	require.Equal(t, "gpt-5.4", view.Model)
+	require.True(t, view.Stream)
+	require.Equal(t, "key-1", view.PromptCacheKey)
+	require.Equal(t, "fast", view.ServiceTier)
+
+	view.MarkPatchSet("model", "gpt-5.1")
+	view.MarkPatchDelete("previous_response_id")
+	patched, err := view.ApplyPatches()
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"gpt-5.1","stream":true,"prompt_cache_key":" key-1 ","service_tier":"fast"}`, string(patched))
+}
+
+func TestOpenAIUpstreamErrorBodyReadLimit(t *testing.T) {
+	require.Equal(t, openAIUpstreamErrorBodyReadLimit, openAIUpstreamErrorBodyReadLimitForConfig(nil))
+
+	cfg := &config.Config{}
+	cfg.Gateway.LogUpstreamErrorBody = true
+	cfg.Gateway.LogUpstreamErrorBodyMaxBytes = int(openAIUpstreamErrorBodyReadLimit) + 1024
+	require.Equal(t, int64(cfg.Gateway.LogUpstreamErrorBodyMaxBytes), openAIUpstreamErrorBodyReadLimitForConfig(cfg))
+
+	body := strings.Repeat("x", int(openAIUpstreamErrorBodyReadLimit)+1024)
+	svc := &OpenAIGatewayService{}
+	resp := &http.Response{Body: io.NopCloser(strings.NewReader(body))}
+	got := svc.readUpstreamErrorBody(resp)
+	require.Len(t, got, int(openAIUpstreamErrorBodyReadLimit))
 }
 
 func TestSanitizeEmptyBase64InputImagesInOpenAIRequestBodyMap(t *testing.T) {

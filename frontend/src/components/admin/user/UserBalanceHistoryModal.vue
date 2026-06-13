@@ -19,6 +19,12 @@
               >
                 {{ user.username }}
               </span>
+              <span
+                v-if="user.deleted_at"
+                class="flex-shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-medium text-rose-600 dark:bg-rose-500/20 dark:text-rose-400"
+              >
+                {{ t('admin.usage.userDeletedBadge') }}
+              </span>
             </div>
             <p class="text-xs text-gray-400 dark:text-dark-500">
               {{ t('admin.users.createdAt') }}: {{ formatDateTime(user.created_at) }}

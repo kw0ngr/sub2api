@@ -7,7 +7,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string) =>
+        ({
+          'usage.resetNow': '现在',
+          'usage.resetPending': '待刷新',
+        })[key] ?? key
     })
   }
 })

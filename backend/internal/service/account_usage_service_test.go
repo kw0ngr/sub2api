@@ -226,3 +226,21 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestCodexWindowStatsStartUsesResetWindow(t *testing.T) {
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	resetAt := now.Add(2 * time.Hour)
+
+	got := codexWindowStatsStart(&UsageProgress{ResetsAt: &resetAt}, 5*time.Hour, now)
+	want := resetAt.Add(-5 * time.Hour)
+	if !got.Equal(want) {
+		t.Fatalf("stats start = %s, want %s", got, want)
+	}
+
+	expiredResetAt := now.Add(-time.Hour)
+	got = codexWindowStatsStart(&UsageProgress{ResetsAt: &expiredResetAt}, 5*time.Hour, now)
+	want = now.Add(-5 * time.Hour)
+	if !got.Equal(want) {
+		t.Fatalf("fallback stats start = %s, want %s", got, want)
+	}
+}

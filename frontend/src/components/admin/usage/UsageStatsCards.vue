@@ -19,6 +19,13 @@
           {{ t('usage.in') }}: {{ formatTokens(stats?.total_input_tokens || 0) }} /
           {{ t('usage.out') }}: {{ formatTokens(stats?.total_output_tokens || 0) }}
         </p>
+        <p
+          v-if="(stats?.total_cache_creation_tokens || 0) > 0 || (stats?.total_cache_read_tokens || 0) > 0"
+          class="text-xs text-gray-400"
+        >
+          {{ t('usage.cacheCreate') }}: {{ formatTokens(stats?.total_cache_creation_tokens || 0) }} /
+          {{ t('usage.cacheHit') }}: {{ formatTokens(stats?.total_cache_read_tokens || 0) }}
+        </p>
       </div>
     </div>
     <div class="card p-4 flex items-center gap-3">

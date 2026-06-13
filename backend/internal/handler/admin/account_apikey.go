@@ -130,8 +130,8 @@ func (h *AccountHandler) recoverValidAPIKeyAccount(ctx context.Context, account 
 	if account == nil {
 		return nil
 	}
-	// If status is not active (error or disabled), restore it to active.
-	if !account.IsActive() {
+	// A successful real probe proves transient runtime scheduling state is stale.
+	if !account.IsActive() || apiKeyAccountHasRecoverableRuntimeState(account) {
 		if _, err := h.adminService.ClearAccountError(ctx, account.ID); err != nil {
 			return err
 		}
@@ -143,6 +143,35 @@ func (h *AccountHandler) recoverValidAPIKeyAccount(ctx context.Context, account 
 		}
 	}
 	return nil
+}
+
+func apiKeyAccountHasRecoverableRuntimeState(account *service.Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.RateLimitedAt != nil || account.RateLimitResetAt != nil ||
+		account.OverloadUntil != nil || account.TempUnschedulableUntil != nil {
+		return true
+	}
+	return apiKeyExtraHasNonEmptyValue(account.Extra, "model_rate_limits") ||
+		apiKeyExtraHasNonEmptyValue(account.Extra, "antigravity_quota_scopes")
+}
+
+func apiKeyExtraHasNonEmptyValue(extra map[string]any, key string) bool {
+	raw, ok := extra[key]
+	if !ok || raw == nil {
+		return false
+	}
+	switch typed := raw.(type) {
+	case map[string]any:
+		return len(typed) > 0
+	case map[string]string:
+		return len(typed) > 0
+	case []any:
+		return len(typed) > 0
+	default:
+		return true
+	}
 }
 
 func newAPIKeyHealthJobID() string {
@@ -461,14 +490,14 @@ func (h *AccountHandler) runHealthCheckBackground(jobID string, accounts []*serv
 
 				if health.Valid {
 					valid = true
-					if !acc.IsActive() || !acc.Schedulable {
+					if !acc.IsActive() || !acc.Schedulable || apiKeyAccountHasRecoverableRuntimeState(acc) {
 						if err := h.recoverValidAPIKeyAccount(gctx, acc); err != nil {
 							item.Error = err.Error()
 							failed = true
 						} else if strings.TrimSpace(item.Message) == "" {
-							item.Message = "account re-enabled and scheduling restored after successful health check"
+							item.Message = "account scheduling state restored after successful health check"
 						} else {
-							item.Message = item.Message + " | account re-enabled and scheduling restored after successful health check"
+							item.Message = item.Message + " | account scheduling state restored after successful health check"
 						}
 					}
 				}

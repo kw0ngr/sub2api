@@ -222,10 +222,34 @@ const metricDefinitions = computed(() => {
       unit: '%'
     },
     {
+      type: 'account_temp_unscheduled_count',
+      group: 'account',
+      label: t('admin.ops.alertRules.metrics.accountTempUnscheduledCount'),
+      description: t('admin.ops.alertRules.metricDescriptions.accountTempUnscheduledCount'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
+    },
+    {
       type: 'overload_account_count',
       group: 'account',
       label: t('admin.ops.alertRules.metrics.overloadAccountCount'),
       description: t('admin.ops.alertRules.metricDescriptions.overloadAccountCount'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
+    },
+    {
+      type: 'proxy_expired_count',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.proxyExpiredCount'),
+      description: t('admin.ops.alertRules.metricDescriptions.proxyExpiredCount'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
+    },
+    {
+      type: 'proxy_expiring_soon_count',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.proxyExpiringSoonCount'),
+      description: t('admin.ops.alertRules.metricDescriptions.proxyExpiringSoonCount'),
       recommendedOperator: '>',
       recommendedThreshold: 0
     }

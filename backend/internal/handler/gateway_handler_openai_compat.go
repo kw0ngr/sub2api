@@ -74,13 +74,21 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 		return
 	}
 	reqModel := modelResult.String()
-	reqStream := gjson.GetBytes(body, "stream").Bool()
+	reqStream, ok := parseOpenAICompatibleStream(body)
+	if !ok {
+		spec.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	requestCtx := c.Request.Context()
+	if spec.parseKind == "responses" && service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
+		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+	}
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
 
 	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly {
 		spec.errorResponse(c, http.StatusForbidden, "permission_error", spec.restrictionErrorText)
@@ -95,7 +103,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
 	maxWait := service.CalculateMaxWait(subject.Concurrency)
-	canWait, err := h.concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
+	canWait, err := h.concurrencyHelper.IncrementWaitCount(requestCtx, subject.UserID, maxWait)
 	waitCounted := false
 	if err != nil {
 		reqLog.Warn(spec.logPrefix+".user_wait_counter_increment_failed", zap.Error(err))
@@ -108,7 +116,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 	}
 	defer func() {
 		if waitCounted {
-			h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+			h.concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
 		}
 	}()
 
@@ -119,7 +127,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 		return
 	}
 	if waitCounted {
-		h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		h.concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
 		waitCounted = false
 	}
 	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
@@ -127,7 +135,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibility(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
 		reqLog.Info(spec.logPrefix+".billing_check_failed", zap.Error(err))
 		status, code, message := billingErrorDetails(err)
 		spec.errorResponse(c, status, code, message)
@@ -147,13 +155,13 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				spec.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error())
 				return
 			}
-			action := fs.HandleSelectionExhausted(c.Request.Context())
+			action := fs.HandleSelectionExhausted(requestCtx)
 			switch action {
 			case FailoverContinue:
 				continue
@@ -199,7 +207,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
-		result, err := spec.forward(c.Request.Context(), c, account, forwardBody, parsedReq)
+		result, err := spec.forward(requestCtx, c, account, forwardBody, parsedReq)
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
@@ -212,7 +220,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 					spec.failoverExhausted(c, failoverErr, true)
 					return
 				}
-				action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
+				action := fs.HandleFailoverError(requestCtx, h.gatewayService, account.ID, account.Platform, failoverErr)
 				switch action {
 				case FailoverContinue:
 					continue

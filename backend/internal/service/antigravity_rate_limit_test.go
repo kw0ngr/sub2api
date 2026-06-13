@@ -99,6 +99,15 @@ func (s *stubAntigravityAccountRepo) SetModelRateLimit(ctx context.Context, id i
 	return nil
 }
 
+func requireModelRateLimitKeys(t *testing.T, calls []modelRateLimitCall, keys ...string) {
+	t.Helper()
+	got := make([]string, 0, len(calls))
+	for _, call := range calls {
+		got = append(got, call.modelKey)
+	}
+	require.ElementsMatch(t, keys, got)
+}
+
 func (s *stubAntigravityAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	s.extraUpdateCalls = append(s.extraUpdateCalls, extraUpdateCall{accountID: id, updates: updates})
 	return nil

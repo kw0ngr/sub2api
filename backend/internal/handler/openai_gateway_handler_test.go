@@ -109,6 +109,41 @@ func TestResolveOpenAIMessagesMetadataSession_PreservesExplicitPromptCacheKey(t 
 	require.Equal(t, "explicit-cache", promptCacheKey)
 }
 
+func TestOpenAIModelMappedBody(t *testing.T) {
+	body := []byte(`{"model":"alias","input":"hello"}`)
+	calls := 0
+
+	forwardBody := openAIModelMappedBody(body, true, "gpt-5.4", func(body []byte, newModel string) []byte {
+		calls++
+		return service.ReplaceModelInBody(body, newModel)
+	})
+
+	require.Equal(t, 1, calls)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(forwardBody, "model").String())
+	require.Equal(t, "alias", gjson.GetBytes(body, "model").String())
+}
+
+func TestOpenAIModelMappedBodyCache(t *testing.T) {
+	body := []byte(`{"model":"alias","input":"hello"}`)
+	calls := 0
+	mappedBody := newOpenAIModelMappedBodyCache(body, func(body []byte, newModel string) []byte {
+		calls++
+		return service.ReplaceModelInBody(body, newModel)
+	})
+
+	first := mappedBody(true, "gpt-5.4")
+	second := mappedBody(true, "gpt-5.4")
+	third := mappedBody(true, "gpt-5.3-codex")
+	unmapped := mappedBody(false, "ignored")
+
+	require.Equal(t, 2, calls)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(first, "model").String())
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(second, "model").String())
+	require.Equal(t, "gpt-5.3-codex", gjson.GetBytes(third, "model").String())
+	require.Equal(t, body, unmapped)
+	require.Same(t, &first[0], &second[0])
+}
+
 func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -186,6 +221,21 @@ func TestOpenAIEnsureForwardErrorResponse_AppendsStreamingErrorAfterWrittenRespo
 	require.Equal(t, http.StatusTeapot, w.Code)
 	assert.Contains(t, w.Body.String(), "already written")
 	assert.Contains(t, w.Body.String(), "event: error\n")
+}
+
+func TestOpenAIEnsureForwardErrorResponse_SkipsCommittedJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	service.MarkResponseCommitted(c)
+	c.JSON(http.StatusBadRequest, gin.H{"error": "already written"})
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false)
+
+	require.False(t, wrote)
+	require.NotContains(t, w.Body.String(), "event: error")
 }
 
 func TestShouldLogOpenAIForwardFailureAsWarn(t *testing.T) {
@@ -715,6 +765,44 @@ func newOpenAIHandlerForPreviousResponseIDValidation(t *testing.T, cache *concur
 		apiKeyService:       &service.APIKeyService{},
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
 	}
+}
+
+func TestOpenAIForwardErrorAlreadyCommunicated(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("upstream response failed after write", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+		before := c.Writer.Size()
+		_, _ = c.Writer.WriteString("event: response.failed\ndata: {\"type\":\"response.failed\",\"error\":{\"message\":\"This content was flagged\"}}\n\n")
+
+		reported := openAIForwardErrorAlreadyCommunicated(c, before, errors.New("upstream response failed: This content was flagged"))
+
+		require.True(t, reported)
+	})
+
+	t.Run("no write still needs fallback", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+
+		reported := openAIForwardErrorAlreadyCommunicated(c, c.Writer.Size(), errors.New("upstream response failed: This content was flagged"))
+
+		require.False(t, reported)
+	})
+
+	t.Run("generic error after write still needs fallback", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+		before := c.Writer.Size()
+		_, _ = c.Writer.WriteString(":\n\n")
+
+		reported := openAIForwardErrorAlreadyCommunicated(c, before, errors.New("stream read error: unexpected EOF"))
+
+		require.False(t, reported)
+	})
 }
 
 func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject middleware.AuthSubject) *httptest.Server {

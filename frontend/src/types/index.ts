@@ -97,6 +97,7 @@ export interface User {
   last_active_at?: string | null
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
 export interface AdminUser extends User {
@@ -618,6 +619,7 @@ export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' 
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
+export type ProxyFallbackMode = 'none' | 'proxy' | 'direct'
 
 // Claude Model type (returned by /v1/models and account models API)
 export interface ClaudeModel {
@@ -635,7 +637,11 @@ export interface Proxy {
   port: number
   username: string | null
   password?: string | null
-  status: 'active' | 'inactive'
+  status: 'active' | 'inactive' | 'expired'
+  expires_at?: string | null
+  fallback_mode?: ProxyFallbackMode
+  backup_proxy_id?: number | null
+  expiry_warn_days?: number
   account_count?: number // Number of accounts using this proxy
   latency_ms?: number
   latency_status?: 'success' | 'failed'
@@ -981,6 +987,10 @@ export interface CreateProxyRequest {
   port: number
   username?: string | null
   password?: string | null
+  expires_at?: number | null
+  fallback_mode?: ProxyFallbackMode
+  backup_proxy_id?: number | null
+  expiry_warn_days?: number
 }
 
 export interface UpdateProxyRequest {
@@ -990,7 +1000,11 @@ export interface UpdateProxyRequest {
   port?: number
   username?: string | null
   password?: string | null
-  status?: 'active' | 'inactive'
+  status?: 'active' | 'inactive' | 'expired'
+  expires_at?: number | null
+  fallback_mode?: ProxyFallbackMode
+  backup_proxy_id?: number | null
+  expiry_warn_days?: number
 }
 
 export interface AdminDataPayload {
@@ -1009,7 +1023,11 @@ export interface AdminDataProxy {
   port: number
   username?: string | null
   password?: string | null
-  status: 'active' | 'inactive'
+  status: 'active' | 'inactive' | 'expired'
+  expires_at?: number | null
+  fallback_mode?: ProxyFallbackMode
+  backup_proxy_name?: string
+  expiry_warn_days?: number
 }
 
 export interface AdminDataAccount {
@@ -1135,6 +1153,8 @@ export interface UsageLog {
   // 图片生成字段
   image_count: number
   image_size: string | null
+  image_output_tokens: number
+  image_output_cost: number
 
   // User-Agent
   user_agent: string | null
@@ -1293,6 +1313,8 @@ export interface UsageStatsResponse {
   total_input_tokens: number
   total_output_tokens: number
   total_cache_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
   total_tokens: number
   total_cost: number // 标准计费
   total_actual_cost: number // 实际扣除

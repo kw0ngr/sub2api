@@ -54,7 +54,7 @@ const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 const DefaultCacheControlTTL = "5m"
 
 // CLICurrentVersion 是当前伪装的 Claude Code CLI 版本号。
-const CLICurrentVersion = "2.1.92"
+const CLICurrentVersion = "2.1.161"
 
 // FullClaudeCodeMimicryBetas 返回当前真实 Claude Code CLI 请求中最关键的 beta token 集合。
 func FullClaudeCodeMimicryBetas() []string {
@@ -75,13 +75,13 @@ func FullClaudeCodeMimicryBetas() []string {
 var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
-	"User-Agent":                                "claude-cli/2.1.92 (external, cli)",
+	"User-Agent":                                "claude-cli/" + CLICurrentVersion + " (external, cli)",
 	"X-Stainless-Lang":                          "js",
-	"X-Stainless-Package-Version":               "0.70.0",
+	"X-Stainless-Package-Version":               "0.94.0",
 	"X-Stainless-OS":                            "Linux",
 	"X-Stainless-Arch":                          "arm64",
 	"X-Stainless-Runtime":                       "node",
-	"X-Stainless-Runtime-Version":               "v24.13.0",
+	"X-Stainless-Runtime-Version":               "v24.3.0",
 	"X-Stainless-Retry-Count":                   "0",
 	"X-Stainless-Timeout":                       "600",
 	"X-App":                                     "cli",
@@ -98,6 +98,12 @@ type Model struct {
 
 // DefaultModels Claude Code 客户端支持的默认模型列表
 var DefaultModels = []Model{
+	{
+		ID:          "claude-fable-5",
+		Type:        "model",
+		DisplayName: "Claude Fable 5",
+		CreatedAt:   "2026-06-09T00:00:00Z",
+	},
 	{
 		ID:          "claude-opus-4-5-20251101",
 		Type:        "model",

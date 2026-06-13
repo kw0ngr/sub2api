@@ -28,6 +28,20 @@ func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashb
 	return &OpsDashboardOverview{}, nil
 }
 
+type stubProxyRepoForOpsMetric struct {
+	ProxyRepository
+	expired      int64
+	expiringSoon int64
+}
+
+func (s *stubProxyRepoForOpsMetric) CountExpired(context.Context) (int64, error) {
+	return s.expired, nil
+}
+
+func (s *stubProxyRepoForOpsMetric) CountExpiringSoon(context.Context, time.Time) (int64, error) {
+	return s.expiringSoon, nil
+}
+
 func TestComputeGroupAvailableRatio(t *testing.T) {
 	t.Parallel()
 
@@ -124,6 +138,7 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 			3: {HasError: true},
 			4: {HasError: true, TempUnschedulableUntil: timePtr(time.Now().UTC().Add(2 * time.Minute))},
 			5: {HasError: false, IsRateLimited: false},
+			6: {TempUnschedulableUntil: timePtr(time.Now().UTC().Add(-2 * time.Minute))},
 		},
 	}
 
@@ -178,6 +193,13 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 			wantOK:     true,
 		},
 		{
+			name:       "account_temp_unscheduled_count",
+			metricType: "account_temp_unscheduled_count",
+			groupID:    nil,
+			wantValue:  1,
+			wantOK:     true,
+		},
+		{
 			name:       "group_available_accounts without group_id returns false",
 			metricType: "group_available_accounts",
 			groupID:    nil,
@@ -207,6 +229,36 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 				return
 			}
 			require.InDelta(t, tt.wantValue, gotValue, 0.0001)
+		})
+	}
+}
+
+func TestComputeRuleMetricProxyExpiryIndicators(t *testing.T) {
+	t.Parallel()
+
+	svc := &OpsAlertEvaluatorService{
+		opsRepo:   &stubOpsRepo{overview: &OpsDashboardOverview{}},
+		proxyRepo: &stubProxyRepoForOpsMetric{expired: 2, expiringSoon: 3},
+	}
+	ctx := context.Background()
+	start := time.Now().UTC().Add(-5 * time.Minute)
+	end := time.Now().UTC()
+
+	tests := []struct {
+		metricType string
+		want       float64
+	}{
+		{metricType: "proxy_expired_count", want: 2},
+		{metricType: "proxy_expiring_soon_count", want: 3},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.metricType, func(t *testing.T) {
+			t.Parallel()
+			got, ok := svc.computeRuleMetric(ctx, &OpsAlertRule{MetricType: tt.metricType}, nil, start, end, "", nil)
+			require.True(t, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

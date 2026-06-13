@@ -741,7 +741,10 @@ export type MetricType =
   | 'account_rate_limited_count'
   | 'account_error_count'
   | 'account_error_ratio'
+  | 'account_temp_unscheduled_count'
   | 'overload_account_count'
+  | 'proxy_expired_count'
+  | 'proxy_expiring_soon_count'
 export type Operator = '>' | '>=' | '<' | '<=' | '==' | '!='
 
 export interface AlertRule {

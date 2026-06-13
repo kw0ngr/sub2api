@@ -488,6 +488,7 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"responses_websockets_v2_enabled",
 		"openai_ws_enabled",
 		"openai_ws_force_http",
+		"model_rate_limits",
 	}
 	filtered := make(map[string]any)
 	for _, key := range keys {

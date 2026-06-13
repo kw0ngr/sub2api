@@ -386,6 +386,7 @@ func TestBuildGenerationConfig_ThinkingDynamicBudget(t *testing.T) {
 func TestGetModelDisplayName_Opus48(t *testing.T) {
 	t.Parallel()
 
+	require.Equal(t, "Claude Fable 5", GetModelDisplayName("claude-fable-5"))
 	require.Equal(t, "Claude Opus 4.7", GetModelDisplayName("claude-opus-4-7"))
 	require.Equal(t, "Claude Opus 4.8", GetModelDisplayName("claude-opus-4-8"))
 }

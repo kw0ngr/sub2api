@@ -1,6 +1,10 @@
 package service
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/tidwall/gjson"
+)
 
 // ToolContinuationSignals 聚合工具续链相关信号，避免重复遍历 input。
 type ToolContinuationSignals struct {
@@ -225,6 +229,63 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		}
 	}
 	result.HasItemReferenceForAllCallIDs = allReferenced
+	return result
+}
+
+func ValidateFunctionCallOutputContextBytes(body []byte) FunctionCallOutputValidation {
+	result := FunctionCallOutputValidation{}
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return result
+	}
+
+	input.ForEach(func(_, item gjson.Result) bool {
+		itemType := item.Get("type").String()
+		switch {
+		case isCodexToolCallOutputItemType(itemType):
+			result.HasFunctionCallOutput = true
+		case isCodexToolCallContextItemType(itemType):
+			if strings.TrimSpace(item.Get("call_id").String()) != "" {
+				result.HasToolCallContext = true
+			}
+		}
+		return !(result.HasFunctionCallOutput && result.HasToolCallContext)
+	})
+
+	if !result.HasFunctionCallOutput || result.HasToolCallContext {
+		return result
+	}
+
+	callIDs := make(map[string]struct{})
+	referenceIDs := make(map[string]struct{})
+	input.ForEach(func(_, item gjson.Result) bool {
+		itemType := item.Get("type").String()
+		switch {
+		case isCodexToolCallOutputItemType(itemType):
+			callID := strings.TrimSpace(item.Get("call_id").String())
+			if callID == "" {
+				result.HasFunctionCallOutputMissingCallID = true
+				return true
+			}
+			callIDs[callID] = struct{}{}
+		case itemType == "item_reference":
+			idValue := strings.TrimSpace(item.Get("id").String())
+			if idValue != "" {
+				referenceIDs[idValue] = struct{}{}
+			}
+		}
+		return true
+	})
+	if len(callIDs) > 0 && len(callIDs) == len(referenceIDs) {
+		allReferenced := true
+		for callID := range callIDs {
+			if _, ok := referenceIDs[callID]; !ok {
+				allReferenced = false
+				break
+			}
+		}
+		result.HasItemReferenceForAllCallIDs = allReferenced
+	}
 	return result
 }
 

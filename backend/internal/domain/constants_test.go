@@ -25,14 +25,26 @@ func TestDefaultAntigravityModelMapping_ImageCompatibilityAliases(t *testing.T) 
 	}
 }
 
-func TestDefaultModelMappings_ClaudeOpus48(t *testing.T) {
+func TestDefaultModelMappings_NewClaudeModels(t *testing.T) {
 	t.Parallel()
 
-	if got := DefaultAntigravityModelMapping["claude-opus-4-8"]; got != "claude-opus-4-8" {
-		t.Fatalf("DefaultAntigravityModelMapping[claude-opus-4-8] = %q, want claude-opus-4-8", got)
+	antigravityCases := map[string]string{
+		"claude-fable-5":  "claude-fable-5",
+		"claude-opus-4-8": "claude-opus-4-8",
+	}
+	for from, want := range antigravityCases {
+		if got := DefaultAntigravityModelMapping[from]; got != want {
+			t.Fatalf("DefaultAntigravityModelMapping[%s] = %q, want %q", from, got, want)
+		}
 	}
 
-	if got := DefaultBedrockModelMapping["claude-opus-4-8"]; got != "us.anthropic.claude-opus-4-8-v1" {
-		t.Fatalf("DefaultBedrockModelMapping[claude-opus-4-8] = %q, want us.anthropic.claude-opus-4-8-v1", got)
+	bedrockCases := map[string]string{
+		"claude-fable-5":  "anthropic.claude-fable-5",
+		"claude-opus-4-8": "us.anthropic.claude-opus-4-8-v1",
+	}
+	for from, want := range bedrockCases {
+		if got := DefaultBedrockModelMapping[from]; got != want {
+			t.Fatalf("DefaultBedrockModelMapping[%s] = %q, want %q", from, got, want)
+		}
 	}
 }

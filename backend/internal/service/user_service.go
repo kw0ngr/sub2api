@@ -29,11 +29,16 @@ const (
 
 // UserListFilters contains all filter options for listing users
 type UserListFilters struct {
-	Status     string           // User status filter
-	Role       string           // User role filter
-	Search     string           // Search in email, username
-	GroupName  string           // Filter by allowed group name (fuzzy match)
-	Attributes map[int64]string // Custom attribute filters: attributeID -> value
+	Status    string // User status filter
+	Role      string // User role filter
+	Search    string // Search in email, username
+	GroupName string // Filter by allowed group name (fuzzy match)
+	// APIKeyGroupID filters users who own at least one non-soft-deleted API key
+	// bound to this group (api_keys.group_id). 0 = no filter.
+	APIKeyGroupID int64
+	Attributes    map[int64]string // Custom attribute filters: attributeID -> value
+	// IncludeDeleted allows admin read-only usage/search paths to resolve soft-deleted users.
+	IncludeDeleted bool
 	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).
@@ -43,6 +48,7 @@ type UserListFilters struct {
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id int64) (*User, error)
+	GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetFirstAdmin(ctx context.Context) (*User, error)
 	Update(ctx context.Context, user *User) error

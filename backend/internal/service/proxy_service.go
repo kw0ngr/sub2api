@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -29,27 +30,40 @@ type ProxyRepository interface {
 	ExistsByHostPortAuth(ctx context.Context, host string, port int, username, password string) (bool, error)
 	CountAccountsByProxyID(ctx context.Context, proxyID int64) (int64, error)
 	ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]ProxyAccountSummary, error)
+
+	ListAllForFallback(ctx context.Context) ([]Proxy, error)
+	SweepExpiredProxies(ctx context.Context, now time.Time) (changed int64, err error)
+	CountExpired(ctx context.Context) (int64, error)
+	CountExpiringSoon(ctx context.Context, now time.Time) (int64, error)
 }
 
 // CreateProxyRequest 创建代理请求
 type CreateProxyRequest struct {
-	Name     string `json:"name"`
-	Protocol string `json:"protocol"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Name           string     `json:"name"`
+	Protocol       string     `json:"protocol"`
+	Host           string     `json:"host"`
+	Port           int        `json:"port"`
+	Username       string     `json:"username"`
+	Password       string     `json:"password"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	FallbackMode   string     `json:"fallback_mode"`
+	BackupProxyID  *int64     `json:"backup_proxy_id"`
+	ExpiryWarnDays int        `json:"expiry_warn_days"`
 }
 
 // UpdateProxyRequest 更新代理请求
 type UpdateProxyRequest struct {
-	Name     *string `json:"name"`
-	Protocol *string `json:"protocol"`
-	Host     *string `json:"host"`
-	Port     *int    `json:"port"`
-	Username *string `json:"username"`
-	Password *string `json:"password"`
-	Status   *string `json:"status"`
+	Name           *string    `json:"name"`
+	Protocol       *string    `json:"protocol"`
+	Host           *string    `json:"host"`
+	Port           *int       `json:"port"`
+	Username       *string    `json:"username"`
+	Password       *string    `json:"password"`
+	Status         *string    `json:"status"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	FallbackMode   *string    `json:"fallback_mode"`
+	BackupProxyID  *int64     `json:"backup_proxy_id"`
+	ExpiryWarnDays *int       `json:"expiry_warn_days"`
 }
 
 // ProxyService 代理管理服务
@@ -68,13 +82,17 @@ func NewProxyService(proxyRepo ProxyRepository) *ProxyService {
 func (s *ProxyService) Create(ctx context.Context, req CreateProxyRequest) (*Proxy, error) {
 	// 创建代理
 	proxy := &Proxy{
-		Name:     req.Name,
-		Protocol: req.Protocol,
-		Host:     req.Host,
-		Port:     req.Port,
-		Username: req.Username,
-		Password: req.Password,
-		Status:   StatusActive,
+		Name:           req.Name,
+		Protocol:       req.Protocol,
+		Host:           req.Host,
+		Port:           req.Port,
+		Username:       req.Username,
+		Password:       req.Password,
+		Status:         StatusActive,
+		ExpiresAt:      req.ExpiresAt,
+		FallbackMode:   normalizeProxyFallbackMode(req.FallbackMode),
+		BackupProxyID:  req.BackupProxyID,
+		ExpiryWarnDays: normalizeProxyExpiryWarnDays(req.ExpiryWarnDays),
 	}
 
 	if err := s.proxyRepo.Create(ctx, proxy); err != nil {
@@ -146,6 +164,18 @@ func (s *ProxyService) Update(ctx context.Context, id int64, req UpdateProxyRequ
 	if req.Status != nil {
 		proxy.Status = *req.Status
 	}
+	if req.ExpiresAt != nil {
+		proxy.ExpiresAt = req.ExpiresAt
+	}
+	if req.FallbackMode != nil {
+		proxy.FallbackMode = normalizeProxyFallbackMode(*req.FallbackMode)
+	}
+	if req.BackupProxyID != nil {
+		proxy.BackupProxyID = req.BackupProxyID
+	}
+	if req.ExpiryWarnDays != nil {
+		proxy.ExpiryWarnDays = normalizeProxyExpiryWarnDays(*req.ExpiryWarnDays)
+	}
 
 	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
 		return nil, fmt.Errorf("update proxy: %w", err)
@@ -191,4 +221,20 @@ func (s *ProxyService) GetURL(ctx context.Context, id int64) (string, error) {
 	}
 
 	return proxy.URL(), nil
+}
+
+func normalizeProxyFallbackMode(mode string) string {
+	switch mode {
+	case FallbackModeProxy, FallbackModeDirect:
+		return mode
+	default:
+		return FallbackModeNone
+	}
+}
+
+func normalizeProxyExpiryWarnDays(days int) int {
+	if days <= 0 {
+		return 7
+	}
+	return days
 }

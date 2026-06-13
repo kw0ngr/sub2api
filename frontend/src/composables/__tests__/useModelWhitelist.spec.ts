@@ -50,15 +50,25 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('deepseek-v4-flash')
   })
 
-  it('anthropic/antigravity 模型列表包含 Claude Opus 4.8', () => {
+  it('anthropic/antigravity 模型列表包含新发布的 Claude 模型', () => {
+    expect(getModelsByPlatform('anthropic')).toContain('claude-fable-5')
+    expect(getModelsByPlatform('antigravity')).toContain('claude-fable-5')
     expect(getModelsByPlatform('anthropic')).toContain('claude-opus-4-8')
     expect(getModelsByPlatform('antigravity')).toContain('claude-opus-4-8')
   })
 
-  it('antigravity 和 bedrock 预设映射包含 Claude Opus 4.8', () => {
+  it('antigravity 和 bedrock 预设映射包含新发布的 Claude 模型', () => {
+    expect(getPresetMappingsByPlatform('antigravity')).toContainEqual(expect.objectContaining({
+      from: 'claude-fable-5',
+      to: 'claude-fable-5'
+    }))
     expect(getPresetMappingsByPlatform('antigravity')).toContainEqual(expect.objectContaining({
       from: 'claude-opus-4-8',
       to: 'claude-opus-4-8'
+    }))
+    expect(getPresetMappingsByPlatform('bedrock')).toContainEqual(expect.objectContaining({
+      from: 'claude-fable-5',
+      to: 'anthropic.claude-fable-5'
     }))
     expect(getPresetMappingsByPlatform('bedrock')).toContainEqual(expect.objectContaining({
       from: 'claude-opus-4-8',

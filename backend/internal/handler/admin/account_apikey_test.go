@@ -160,6 +160,28 @@ func TestRecoverValidAPIKeyAccount_EnablesSchedulingWithoutClearingActiveAccount
 	require.True(t, adminSvc.setSchedulableCalls[0].schedulable)
 }
 
+func TestRecoverValidAPIKeyAccount_ClearsRuntimeStateForActiveAccount(t *testing.T) {
+	adminSvc := newStubAdminService()
+	handler := &AccountHandler{adminService: adminSvc}
+	now := time.Now()
+	account := &service.Account{
+		ID:                     46,
+		Status:                 service.StatusActive,
+		Schedulable:            true,
+		RateLimitedAt:          &now,
+		RateLimitResetAt:       &now,
+		TempUnschedulableUntil: &now,
+		Extra: map[string]any{
+			"model_rate_limits": map[string]any{"gemini-3.1-pro-preview": true},
+		},
+	}
+
+	err := handler.recoverValidAPIKeyAccount(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, []int64{46}, adminSvc.clearedAccountErrIDs)
+	require.Empty(t, adminSvc.setSchedulableCalls)
+}
+
 func TestCheckAPIKeysHealth_StartAndStatusIncludeJobIDAndCompletion(t *testing.T) {
 	adminSvc := newStubAdminService()
 	adminSvc.accounts = []service.Account{{

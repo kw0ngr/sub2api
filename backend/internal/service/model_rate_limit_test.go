@@ -198,6 +198,54 @@ func TestIsModelRateLimited_Antigravity_ThinkingAffectsModelKey(t *testing.T) {
 	}
 }
 
+func TestIsModelRateLimited_AntigravityGeminiFamilyLimit(t *testing.T) {
+	future := time.Now().Add(10 * time.Minute).Format(time.RFC3339)
+	account := &Account{
+		Platform: PlatformAntigravity,
+		Extra: map[string]any{
+			modelRateLimitsKey: map[string]any{
+				"antigravity:gemini": map[string]any{
+					"rate_limit_reset_at": future,
+				},
+			},
+		},
+	}
+
+	if !account.isModelRateLimitedWithContext(context.Background(), "gemini-3.1-pro-preview") {
+		t.Fatal("expected Gemini family rate limit to block Antigravity Gemini model")
+	}
+	if account.isModelRateLimitedWithContext(context.Background(), "claude-sonnet-4-5") {
+		t.Fatal("did not expect Gemini family rate limit to block Claude model")
+	}
+}
+
+func TestIsModelRateLimited_OpenAIImageGenerationCapabilityLimit(t *testing.T) {
+	future := time.Now().Add(10 * time.Minute).Format(time.RFC3339)
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Extra: map[string]any{
+			modelRateLimitsKey: map[string]any{
+				openAIImageGenerationRateLimitKey: map[string]any{
+					"rate_limit_reset_at": future,
+				},
+			},
+		},
+	}
+
+	if account.isModelRateLimitedWithContext(context.Background(), "gpt-5.4") {
+		t.Fatal("did not expect image capability limit to block text-only OpenAI request")
+	}
+	if !account.isModelRateLimitedWithContext(WithOpenAIImageGenerationIntent(context.Background()), "gpt-5.4") {
+		t.Fatal("expected image capability limit to block /v1/responses image_generation request")
+	}
+	if !account.isModelRateLimitedWithContext(context.Background(), "gpt-image-2") {
+		t.Fatal("expected image capability limit to block dedicated image model")
+	}
+	if remaining := account.GetModelRateLimitRemainingTimeWithContext(WithOpenAIImageGenerationIntent(context.Background()), "gpt-5.4"); remaining <= 0 {
+		t.Fatal("expected positive remaining time for image capability limit")
+	}
+}
+
 func TestGetModelRateLimitRemainingTime(t *testing.T) {
 	now := time.Now()
 	future10m := now.Add(10 * time.Minute).Format(time.RFC3339)

@@ -245,7 +245,7 @@ data: {"type":"message_stop"}
 	require.NotEmpty(t, getHeaderRaw(req.Header, "x-client-request-id"))
 	sessionID := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id")
 	require.NotEmpty(t, sessionID)
-	require.Equal(t, "claude-cli/2.1.92 (external, cli)", getHeaderRaw(req.Header, "user-agent"))
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "user-agent"))
 	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
 
 	beta := getHeaderRaw(req.Header, "anthropic-beta")
@@ -258,7 +258,7 @@ data: {"type":"message_stop"}
 	bodyText := string(rawBody)
 	require.Contains(t, bodyText, "x-anthropic-billing-header:")
 	require.Contains(t, bodyText, claudeCodeSystemPrompt)
-	require.Contains(t, bodyText, "cc_version=2.1.92")
+	require.Contains(t, bodyText, "cc_version="+claude.CLICurrentVersion)
 	require.NotContains(t, bodyText, "cch=00000;")
 
 	userID := gjson.GetBytes(rawBody, "metadata.user_id").String()
