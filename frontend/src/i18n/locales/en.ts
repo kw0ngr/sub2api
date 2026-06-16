@@ -3530,6 +3530,7 @@ export default {
         status: 'Status',
         accounts: 'Accounts',
         latency: 'Latency',
+        expiry: 'Validity',
         actions: 'Actions'
       },
       testConnection: 'Test Connection',
@@ -3627,7 +3628,21 @@ export default {
       hostRequired: 'Please enter host address',
       portInvalid: 'Port must be between 1-65535',
       deleteConfirm:
-        "Are you sure you want to delete '{name}'? Accounts using this proxy will have their proxy removed."
+        "Are you sure you want to delete '{name}'? Accounts using this proxy will have their proxy removed.",
+      neverExpires: 'Never expires',
+      expired: 'Expired',
+      overdueDays: 'Overdue {days}d',
+      expiringInDays: 'Expires in {days}d',
+      remainingDays: '{days}d left',
+      expiresAt: 'Validity',
+      nDays: '{days}d',
+      expiryDaysPlaceholder: 'Custom days, empty = never',
+      expiryWarnDays: 'Expiry warning days',
+      fallbackMode: 'Failure fallback',
+      fallbackNone: 'No fallback',
+      fallbackProxy: 'Backup proxy',
+      fallbackDirect: 'Direct connection',
+      backupProxy: 'Backup proxy'
     },
 
     // Redeem Codes

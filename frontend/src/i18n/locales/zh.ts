@@ -3614,6 +3614,7 @@ export default {
         status: '状态',
         accounts: '账号数',
         latency: '延迟',
+        expiry: '有效期',
         actions: '操作',
         nameLabel: '名称',
         namePlaceholder: '请输入代理名称',
@@ -3749,7 +3750,21 @@ export default {
       nameRequired: '请输入代理名称',
       hostRequired: '请输入主机地址',
       portInvalid: '端口必须在 1-65535 之间',
-      deleteConfirm: "确定要删除代理 '{name}' 吗？使用此代理的账号将被移除代理设置。"
+      deleteConfirm: "确定要删除代理 '{name}' 吗？使用此代理的账号将被移除代理设置。",
+      neverExpires: '永不过期',
+      expired: '已过期',
+      overdueDays: '已超期 {days} 天',
+      expiringInDays: '{days} 天后到期',
+      remainingDays: '剩余 {days} 天',
+      expiresAt: '有效期',
+      nDays: '{days} 天',
+      expiryDaysPlaceholder: '自定义天数，留空 = 永不过期',
+      expiryWarnDays: '到期提醒提前天数',
+      fallbackMode: '失败回退',
+      fallbackNone: '不回退',
+      fallbackProxy: '指定备用代理',
+      fallbackDirect: '回退直连',
+      backupProxy: '备用代理'
     },
 
     // Redeem Codes Management
