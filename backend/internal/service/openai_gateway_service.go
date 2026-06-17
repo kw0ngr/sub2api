@@ -3096,11 +3096,9 @@ type openaiStreamingResultPassthrough struct {
 	firstTokenMs *int
 }
 
-func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
-	if localStarted {
-		return true
-	}
-	return c != nil && c.Writer != nil && c.Writer.Written()
+func openAIStreamClientOutputStarted(_ *gin.Context, localStarted bool) bool {
+	// Keepalive comments may have already flushed bytes; they are still safe to retry across.
+	return localStarted
 }
 
 func openAIStreamEventIsPreamble(eventType string) bool {
@@ -3666,6 +3664,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为 Codex CLI。
 	// 用于网关未透传/改写 User-Agent 时，仍能命中 Codex 侧识别逻辑。
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+		req.Header.Set("user-agent", codexCLIUserAgent)
+	}
+	if account.Type == AccountTypeOAuth && strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.Header.Get("user-agent"))), "mozilla/") {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
 

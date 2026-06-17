@@ -1949,10 +1949,12 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 		userAgent      string
 		originator     string
 		wantOriginator string
+		wantUserAgent  string
 	}{
 		{name: "desktop originator preserved", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
 		{name: "vscode originator preserved", originator: "codex_vscode", wantOriginator: "codex_vscode"},
 		{name: "official ua fallback to codex_cli_rs", userAgent: "Codex Desktop/1.2.3", wantOriginator: "codex_cli_rs"},
+		{name: "browser ua falls back", userAgent: "Mozilla/5.0 Chrome/136.0.0.0 Safari/537.36", wantOriginator: "opencode", wantUserAgent: codexCLIUserAgent},
 	}
 
 	for _, tt := range tests {
@@ -1977,6 +1979,9 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 			req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", isCodexCLI)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantOriginator, req.Header.Get("originator"))
+			if tt.wantUserAgent != "" {
+				require.Equal(t, tt.wantUserAgent, req.Header.Get("User-Agent"))
+			}
 		})
 	}
 }
@@ -2404,4 +2409,42 @@ func TestOpenAIStreamingResponseFailedInsufficientQuotaReturns429Failover(t *tes
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "insufficient_quota")
 	require.NotContains(t, rec.Body.String(), "response.failed")
+}
+
+func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	go func() {
+		time.Sleep(1100 * time.Millisecond)
+		_, _ = writer.Write([]byte(strings.Join([]string{
+			`data: {"type":"response.failed","response":{"error":{"type":"insufficient_quota","code":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}}`,
+		}, "\n")))
+		_ = writer.Close()
+	}()
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Gateway: config.GatewayConfig{StreamKeepaliveInterval: 1}},
+	}
+	account := &Account{ID: 77, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_quota_keepalive"}},
+		Body:       reader,
+	}
+
+	usage, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-4o", "gpt-4o")
+
+	require.NotNil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "insufficient_quota")
+	require.NotContains(t, rec.Body.String(), "response.failed")
+	require.Contains(t, rec.Body.String(), ":\n\n")
 }
