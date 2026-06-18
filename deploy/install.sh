@@ -334,8 +334,8 @@ print_error() {
 # Check if running interactively (can access terminal)
 # When piped (curl | bash), stdin is not a terminal, but /dev/tty may still be available
 is_interactive() {
-    # Check if /dev/tty is available (works even when piped)
-    [ -e /dev/tty ] && [ -r /dev/tty ] && [ -w /dev/tty ]
+    # /dev/tty may exist in non-interactive ssh but still fail to open.
+    [ -e /dev/tty ] && [ -r /dev/tty ] && [ -w /dev/tty ] && { : < /dev/tty > /dev/tty; } 2>/dev/null
 }
 
 # Select language
