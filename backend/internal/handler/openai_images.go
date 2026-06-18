@@ -237,7 +237,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			contentPolicyPassthrough := openAIForwardErrorIsContentPolicyPassthrough(err)
+			if !contentPolicyPassthrough {
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			}
 			upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false
 			if !upstreamErrorAlreadyCommunicated {
@@ -247,7 +250,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				zap.Int64("account_id", account.ID),
 				zap.Bool("fallback_error_response_written", wroteFallback),
 				zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+				zap.Bool("content_policy_passthrough", contentPolicyPassthrough),
 				zap.Error(err),
+			}
+			if contentPolicyPassthrough {
+				reqLog.Info("openai.images.content_policy_passthrough", fields...)
+				return
 			}
 			if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 				reqLog.Warn("openai.images.forward_failed", fields...)

@@ -387,7 +387,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			contentPolicyPassthrough := openAIForwardErrorIsContentPolicyPassthrough(err)
+			if !contentPolicyPassthrough {
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			}
 			upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 			wroteFallback := false
 			if !upstreamErrorAlreadyCommunicated {
@@ -397,7 +400,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int64("account_id", account.ID),
 				zap.Bool("fallback_error_response_written", wroteFallback),
 				zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+				zap.Bool("content_policy_passthrough", contentPolicyPassthrough),
 				zap.Error(err),
+			}
+			if contentPolicyPassthrough {
+				reqLog.Info("openai.content_policy_passthrough", fields...)
+				return
 			}
 			if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 				reqLog.Warn("openai.forward_failed", fields...)
@@ -1695,6 +1703,27 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 		"non-streaming openai protocol error:",
 	} {
 		if strings.HasPrefix(msg, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func openAIForwardErrorIsContentPolicyPassthrough(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"this content was flagged",
+		"possible cybersecurity risk",
+		"trusted access for cyber",
+		"high-risk cyber",
+		"cyber_policy",
+		"content_policy",
+		"content policy",
+	} {
+		if strings.Contains(msg, marker) {
 			return true
 		}
 	}

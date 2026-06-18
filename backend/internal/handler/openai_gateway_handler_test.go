@@ -805,6 +805,14 @@ func TestOpenAIForwardErrorAlreadyCommunicated(t *testing.T) {
 	})
 }
 
+func TestOpenAIForwardErrorIsContentPolicyPassthrough(t *testing.T) {
+	require.True(t, openAIForwardErrorIsContentPolicyPassthrough(errors.New("upstream response failed: This content was flagged for possible cybersecurity risk")))
+	require.True(t, openAIForwardErrorIsContentPolicyPassthrough(errors.New("upstream response failed: cyber_policy hard block")))
+	require.True(t, openAIForwardErrorIsContentPolicyPassthrough(errors.New("upstream response failed: content_policy violation")))
+	require.False(t, openAIForwardErrorIsContentPolicyPassthrough(errors.New("stream read error: unexpected EOF")))
+	require.False(t, openAIForwardErrorIsContentPolicyPassthrough(nil))
+}
+
 func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject middleware.AuthSubject) *httptest.Server {
 	t.Helper()
 	groupID := int64(2)
