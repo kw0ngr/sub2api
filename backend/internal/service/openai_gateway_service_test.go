@@ -2430,7 +2430,7 @@ func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *test
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
 	reader, writer := io.Pipe()
-	defer reader.Close()
+	defer func() { require.NoError(t, reader.Close()) }()
 	go func() {
 		time.Sleep(1100 * time.Millisecond)
 		_, _ = writer.Write([]byte(strings.Join([]string{

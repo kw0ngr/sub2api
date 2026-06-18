@@ -6,8 +6,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const openAIResponsesEndpoint = "/v1/responses"
-
 func IsImageGenerationIntent(endpoint string, requestedModel string, body []byte) bool {
 	if IsImageGenerationEndpoint(endpoint) {
 		return true

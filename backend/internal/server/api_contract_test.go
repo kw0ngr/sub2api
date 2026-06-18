@@ -358,6 +358,8 @@ func TestAPIContracts(t *testing.T) {
 					"total_input_tokens": 15,
 					"total_output_tokens": 35,
 					"total_cache_tokens": 3,
+					"total_cache_creation_tokens": 0,
+					"total_cache_read_tokens": 0,
 					"total_tokens": 53,
 					"total_cost": 0.75,
 					"total_actual_cost": 0.75,
@@ -428,10 +430,12 @@ func TestAPIContracts(t *testing.T) {
 						"billing_type": 0,
 							"stream": true,
 							"duration_ms": 100,
-							"first_token_ms": 50,
-							"image_count": 0,
-							"image_size": null,
-							"media_type": null,
+								"first_token_ms": 50,
+								"image_count": 0,
+								"image_output_tokens": 0,
+								"image_output_cost": 0,
+								"image_size": null,
+								"media_type": null,
 							"cache_ttl_overridden": false,
 							"created_at": "2025-01-02T03:04:05Z",
 							"user_agent": null
@@ -845,6 +849,10 @@ func (r *stubUserRepo) GetByID(ctx context.Context, id int64) (*service.User, er
 	return &clone, nil
 }
 
+func (r *stubUserRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
+	return r.GetByID(ctx, id)
+}
+
 func (r *stubUserRepo) GetByEmail(ctx context.Context, email string) (*service.User, error) {
 	for _, user := range r.users {
 		if user.Email == email {
@@ -1198,6 +1206,10 @@ func (s *stubAccountRepo) UpdateSessionWindow(ctx context.Context, id int64, sta
 	return errors.New("not implemented")
 }
 
+func (s *stubAccountRepo) UpdateSessionWindowEnd(ctx context.Context, id int64, end time.Time) error {
+	return errors.New("not implemented")
+}
+
 func (s *stubAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	return errors.New("not implemented")
 }
@@ -1271,6 +1283,22 @@ func (stubProxyRepo) CountAccountsByProxyID(ctx context.Context, proxyID int64) 
 
 func (stubProxyRepo) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]service.ProxyAccountSummary, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (stubProxyRepo) ListAllForFallback(ctx context.Context) ([]service.Proxy, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (stubProxyRepo) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (stubProxyRepo) CountExpired(ctx context.Context) (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (stubProxyRepo) CountExpiringSoon(ctx context.Context, now time.Time) (int64, error) {
+	return 0, errors.New("not implemented")
 }
 
 type stubRedeemCodeRepo struct {

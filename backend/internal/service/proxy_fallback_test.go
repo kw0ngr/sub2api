@@ -47,7 +47,7 @@ func TestResolveProxyFallbackTarget(t *testing.T) {
 		{
 			name:       "cycle is unresolved",
 			start:      Proxy{ID: 1, FallbackMode: FallbackModeProxy, BackupProxyID: &id2},
-			byID:       map[int64]Proxy{2: {ID: 2, Status: StatusExpired, FallbackMode: FallbackModeProxy, BackupProxyID: ptrInt64(1)}},
+			byID:       map[int64]Proxy{2: {ID: 2, Status: StatusExpired, FallbackMode: FallbackModeProxy, BackupProxyID: proxyFallbackInt64(1)}},
 			wantChange: false,
 		},
 		{
@@ -71,7 +71,7 @@ func TestResolveProxyFallbackTarget(t *testing.T) {
 	}
 }
 
-func ptrInt64(v int64) *int64 {
+func proxyFallbackInt64(v int64) *int64 {
 	return &v
 }
 

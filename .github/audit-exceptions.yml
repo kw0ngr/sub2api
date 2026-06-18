@@ -35,3 +35,10 @@ exceptions:
     mitigation: "Proxy configuration not user-controlled; upgrade when axios releases fix"
     expires_on: "2026-07-10"
     owner: "security@your-domain"
+  - package: form-data
+    advisory: "GHSA-hmw2-7cc7-3qxx"
+    severity: high
+    reason: "Transitive dependency; frontend does not construct multipart field names from untrusted input"
+    mitigation: "Keep upload field names static; upgrade transitive dependency when available"
+    expires_on: "2026-07-10"
+    owner: "security@your-domain"

@@ -249,7 +249,7 @@ func ValidateFunctionCallOutputContextBytes(body []byte) FunctionCallOutputValid
 				result.HasToolCallContext = true
 			}
 		}
-		return !(result.HasFunctionCallOutput && result.HasToolCallContext)
+		return !result.HasFunctionCallOutput || !result.HasToolCallContext
 	})
 
 	if !result.HasFunctionCallOutput || result.HasToolCallContext {

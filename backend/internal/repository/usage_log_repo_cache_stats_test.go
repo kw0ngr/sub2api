@@ -12,7 +12,7 @@ import (
 func TestUsageLogRepositoryGetGlobalStatsSplitsCacheTokens(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := &usageLogRepository{sql: db}
 	start := time.Unix(100, 0).UTC()
@@ -44,7 +44,7 @@ func TestUsageLogRepositoryGetGlobalStatsSplitsCacheTokens(t *testing.T) {
 func TestUsageLogRepositoryGetUserStatsAggregatedSplitsCacheTokens(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := &usageLogRepository{sql: db}
 	start := time.Unix(100, 0).UTC()
