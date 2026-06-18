@@ -429,3 +429,35 @@ func TestHandleStreamingResponse_FailoverBodyDoesNotLeakAddresses(t *testing.T) 
 	require.Contains(t, body, "connection reset by peer")
 	require.Contains(t, body, "upstream stream disconnected")
 }
+
+func TestStreamSSEErrorFailoverRecordsOpsEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newMinimalGatewayService()
+	svc.cfg.Gateway.LogUpstreamErrorBody = true
+	svc.cfg.Gateway.LogUpstreamErrorBodyMaxBytes = 2048
+	svc.rateLimitService = nil
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"type":"error","error":{"type":"overloaded_error","message":"upstream overloaded"}}`)
+	resp := &http.Response{Header: http.Header{"X-Request-Id": []string{"rid-stream-error"}}}
+	account := &Account{ID: 42, Name: "acc-stream", Platform: PlatformAnthropic}
+
+	failoverErr := svc.streamSSEErrorFailover(context.Background(), c, account, resp, &streamSSEError{body: body})
+
+	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Equal(t, body, failoverErr.ResponseBody)
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "stream_error", events[0].Kind)
+	require.Equal(t, int64(42), events[0].AccountID)
+	require.Equal(t, "rid-stream-error", events[0].UpstreamRequestID)
+	require.Equal(t, "upstream overloaded", events[0].Message)
+	require.Contains(t, events[0].Detail, "overloaded_error")
+}

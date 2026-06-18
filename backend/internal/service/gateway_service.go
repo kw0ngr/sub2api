@@ -686,6 +686,39 @@ type streamSSEError struct {
 
 func (e *streamSSEError) Error() string { return "have error in stream" }
 
+func (s *GatewayService) streamSSEErrorFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, sseErr *streamSSEError) *UpstreamFailoverError {
+	body := sseErr.body
+	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	upstreamDetail := ""
+	if s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		upstreamDetail = truncateString(string(body), s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes)
+	}
+
+	requestID := ""
+	if resp != nil {
+		requestID = resp.Header.Get("x-request-id")
+	}
+	if account != nil {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: http.StatusForbidden,
+			UpstreamRequestID:  requestID,
+			Kind:               "stream_error",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		if s != nil && s.rateLimitService != nil && resp != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusForbidden, resp.Header, body)
+		}
+	}
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusForbidden,
+		ResponseBody: body,
+	}
+}
+
 // TempUnscheduleRetryableError 对 RetryableOnSameAccount 类型的 failover 错误触发临时封禁。
 // 由 handler 层在同账号重试全部用尽、切换账号时调用。
 func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
@@ -5155,12 +5188,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			var sseErr *streamSSEError
 			if errors.As(err, &sseErr) {
-				// Classify and persist account state before failing over.
-				s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusForbidden, resp.Header, sseErr.body)
-				return nil, &UpstreamFailoverError{
-					StatusCode:   http.StatusForbidden,
-					ResponseBody: sseErr.body,
-				}
+				return nil, s.streamSSEErrorFailover(ctx, c, account, resp, sseErr)
 			}
 			return nil, err
 		}
