@@ -192,6 +192,11 @@ genericRuntimePath:
 		return false
 	}
 
+	if statusCode == http.StatusTooManyRequests && account.Platform == PlatformAnthropic && hasAnthropicExhaustedWindow(headers) {
+		s.handle429(ctx, account, headers, responseBody)
+		return false
+	}
+
 	// 先尝试临时不可调度规则（401除外）
 	// 如果匹配成功，直接返回，不执行后续禁用逻辑
 	if statusCode != 401 {
@@ -1115,6 +1120,12 @@ func isAnthropicWindowExceeded(headers http.Header, window string) bool {
 	}
 
 	return false
+}
+
+func hasAnthropicExhaustedWindow(headers http.Header) bool {
+	return strings.EqualFold(strings.TrimSpace(headers.Get("anthropic-ratelimit-unified-5h-status")), "rejected") ||
+		isAnthropicWindowExceeded(headers, "5h") ||
+		isAnthropicWindowExceeded(headers, "7d")
 }
 
 // pickSooner returns whichever of the two time pointers is earlier.

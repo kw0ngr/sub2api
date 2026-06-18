@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -95,6 +96,44 @@ func TestRateLimitService_HandleUpstreamError_APIKey429UsesTemporaryCooldown(t *
 	require.Equal(t, 0, repo.tempCalls)
 	require.NotNil(t, repo.lastRateLimitResetAt)
 	require.WithinDuration(t, before.Add(apiKey429Cooldown), *repo.lastRateLimitResetAt, after.Sub(before)+time.Second)
+}
+
+func TestRateLimitService_HandleUpstreamError_AnthropicWindow429BeatsTempUnschedRule(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	resetAt := time.Now().Add(5 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-5h-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(resetAt.Unix(), 10))
+	account := &Account{
+		ID:       111,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusTooManyRequests),
+					"keywords":         []any{"rate limit"},
+					"duration_minutes": float64(10),
+				},
+			},
+		},
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		headers,
+		[]byte(`{"error":{"message":"rate limit exceeded"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.Equal(t, 0, repo.tempCalls)
+	require.NotNil(t, repo.lastRateLimitResetAt)
+	require.True(t, repo.lastRateLimitResetAt.Equal(resetAt))
 }
 
 func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey429InsufficientQuotaPermanentDisable(t *testing.T) {
