@@ -50,14 +50,33 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 func TestClassifyAPIKeyStatusAction_OpenAIContentPolicyServerErrorIgnored(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	action := ClassifyAPIKeyStatusAction(account, http.StatusBadGateway, []byte(`{
-		"error": {
-			"message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber",
-			"type": "server_error"
-		}
-	}`))
+	tests := []struct {
+		name       string
+		statusCode int
+		body       []byte
+	}{
+		{
+			name:       "message flagged",
+			statusCode: http.StatusBadGateway,
+			body: []byte(`{
+				"error": {
+					"message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber",
+					"type": "server_error"
+				}
+			}`),
+		},
+		{
+			name:       "structured cyber policy code",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"message":"blocked","code":"cyber_policy","type":"invalid_request_error"}}`),
+		},
+	}
 
-	require.Equal(t, APIKeyStatusActionIgnore, action)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, tt.statusCode, tt.body))
+		})
+	}
 }
 
 func TestClassifyAPIKeyProbeResponse(t *testing.T) {

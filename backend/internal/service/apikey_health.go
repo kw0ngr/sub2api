@@ -355,6 +355,7 @@ func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {
 		"possible cybersecurity risk",
 		"trusted access for cyber",
 		"high-risk cyber",
+		"cyber_policy",
 		"content policy",
 		"content_policy",
 	)
