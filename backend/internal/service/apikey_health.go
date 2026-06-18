@@ -111,6 +111,10 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
 	bodyUpper := strings.ToUpper(string(responseBody))
 
+	if account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(statusCode, responseBody) {
+		return APIKeyStatusActionIgnore
+	}
+
 	// 5xx and 529 are always temporary cooldowns regardless of platform
 	switch statusCode {
 	case 529, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
@@ -335,6 +339,25 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	// treat as temporary cooldown so the key is not scheduled again immediately.
 	// This covers endpoint-not-found, method-not-allowed, and any future unknown error codes.
 	return APIKeyStatusActionTemporaryCooldown
+}
+
+func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {
+	if statusCode < http.StatusBadRequest {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	errType := strings.ToLower(strings.TrimSpace(extractUpstreamErrorType(responseBody)))
+	body := strings.ToLower(string(responseBody))
+	combined := msg + " " + code + " " + errType + " " + body
+	return containsAny(combined,
+		"this content was flagged",
+		"possible cybersecurity risk",
+		"trusted access for cyber",
+		"high-risk cyber",
+		"content policy",
+		"content_policy",
+	)
 }
 
 func ShouldDisableAPIKeyAuthFailure(account *Account, statusCode int, responseBody []byte) bool {

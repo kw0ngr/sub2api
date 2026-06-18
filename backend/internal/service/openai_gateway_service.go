@@ -2963,6 +2963,31 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(resp.StatusCode, body) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:             account.Platform,
+			AccountID:            account.ID,
+			AccountName:          account.Name,
+			UpstreamStatusCode:   resp.StatusCode,
+			UpstreamRequestID:    resp.Header.Get("x-request-id"),
+			Passthrough:          true,
+			Kind:                 "http_error",
+			Message:              upstreamMsg,
+			Detail:               upstreamDetail,
+			UpstreamResponseBody: upstreamDetail,
+		})
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		contentType := resp.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		MarkResponseCommitted(c)
+		c.Data(resp.StatusCode, contentType, body)
+		if upstreamMsg == "" {
+			return fmt.Errorf("upstream content policy rejection: %d", resp.StatusCode)
+		}
+		return fmt.Errorf("upstream content policy rejection: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
 	if s.rateLimitService != nil {
 		_ = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, openAIModelForUpstreamError(requestBody))
 	}

@@ -178,6 +178,30 @@ func TestRateLimitService_HandleUpstreamError_APIKey503UsesTemporaryCooldown(t *
 	require.WithinDuration(t, before.Add(apiKeyServerErrorCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAIContentPolicyServerErrorDoesNotCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       110,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusBadGateway,
+		http.Header{},
+		[]byte(`{"error":{"message":"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber","type":"server_error"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 0, repo.rateLimitedCalls)
+	require.Equal(t, 0, repo.overloadedCalls)
+	require.Equal(t, 0, repo.tempCalls)
+}
+
 // TestRateLimitService_HandleUpstreamError_OpenAIAPIKey402AccountNotActivePermanentDisable
 // 验证 OpenAI API key 账单欠费/账号未激活（402）触发永久禁用
 func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey402AccountNotActivePermanentDisable(t *testing.T) {

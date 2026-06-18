@@ -47,6 +47,19 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(deepSeek, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limited"}}`)))
 }
 
+func TestClassifyAPIKeyStatusAction_OpenAIContentPolicyServerErrorIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	action := ClassifyAPIKeyStatusAction(account, http.StatusBadGateway, []byte(`{
+		"error": {
+			"message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber",
+			"type": "server_error"
+		}
+	}`))
+
+	require.Equal(t, APIKeyStatusActionIgnore, action)
+}
+
 func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 	openAIAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	geminiAccount := &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}
