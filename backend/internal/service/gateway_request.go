@@ -387,6 +387,27 @@ func FilterThinkingBlocksForModel(body []byte, mappedModel string) []byte {
 	return FilterThinkingBlocks(body)
 }
 
+func NormalizeChineseLLMThinkingForModel(body []byte, mappedModel string) ([]byte, bool) {
+	if ResolveThinkingProtocol(mappedModel) != ThinkingProtocolPassbackRequired {
+		return body, false
+	}
+	modelID := strings.ToLower(strings.TrimSpace(mappedModel))
+	if slash := strings.LastIndex(modelID, "/"); slash >= 0 && slash+1 < len(modelID) {
+		modelID = modelID[slash+1:]
+	}
+	if !strings.HasPrefix(modelID, "minimax-m") {
+		return body, false
+	}
+	if gjson.GetBytes(body, "thinking.type").String() != "enabled" {
+		return body, false
+	}
+	out, err := sjson.SetBytes(body, "thinking.type", "adaptive")
+	if err != nil {
+		return body, false
+	}
+	return out, true
+}
+
 // FilterThinkingBlocksForRetry strips thinking-related constructs for retry scenarios.
 //
 // Why:

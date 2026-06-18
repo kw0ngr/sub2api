@@ -4716,6 +4716,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
 	body = FilterThinkingBlocksForModel(body, reqModel)
+	if normalizedBody, applied := NormalizeChineseLLMThinkingForModel(body, reqModel); applied {
+		body = normalizedBody
+		logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type enabled->adaptive for %s", account.ID, reqModel)
+	}
 
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
 	setOpsUpstreamRequestBody(c, body)
@@ -9463,6 +9467,9 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		}
 	}
 	body = FilterThinkingBlocksForModel(body, reqModel)
+	if normalizedBody, applied := NormalizeChineseLLMThinkingForModel(body, reqModel); applied {
+		body = normalizedBody
+	}
 
 	// 获取凭证
 	token, tokenType, err := s.GetAccessToken(ctx, account)

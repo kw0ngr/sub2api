@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestResolveThinkingProtocol(t *testing.T) {
@@ -41,4 +42,65 @@ func TestThinkingFiltersRespectProtocol(t *testing.T) {
 	require.NotEqual(t, body, FilterThinkingBlocksForModel(body, "claude-sonnet-4-6"))
 	require.NotEqual(t, body, FilterThinkingBlocksForRetryModel(body, "claude-sonnet-4-6"))
 	require.NotEqual(t, body, FilterSignatureSensitiveBlocksForRetryModel(body, "claude-sonnet-4-6"))
+}
+
+func TestNormalizeChineseLLMThinkingForMiniMax(t *testing.T) {
+	tests := []struct {
+		name      string
+		model     string
+		body      string
+		wantType  string
+		wantApply bool
+	}{
+		{
+			name:      "minimax enabled becomes adaptive",
+			model:     "MiniMax-M3",
+			body:      `{"thinking":{"type":"enabled"},"messages":[]}`,
+			wantType:  "adaptive",
+			wantApply: true,
+		},
+		{
+			name:      "provider prefix minimax enabled becomes adaptive",
+			model:     "openrouter/MiniMax-M2.7",
+			body:      `{"thinking":{"type":"enabled"},"messages":[]}`,
+			wantType:  "adaptive",
+			wantApply: true,
+		},
+		{
+			name:      "minimax adaptive stays adaptive",
+			model:     "MiniMax-M3",
+			body:      `{"thinking":{"type":"adaptive"},"messages":[]}`,
+			wantType:  "adaptive",
+			wantApply: false,
+		},
+		{
+			name:      "deepseek enabled is unchanged",
+			model:     "deepseek-v4-pro",
+			body:      `{"thinking":{"type":"enabled"},"messages":[]}`,
+			wantType:  "enabled",
+			wantApply: false,
+		},
+		{
+			name:      "claude enabled is unchanged",
+			model:     "claude-sonnet-4-6",
+			body:      `{"thinking":{"type":"enabled"},"messages":[]}`,
+			wantType:  "enabled",
+			wantApply: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, applied := NormalizeChineseLLMThinkingForModel([]byte(tt.body), tt.model)
+			require.Equal(t, tt.wantApply, applied)
+			require.Equal(t, tt.wantType, gjson.GetBytes(got, "thinking.type").String())
+		})
+	}
+}
+
+func TestNormalizeChineseLLMThinkingInvalidJSON(t *testing.T) {
+	body := []byte(`{"thinking":`)
+	got, applied := NormalizeChineseLLMThinkingForModel(body, "MiniMax-M3")
+	require.False(t, applied)
+	require.Equal(t, body, got)
 }
