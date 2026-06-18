@@ -786,7 +786,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http
 	c.Data(resp.StatusCode, contentType, body)
 
 	usage, _ := extractOpenAIUsageFromJSONBytes(body)
-	return usage, extractOpenAIImageCountFromJSONBytes(body), nil
+	return usage, extractOpenAIImagesBillableCountFromJSONBytes(body), nil
 }
 
 func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
@@ -811,6 +811,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 	usage := OpenAIUsage{}
 	imageCount := 0
 	var firstTokenMs *int
+	var dataAcc openAISSEDataAccumulator
+	processData := func(dataBytes []byte) {
+		mergeOpenAIUsage(&usage, dataBytes)
+		if count := extractOpenAIImagesBillableCountFromJSONBytes(dataBytes); count > imageCount {
+			imageCount = count
+		}
+	}
 
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -824,13 +831,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 			}
 			flusher.Flush()
 
-			if data, ok := extractOpenAISSEDataLine(strings.TrimRight(string(line), "\r\n")); ok && data != "" && data != "[DONE]" {
-				dataBytes := []byte(data)
-				mergeOpenAIUsage(&usage, dataBytes)
-				if count := extractOpenAIImageCountFromJSONBytes(dataBytes); count > imageCount {
-					imageCount = count
-				}
-			}
+			dataAcc.AddLine(string(line), processData)
 		}
 		if err == io.EOF {
 			break
@@ -839,6 +840,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 			return OpenAIUsage{}, 0, firstTokenMs, err
 		}
 	}
+	dataAcc.Flush(processData)
 	return usage, imageCount, firstTokenMs, nil
 }
 
@@ -869,6 +871,29 @@ func extractOpenAIImageCountFromJSONBytes(body []byte) int {
 	data := gjson.GetBytes(body, "data")
 	if data.Exists() && data.IsArray() {
 		return len(data.Array())
+	}
+	return 0
+}
+
+func extractOpenAIImagesBillableCountFromJSONBytes(body []byte) int {
+	if count := extractOpenAIImageCountFromJSONBytes(body); count > 0 {
+		return count
+	}
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return 0
+	}
+	if count := int(gjson.GetBytes(body, "usage.images").Int()); count > 0 {
+		return count
+	}
+	if count := int(gjson.GetBytes(body, "tool_usage.image_gen.images").Int()); count > 0 {
+		return count
+	}
+	eventType := strings.TrimSpace(gjson.GetBytes(body, "type").String())
+	if eventType == "" || !strings.HasSuffix(eventType, ".completed") {
+		return 0
+	}
+	if gjson.GetBytes(body, "b64_json").Exists() || gjson.GetBytes(body, "url").Exists() {
+		return 1
 	}
 	return 0
 }

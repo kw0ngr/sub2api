@@ -359,6 +359,8 @@ type OpenAIGatewayService struct {
 
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+	openaiOAuth429WindowStartUnixNano   atomic.Int64
+	openaiOAuth429WindowCount           atomic.Int64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -3273,6 +3275,25 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	}
 }
 
+func (s *OpenAIGatewayService) recordOpenAIStreamFailedSideEffects(
+	ctx context.Context,
+	account *Account,
+	upstreamRequestID string,
+	payload []byte,
+	message string,
+) {
+	if s == nil || s.rateLimitService == nil || account == nil || len(payload) == 0 {
+		return
+	}
+	statusCode := openAIStreamFailedEventHTTPStatus(payload, message)
+	body := openAIStreamFailedEventErrorBody(payload, message)
+	headers := http.Header{}
+	if upstreamRequestID = strings.TrimSpace(upstreamRequestID); upstreamRequestID != "" {
+		headers.Set("x-request-id", upstreamRequestID)
+	}
+	_ = s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
@@ -3342,6 +3363,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
 						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 				}
+				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
@@ -4130,6 +4152,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
 					return
 				}
+				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
@@ -4729,14 +4752,67 @@ func responsesStreamEventMayContributeToOutput(eventType string) bool {
 	}
 }
 
-func forEachOpenAISSEDataPayload(bodyText string, fn func([]byte)) {
-	for _, line := range strings.Split(bodyText, "\n") {
-		data, ok := extractOpenAISSEDataLine(strings.TrimRight(line, "\r"))
-		if !ok || data == "" || data == "[DONE]" {
-			continue
-		}
-		fn([]byte(data))
+type openAISSEDataAccumulator struct {
+	lines []string
+}
+
+func (a *openAISSEDataAccumulator) AddLine(line string, fn func([]byte)) {
+	if fn == nil {
+		return
 	}
+	trimmedLine := strings.TrimRight(line, "\r\n")
+	if data, ok := extractOpenAISSEDataLine(trimmedLine); ok {
+		a.lines = append(a.lines, data)
+		return
+	}
+	if strings.TrimSpace(trimmedLine) == "" {
+		a.Flush(fn)
+	}
+}
+
+func (a *openAISSEDataAccumulator) Flush(fn func([]byte)) {
+	if fn == nil || len(a.lines) == 0 {
+		return
+	}
+	emitOpenAISSEDataPayloads(a.lines, fn)
+	a.lines = a.lines[:0]
+}
+
+func emitOpenAISSEDataPayloads(lines []string, fn func([]byte)) {
+	if fn == nil || len(lines) == 0 {
+		return
+	}
+	if len(lines) == 1 {
+		emitOpenAISSEDataPayload(lines[0], fn)
+		return
+	}
+	joined := strings.Join(lines, "\n")
+	if gjson.Valid(joined) {
+		emitOpenAISSEDataPayload(joined, fn)
+		return
+	}
+	for _, line := range lines {
+		emitOpenAISSEDataPayload(line, fn)
+	}
+}
+
+func emitOpenAISSEDataPayload(data string, fn func([]byte)) {
+	data = strings.TrimSpace(data)
+	if data == "" || data == "[DONE]" {
+		return
+	}
+	fn([]byte(data))
+}
+
+func forEachOpenAISSEDataPayload(bodyText string, fn func([]byte)) {
+	if fn == nil || strings.TrimSpace(bodyText) == "" {
+		return
+	}
+	var acc openAISSEDataAccumulator
+	for _, line := range strings.Split(bodyText, "\n") {
+		acc.AddLine(line, fn)
+	}
+	acc.Flush(fn)
 }
 
 // reconstructResponseOutputFromSSE scans raw SSE body text for delta events and

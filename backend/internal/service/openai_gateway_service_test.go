@@ -35,6 +35,18 @@ type snapshotUpdateAccountRepo struct {
 	updateExtraCalls chan map[string]any
 }
 
+type streamFailureAccountRepo struct {
+	stubOpenAIAccountRepo
+	setErrorCalls int
+	lastErrorMsg  string
+}
+
+func (r *streamFailureAccountRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
+	r.setErrorCalls++
+	r.lastErrorMsg = errorMsg
+	return nil
+}
+
 func (r *snapshotUpdateAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	if r.updateExtraCalls != nil {
 		copied := make(map[string]any, len(updates))
@@ -2447,4 +2459,38 @@ func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *test
 	require.Contains(t, string(failoverErr.ResponseBody), "insufficient_quota")
 	require.NotContains(t, rec.Body.String(), "response.failed")
 	require.Contains(t, rec.Body.String(), ":\n\n")
+}
+
+func TestOpenAIStreamingResponseFailedAfterOutputMarksAPIKeyInsufficientQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	repo := &streamFailureAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{ID: 456, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_quota"}}`,
+		`data: {"type":"response.output_text.delta","delta":"hello"}`,
+		`data: {"type":"response.failed","response":{"error":{"type":"insufficient_quota","code":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}}`,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_quota_after_output"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	usage, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
+
+	require.NotNil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "already-streamed output must not be retried")
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "current quota")
+	require.Contains(t, rec.Body.String(), "response.output_text.delta")
 }

@@ -369,6 +369,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				}
 				switchCount++
 				setDebugTraceAccountSwitchCount(c, switchCount)
+				if shouldStopOpenAIOAuth429Failover(h.gatewayService, account, failoverErr, switchCount) {
+					reqLog.Warn("openai.oauth429_storm_failover_stopped",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Int("switch_count", switchCount),
+						zap.Int("max_switches", maxAccountSwitches),
+					)
+					h.handleFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
 				reqLog.Warn("openai.upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
@@ -753,6 +763,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				}
 				switchCount++
 				setDebugTraceAccountSwitchCount(c, switchCount)
+				if shouldStopOpenAIOAuth429Failover(h.gatewayService, account, failoverErr, switchCount) {
+					reqLog.Warn("openai_messages.oauth429_storm_failover_stopped",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Int("switch_count", switchCount),
+						zap.Int("max_switches", maxAccountSwitches),
+					)
+					h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
 				reqLog.Warn("openai_messages.upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1372,6 +1392,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				switchCount++
 				setDebugTraceAccountSwitchCount(c, switchCount)
 				h.gatewayService.RecordOpenAIAccountSwitch()
+				if shouldStopOpenAIOAuth429Failover(h.gatewayService, account, failoverErr, switchCount) {
+					reqLog.Warn("openai.websocket_oauth429_storm_failover_stopped",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Int("switch_count", switchCount),
+						zap.Int("max_switches", maxAccountSwitches),
+					)
+					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+					return
+				}
 				reqLog.Warn("openai.websocket_upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),

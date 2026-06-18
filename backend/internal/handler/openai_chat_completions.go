@@ -218,6 +218,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					return
 				}
 				switchCount++
+				if shouldStopOpenAIOAuth429Failover(h.gatewayService, account, failoverErr, switchCount) {
+					reqLog.Warn("openai_chat_completions.oauth429_storm_failover_stopped",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Int("switch_count", switchCount),
+						zap.Int("max_switches", maxAccountSwitches),
+					)
+					h.handleFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
 				reqLog.Warn("openai_chat_completions.upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
