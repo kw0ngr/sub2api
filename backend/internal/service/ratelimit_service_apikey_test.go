@@ -273,6 +273,12 @@ func TestClassifyAPIKeyStatusAction_OpenAIAccountNotActive(t *testing.T) {
 			expected:   APIKeyStatusActionPermanentDisable,
 		},
 		{
+			name:       "403 insufficient quota stream error",
+			statusCode: http.StatusForbidden,
+			body:       []byte(`{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota"}}`),
+			expected:   APIKeyStatusActionPermanentDisable,
+		},
+		{
 			name:       "403 account suspended",
 			statusCode: http.StatusForbidden,
 			body:       []byte(`{"error":{"message":"Your account has been suspended","type":"invalid_request_error"}}`),

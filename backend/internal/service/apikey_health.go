@@ -170,11 +170,14 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 				"deactivated_workspace",
 				"billing_not_active",
 				"account_inactive",
+				"insufficient_quota",
 			) {
 				return APIKeyStatusActionPermanentDisable
 			}
 			// Message text fallback: precise phrases only
 			if containsAny(msg,
+				"exceeded your current quota",
+				"insufficient_quota",
 				"invalid api key",
 				"incorrect api key",
 				"no api key provided",
