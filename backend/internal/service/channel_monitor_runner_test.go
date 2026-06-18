@@ -240,6 +240,27 @@ func TestStop_WaitsForInFlightCheck(t *testing.T) {
 	}
 }
 
+func TestRunOne_DecryptFailureUnschedulesMonitor(t *testing.T) {
+	svc := &stubMonitorSvc{
+		runCalled: make(chan int64, 1),
+		runErr:    ErrChannelMonitorAPIKeyDecryptFailed,
+	}
+	r := newRunnerForTest(svc)
+	r.Start()
+	r.Schedule(&ChannelMonitor{ID: 4, Name: "broken", Enabled: true, IntervalSeconds: 60})
+
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first fire never happened")
+	}
+	waitFor(t, time.Second, "decrypt-failed monitor unscheduled", func() bool {
+		return runnerTaskCount(r) == 0
+	})
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
 // TestInFlight_PoolFullReleasesSlot 直接驱动 fire 路径，模拟 pool.TrySubmit 失败时 inFlight 必须释放。
 // 用一个小型 stub pool 替换 r.pool 不便（pond.Pool 是接口但 mock 麻烦），
 // 改为：占满 inFlight 后直接 fire，验证不会在 inFlight 空槽时永久卡住。

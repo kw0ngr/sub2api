@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -285,6 +286,9 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 	}()
 
 	if _, err := r.svc.RunCheck(ctx, id); err != nil {
+		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
+			r.Unschedule(id)
+		}
 		slog.Warn("channel_monitor: run check failed",
 			"monitor_id", id, "name", name, "error", err)
 	}
