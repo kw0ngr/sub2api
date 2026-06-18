@@ -380,6 +380,13 @@ func FilterThinkingBlocks(body []byte) []byte {
 	return filterThinkingBlocksInternal(body, false)
 }
 
+func FilterThinkingBlocksForModel(body []byte, mappedModel string) []byte {
+	if !ShouldPreFilterThinkingBlocks(mappedModel) {
+		return body
+	}
+	return FilterThinkingBlocks(body)
+}
+
 // FilterThinkingBlocksForRetry strips thinking-related constructs for retry scenarios.
 //
 // Why:
@@ -622,6 +629,13 @@ func FilterThinkingBlocksForRetry(body []byte) []byte {
 	return out
 }
 
+func FilterThinkingBlocksForRetryModel(body []byte, mappedModel string) []byte {
+	if !ShouldApplyRetryFilters(mappedModel) {
+		return body
+	}
+	return FilterThinkingBlocksForRetry(body)
+}
+
 // removeThinkingDependentContextStrategies 从 context_management.edits 中移除
 // 需要 thinking 启用的策略（如 clear_thinking_20251015）。
 // 当顶层 "thinking" 字段被禁用时必须调用，否则上游会返回
@@ -851,6 +865,13 @@ func FilterSignatureSensitiveBlocksForRetry(body []byte) []byte {
 		return body
 	}
 	return newBody
+}
+
+func FilterSignatureSensitiveBlocksForRetryModel(body []byte, mappedModel string) []byte {
+	if !ShouldApplyRetryFilters(mappedModel) {
+		return body
+	}
+	return FilterSignatureSensitiveBlocksForRetry(body)
 }
 
 // filterThinkingBlocksInternal removes invalid thinking blocks from request

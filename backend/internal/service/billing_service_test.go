@@ -355,6 +355,10 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{name: "openai gpt5.1 codex max alias", model: "gpt-5.1-codex-max", expectedInput: 1.5e-6},
 		{name: "openai codex mini latest alias", model: "codex-mini-latest", expectedInput: 1.5e-6},
 		{name: "openai unknown no fallback", model: "gpt-unknown-model", expectNilPricing: true},
+		{name: "deepseek v4 pro", model: "deepseek-v4-pro", expectedInput: 4.35e-7},
+		{name: "deepseek v4 flash", model: "deepseek-v4-flash", expectedInput: 1.4e-7},
+		{name: "deepseek chat alias", model: "deepseek-chat", expectedInput: 1.4e-7},
+		{name: "deepseek reasoner alias", model: "deepseek-reasoner", expectedInput: 1.4e-7},
 		{name: "non supported family", model: "qwen-max", expectNilPricing: true},
 	}
 

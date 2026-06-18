@@ -259,6 +259,18 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerTokenPriority: 0.35e-6,
 		SupportsCacheBreakdown:         false,
 	}
+	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
+		InputPricePerToken:     4.35e-7,
+		OutputPricePerToken:    8.7e-7,
+		CacheReadPricePerToken: 3.625e-9,
+		SupportsCacheBreakdown: false,
+	}
+	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
+		InputPricePerToken:     1.4e-7,
+		OutputPricePerToken:    2.8e-7,
+		CacheReadPricePerToken: 2.8e-9,
+		SupportsCacheBreakdown: false,
+	}
 	// Codex 族兜底统一按 GPT-5.1 Codex 价格计费
 	s.fallbackPrices["gpt-5.1-codex"] = &ModelPricing{
 		InputPricePerToken:             1.5e-6, // $1.5 per MTok
@@ -321,6 +333,14 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 	if strings.Contains(modelLower, "gemini-3.1-pro") || strings.Contains(modelLower, "gemini-3-1-pro") {
 		return s.fallbackPrices["gemini-3.1-pro"]
+	}
+	if strings.Contains(modelLower, "deepseek-v4-pro") {
+		return s.fallbackPrices["deepseek-v4-pro"]
+	}
+	if strings.Contains(modelLower, "deepseek-v4-flash") ||
+		strings.Contains(modelLower, "deepseek-chat") ||
+		strings.Contains(modelLower, "deepseek-reasoner") {
+		return s.fallbackPrices["deepseek-v4-flash"]
 	}
 
 	// OpenAI 仅匹配已知 GPT-5/Codex 族，避免未知 OpenAI 型号误计价。
