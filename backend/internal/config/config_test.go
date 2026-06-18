@@ -78,6 +78,16 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultGatewayFailoverConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, 50, cfg.Gateway.MaxAccountSwitches)
+	require.Equal(t, 3, cfg.Gateway.MaxAccountSwitchesGemini)
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
