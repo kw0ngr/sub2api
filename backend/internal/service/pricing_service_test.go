@@ -157,6 +157,33 @@ func TestGetModelPricing_Gpt54NanoUsesDedicatedStaticFallbackWhenRemoteMissing(t
 	require.Zero(t, got.LongContextInputTokenThreshold)
 }
 
+func TestGetModelPricing_GLMOfficialStaticFallbacks(t *testing.T) {
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{}}
+
+	cases := []struct {
+		model     string
+		input     float64
+		cacheRead float64
+		output    float64
+	}{
+		{model: "glm-5.2", input: 1.4e-6, cacheRead: 0.26e-6, output: 4.4e-6},
+		{model: "GLM-5-Turbo", input: 1.2e-6, cacheRead: 0.24e-6, output: 4.0e-6},
+		{model: "glm-4.7-flashx", input: 0.07e-6, cacheRead: 0.01e-6, output: 0.4e-6},
+		{model: "glm-4.5-airx", input: 1.1e-6, cacheRead: 0.22e-6, output: 4.5e-6},
+		{model: "models/glm-4.7-flash", input: 0, cacheRead: 0, output: 0},
+	}
+
+	for _, tt := range cases {
+		got := svc.GetModelPricing(tt.model)
+		require.NotNil(t, got, tt.model)
+		require.Equal(t, "zai", got.LiteLLMProvider)
+		require.Equal(t, "chat", got.Mode)
+		require.InDelta(t, tt.input, got.InputCostPerToken, 1e-12, tt.model)
+		require.InDelta(t, tt.cacheRead, got.CacheReadInputTokenCost, 1e-12, tt.model)
+		require.InDelta(t, tt.output, got.OutputCostPerToken, 1e-12, tt.model)
+	}
+}
+
 func TestParsePricingData_PreservesPriorityAndServiceTierFields(t *testing.T) {
 	raw := map[string]any{
 		"gpt-5.4": map[string]any{

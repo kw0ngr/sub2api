@@ -2758,6 +2758,7 @@ import { VueDraggable } from "vue-draggable-plus";
 import { createStableObjectKeyResolver } from "@/utils/stableObjectKey";
 import { useKeyedDebouncedSearch } from "@/composables/useKeyedDebouncedSearch";
 import { getPersistedPageSize } from "@/composables/usePersistedPageSize";
+import { supportedPlatformOptions, platformFilterOptionsWithAll } from "@/utils/platformOptions";
 import {
   createDefaultMessagesDispatchFormState,
   messagesDispatchConfigToFormState,
@@ -2820,26 +2821,9 @@ const exclusiveOptions = computed(() => [
   { value: "false", label: t("admin.groups.nonExclusive") },
 ]);
 
-const platformOptions = computed(() => [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "gemini", label: "Gemini" },
-  { value: "glm", label: "GLM" },
-  { value: "antigravity", label: "Antigravity" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "deepseek", label: "DeepSeek" },
-]);
+const platformOptions = computed(() => supportedPlatformOptions);
 
-const platformFilterOptions = computed(() => [
-  { value: "", label: t("admin.groups.allPlatforms") },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "gemini", label: "Gemini" },
-  { value: "glm", label: "GLM" },
-  { value: "antigravity", label: "Antigravity" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "deepseek", label: "DeepSeek" },
-]);
+const platformFilterOptions = computed(() => platformFilterOptionsWithAll(t("admin.groups.allPlatforms")));
 
 const editStatusOptions = computed(() => [
   { value: "active", label: t("admin.accounts.status.active") },

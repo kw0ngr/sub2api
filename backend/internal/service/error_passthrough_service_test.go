@@ -551,6 +551,13 @@ func TestMatchRule_PlatformFilter(t *testing.T) {
 	})
 }
 
+func TestErrorPassthroughAllPlatformsIncludesGLM(t *testing.T) {
+	platforms := model.AllPlatforms()
+	require.Contains(t, platforms, "glm")
+	require.Contains(t, platforms, "openrouter")
+	require.Contains(t, platforms, "deepseek")
+}
+
 func TestMatchRule_NoMatch(t *testing.T) {
 	rules := []*model.ErrorPassthroughRule{
 		{

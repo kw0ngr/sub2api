@@ -80,11 +80,22 @@ func NewGroupHandler(adminService service.AdminService, dashboardService *servic
 	}
 }
 
+func normalizeAndValidateGroupPlatform(platform *string) error {
+	*platform = strings.TrimSpace(*platform)
+	if *platform == "" {
+		return nil
+	}
+	if service.IsSupportedPlatform(*platform) {
+		return nil
+	}
+	return fmt.Errorf("platform must be one of %s", strings.Join(service.SupportedPlatforms(), ", "))
+}
+
 // CreateGroupRequest represents create group request
 type CreateGroupRequest struct {
 	Name             string             `json:"name" binding:"required"`
 	Description      string             `json:"description"`
-	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity glm"`
+	Platform         string             `json:"platform"`
 	RateMultiplier   float64            `json:"rate_multiplier"`
 	IsExclusive      bool               `json:"is_exclusive"`
 	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
@@ -118,7 +129,7 @@ type CreateGroupRequest struct {
 type UpdateGroupRequest struct {
 	Name             string             `json:"name"`
 	Description      *string            `json:"description"`
-	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity glm"`
+	Platform         string             `json:"platform"`
 	RateMultiplier   *float64           `json:"rate_multiplier"`
 	IsExclusive      *bool              `json:"is_exclusive"`
 	Status           string             `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -240,6 +251,10 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := normalizeAndValidateGroupPlatform(&req.Platform); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	group, err := h.adminService.CreateGroup(c.Request.Context(), &service.CreateGroupInput{
 		Name:                            req.Name,
@@ -288,6 +303,10 @@ func (h *GroupHandler) Update(c *gin.Context) {
 	var req UpdateGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := normalizeAndValidateGroupPlatform(&req.Platform); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 

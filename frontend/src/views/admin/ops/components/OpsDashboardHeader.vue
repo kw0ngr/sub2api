@@ -10,6 +10,7 @@ import { opsAPI, type OpsDashboardOverview, type OpsMetricThresholds, type OpsRe
 import type { OpsRequestDetailsPreset } from './OpsRequestDetailsModal.vue'
 import { useAdminSettingsStore } from '@/stores'
 import { formatNumber } from '@/utils/format'
+import { platformFilterOptionsWithAll } from '@/utils/platformOptions'
 
 type RealtimeWindow = '1min' | '5min' | '30min' | '1h'
 
@@ -106,14 +107,7 @@ function formatCustomTimeRangeLabel(startTime: string, endTime: string): string 
 
 const groups = ref<Array<{ id: number; name: string; platform: string }>>([])
 
-const platformOptions = computed(() => [
-  { value: '', label: t('common.all') },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'glm', label: 'GLM' },
-  { value: 'antigravity', label: 'Antigravity' }
-])
+const platformOptions = computed(() => platformFilterOptionsWithAll(t('common.all')))
 
 const timeRangeOptions = computed(() => [
   { value: '5m', label: t('admin.ops.timeRange.5m') },

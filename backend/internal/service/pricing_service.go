@@ -50,7 +50,36 @@ var (
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
+	glmOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		// Z.AI official pricing, USD per token (official table is USD / 1M tokens).
+		// Keep this static fallback because the LiteLLM mirror often lags new GLM releases.
+		"glm-5.2":             newGLMTokenPricing(1.4, 0.26, 4.4),
+		"glm-5.1":             newGLMTokenPricing(1.4, 0.26, 4.4),
+		"glm-5":               newGLMTokenPricing(1.0, 0.20, 3.2),
+		"glm-5-turbo":         newGLMTokenPricing(1.2, 0.24, 4.0),
+		"glm-4.7":             newGLMTokenPricing(0.6, 0.11, 2.2),
+		"glm-4.7-flashx":      newGLMTokenPricing(0.07, 0.01, 0.4),
+		"glm-4.7-flash":       newGLMTokenPricing(0, 0, 0),
+		"glm-4.6":             newGLMTokenPricing(0.6, 0.11, 2.2),
+		"glm-4.5":             newGLMTokenPricing(0.6, 0.11, 2.2),
+		"glm-4.5-x":           newGLMTokenPricing(2.2, 0.45, 8.9),
+		"glm-4.5-air":         newGLMTokenPricing(0.2, 0.03, 1.1),
+		"glm-4.5-airx":        newGLMTokenPricing(1.1, 0.22, 4.5),
+		"glm-4.5-flash":       newGLMTokenPricing(0, 0, 0),
+		"glm-4-32b-0414-128k": newGLMTokenPricing(0.1, 0, 0.1),
+	}
 )
+
+func newGLMTokenPricing(inputPerMTok, cacheReadPerMTok, outputPerMTok float64) *LiteLLMModelPricing {
+	return &LiteLLMModelPricing{
+		InputCostPerToken:       inputPerMTok / 1_000_000,
+		OutputCostPerToken:      outputPerMTok / 1_000_000,
+		CacheReadInputTokenCost: cacheReadPerMTok / 1_000_000,
+		LiteLLMProvider:         "zai",
+		Mode:                    "chat",
+		SupportsPromptCaching:   true,
+	}
+}
 
 // LiteLLMModelPricing LiteLLM价格数据结构
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
@@ -573,6 +602,10 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 		return s.matchOpenAIModel(lookupCandidates[0])
 	}
 
+	if pricing := s.matchGLMModel(lookupCandidates); pricing != nil {
+		return pricing
+	}
+
 	return nil
 }
 
@@ -626,6 +659,20 @@ func normalizeModelNameForPricing(model string) string {
 
 	model = strings.TrimLeft(model, "/")
 	return model
+}
+
+func (s *PricingService) matchGLMModel(candidates []string) *LiteLLMModelPricing {
+	for _, candidate := range candidates {
+		normalized := strings.ToLower(strings.TrimSpace(candidate))
+		normalized = strings.TrimPrefix(normalized, "models/")
+		normalized = lastSegment(normalized)
+		if pricing, ok := glmOfficialStaticPricing[normalized]; ok {
+			logger.With(zap.String("component", "service.pricing")).
+				Info(fmt.Sprintf("[Pricing] GLM fallback matched %s -> %s(static)", candidates[0], normalized))
+			return pricing
+		}
+	}
+	return nil
 }
 
 func lastSegment(model string) string {

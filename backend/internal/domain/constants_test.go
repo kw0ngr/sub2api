@@ -2,6 +2,36 @@ package domain
 
 import "testing"
 
+func TestSupportedPlatformsIncludesAllGatewayPlatforms(t *testing.T) {
+	t.Parallel()
+
+	want := []string{
+		PlatformAnthropic,
+		PlatformOpenAI,
+		PlatformGemini,
+		PlatformAntigravity,
+		PlatformOpenRouter,
+		PlatformDeepSeek,
+		PlatformGLM,
+	}
+
+	got := SupportedPlatforms()
+	if len(got) != len(want) {
+		t.Fatalf("SupportedPlatforms length = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i, platform := range want {
+		if got[i] != platform {
+			t.Fatalf("SupportedPlatforms[%d] = %q, want %q", i, got[i], platform)
+		}
+		if !IsSupportedPlatform(platform) {
+			t.Fatalf("IsSupportedPlatform(%q) = false", platform)
+		}
+	}
+	if IsSupportedPlatform("unknown") {
+		t.Fatalf("unknown platform should not be supported")
+	}
+}
+
 func TestDefaultAntigravityModelMapping_ImageCompatibilityAliases(t *testing.T) {
 	t.Parallel()
 

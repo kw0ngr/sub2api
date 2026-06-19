@@ -29,6 +29,14 @@ const (
 	PlatformGLM         = domain.PlatformGLM
 )
 
+func SupportedPlatforms() []string {
+	return domain.SupportedPlatforms()
+}
+
+func IsSupportedPlatform(platform string) bool {
+	return domain.IsSupportedPlatform(platform)
+}
+
 // Account type constants
 const (
 	AccountTypeOAuth      = domain.AccountTypeOAuth      // OAuth类型账号（full scope: profile + inference）

@@ -4,6 +4,8 @@ package model
 import (
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 // ErrorPassthroughRule 全局错误透传规则
@@ -37,17 +39,18 @@ const MatchModeAll = "all"
 
 // 支持的平台常量
 const (
-	PlatformAnthropic   = "anthropic"
-	PlatformOpenAI      = "openai"
-	PlatformGemini      = "gemini"
-	PlatformAntigravity = "antigravity"
-	PlatformOpenRouter  = "openrouter"
-	PlatformDeepSeek    = "deepseek"
+	PlatformAnthropic   = domain.PlatformAnthropic
+	PlatformOpenAI      = domain.PlatformOpenAI
+	PlatformGemini      = domain.PlatformGemini
+	PlatformAntigravity = domain.PlatformAntigravity
+	PlatformOpenRouter  = domain.PlatformOpenRouter
+	PlatformDeepSeek    = domain.PlatformDeepSeek
+	PlatformGLM         = domain.PlatformGLM
 )
 
 // AllPlatforms 返回所有支持的平台列表
 func AllPlatforms() []string {
-	return []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformOpenRouter, PlatformDeepSeek}
+	return domain.SupportedPlatforms()
 }
 
 // NormalizeDeprecatedFields clears legacy fields that remain only for historical

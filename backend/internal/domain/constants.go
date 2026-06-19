@@ -27,6 +27,36 @@ const (
 	PlatformGLM         = "glm"
 )
 
+var supportedPlatforms = []string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformAntigravity,
+	PlatformOpenRouter,
+	PlatformDeepSeek,
+	PlatformGLM,
+}
+
+// SupportedPlatforms returns every platform that can be attached to accounts,
+// groups, channels, and platform-scoped rules.
+func SupportedPlatforms() []string {
+	out := make([]string, len(supportedPlatforms))
+	copy(out, supportedPlatforms)
+	return out
+}
+
+// IsSupportedPlatform reports whether platform is a first-class platform in
+// this fork. Keep platform validation wired through this helper instead of
+// duplicating hard-coded oneof lists in handlers.
+func IsSupportedPlatform(platform string) bool {
+	for _, supported := range supportedPlatforms {
+		if platform == supported {
+			return true
+		}
+	}
+	return false
+}
+
 // Account type constants
 const (
 	AccountTypeOAuth      = "oauth"       // OAuth类型账号（full scope: profile + inference）
