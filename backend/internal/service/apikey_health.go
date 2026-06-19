@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -64,6 +65,8 @@ func NormalizeAPIKeyPlatform(raw string) (string, bool) {
 		return PlatformOpenRouter, true
 	case PlatformDeepSeek:
 		return PlatformDeepSeek, true
+	case PlatformGLM, "zhipu", "bigmodel":
+		return PlatformGLM, true
 	default:
 		return "", false
 	}
@@ -71,7 +74,7 @@ func NormalizeAPIKeyPlatform(raw string) (string, bool) {
 
 func SupportedAPIKeyProbePlatform(platform string) bool {
 	switch strings.TrimSpace(platform) {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
 		return true
 	default:
 		return false
@@ -90,6 +93,8 @@ func DefaultAPIKeyBaseURL(platform string) string {
 		return "https://openrouter.ai/api/v1"
 	case PlatformDeepSeek:
 		return "https://api.deepseek.com"
+	case PlatformGLM:
+		return "https://open.bigmodel.cn/api/paas/v4"
 	default:
 		return ""
 	}
@@ -306,7 +311,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			}
 			return APIKeyStatusActionTemporaryCooldown
 		}
-	case PlatformOpenRouter, PlatformDeepSeek:
+	case PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return APIKeyStatusActionPermanentDisable
@@ -328,6 +333,10 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 					"credit balance",
 					"balance is insufficient",
 					"credits exhausted",
+					"resource package",
+					"no available resource",
+					"资源包",
+					"余额不足",
 				) {
 				return APIKeyStatusActionPermanentDisable
 			}
@@ -379,7 +388,7 @@ func ClassifyAPIKeyProbeResponse(account *Account, statusCode int, responseBody 
 	message = sanitizeUpstreamErrorMessage(message)
 
 	switch account.Platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
 		switch ClassifyAPIKeyStatusAction(account, statusCode, responseBody) {
 		case APIKeyStatusActionValid:
 			return true, false, false, message
@@ -413,6 +422,8 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 		return s.checkOpenRouterAPIKey(ctx, account)
 	case PlatformDeepSeek:
 		return s.checkDeepSeekAPIKey(ctx, account)
+	case PlatformGLM:
+		return s.checkGLMAPIKey(ctx, account)
 	}
 
 	// Run the same real chat completions test used by single-account "test connection".
@@ -436,10 +447,10 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 func (s *AccountTestService) checkOpenRouterAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
 	baseURL := openRouterProbeBaseURL(account.GetCredential("base_url"))
 
-	statusCode, body, err := s.getAPIKeyProbe(ctx, account, baseURL+"/credits", map[string]string{
+	statusCode, body, err := s.doAPIKeyProbe(ctx, account, http.MethodGet, baseURL+"/credits", map[string]string{
 		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
 		"Accept":        "application/json",
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -476,10 +487,10 @@ func (s *AccountTestService) checkOpenRouterAPIKey(ctx context.Context, account 
 func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
 	baseURL := deepSeekProbeBaseURL(account.GetCredential("base_url"))
 
-	statusCode, body, err := s.getAPIKeyProbe(ctx, account, baseURL+"/user/balance", map[string]string{
+	statusCode, body, err := s.doAPIKeyProbe(ctx, account, http.MethodGet, baseURL+"/user/balance", map[string]string{
 		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
 		"Accept":        "application/json",
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -512,11 +523,71 @@ func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *A
 	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformDeepSeek, baseURL+"/models")
 }
 
+func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
+	if account.IsGLMOpenAICompatible() {
+		baseURL := strings.TrimRight(strings.TrimSpace(account.GetOpenAIBaseURL()), "/")
+		if baseURL == "" {
+			baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
+		}
+		health, err := s.checkAPIKeyModelsEndpoint(ctx, account, PlatformGLM, buildGLMOpenAIModelsURL(baseURL))
+		if err != nil {
+			return nil, err
+		}
+		if health.Valid || health.Invalid || health.StatusCode == http.StatusTooManyRequests {
+			return health, nil
+		}
+		return s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
+	}
+	return s.checkGLMAnthropicMessagesProbe(ctx, account)
+}
+
+func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
+	endpoint := buildGLMAnthropicMessagesURL(anthropicCompatibleBaseURLForAccount(account))
+	body, _ := json.Marshal(map[string]any{
+		"model":      "glm-5.2",
+		"max_tokens": 1,
+		"stream":     false,
+		"messages": []map[string]any{
+			{"role": "user", "content": "hi"},
+		},
+	})
+	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, endpoint, map[string]string{
+		"x-api-key":         strings.TrimSpace(account.GetCredential("api_key")),
+		"anthropic-version": "2023-06-01",
+		"Content-Type":      "application/json",
+		"Accept":            "application/json",
+	}, body)
+	if err != nil {
+		return nil, err
+	}
+	return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody), nil
+}
+
+func (s *AccountTestService) checkGLMOpenAIChatProbe(ctx context.Context, account *Account, baseURL string) (*APIKeyHealthCheckResult, error) {
+	body, _ := json.Marshal(map[string]any{
+		"model":      "glm-5.2",
+		"max_tokens": 1,
+		"stream":     false,
+		"messages": []map[string]any{
+			{"role": "user", "content": "hi"},
+		},
+	})
+	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, buildOpenAICompatibleChatCompletionsURL(PlatformGLM, baseURL), map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
+		"Content-Type":  "application/json",
+		"Accept":        "application/json",
+	}, body)
+	if err != nil {
+		return nil, err
+	}
+	return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody), nil
+}
+
 func (s *AccountTestService) checkAPIKeyModelsEndpoint(ctx context.Context, account *Account, platform, endpoint string) (*APIKeyHealthCheckResult, error) {
-	statusCode, body, err := s.getAPIKeyProbe(ctx, account, endpoint, map[string]string{
+	statusCode, body, err := s.doAPIKeyProbe(ctx, account, http.MethodGet, endpoint, map[string]string{
 		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
 		"Accept":        "application/json",
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -528,8 +599,12 @@ func (s *AccountTestService) checkAPIKeyModelsEndpoint(ctx context.Context, acco
 	return health, nil
 }
 
-func (s *AccountTestService) getAPIKeyProbe(ctx context.Context, account *Account, endpoint string, headers map[string]string) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+func (s *AccountTestService) doAPIKeyProbe(ctx context.Context, account *Account, method, endpoint string, headers map[string]string, body []byte) (int, []byte, error) {
+	var reader io.Reader
+	if len(body) > 0 {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -560,8 +635,8 @@ func (s *AccountTestService) getAPIKeyProbe(ctx context.Context, account *Accoun
 		return resp.StatusCode, nil, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, body, nil
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, respBody, nil
 }
 
 func (s *AccountTestService) persistAPIKeyProbeQuotaSnapshot(ctx context.Context, account *Account, snapshot *APIKeyProbeQuotaSnapshot) {

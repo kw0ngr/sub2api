@@ -83,6 +83,15 @@ func TestBuildAPIKeyIdentityUsesDefaultBaseURL(t *testing.T) {
 	require.Equal(t, a, b)
 }
 
+func TestBuildAPIKeyIdentitySeparatesGLMCompatModes(t *testing.T) {
+	anthropic := buildAPIKeyIdentity(service.PlatformGLM, "sk-glm-1", "", service.GLMCompatModeAnthropic)
+	openai := buildAPIKeyIdentity(service.PlatformGLM, "sk-glm-1", "", service.GLMCompatModeOpenAI)
+	explicitOpenAI := buildAPIKeyIdentity(service.PlatformGLM, "sk-glm-1", service.DefaultAPIKeyBaseURL(service.PlatformGLM), service.GLMCompatModeOpenAI)
+
+	require.NotEqual(t, anthropic, openai)
+	require.Equal(t, openai, explicitOpenAI)
+}
+
 func TestBuildAPIKeyIdentityDoesNotExposeRawKey(t *testing.T) {
 	identity := buildAPIKeyIdentity(service.PlatformOpenAI, "sk-proj-secret-123456", "https://api.openai.com/")
 	require.NotContains(t, identity, "sk-proj-secret-123456")

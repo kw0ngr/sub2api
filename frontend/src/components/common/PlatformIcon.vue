@@ -32,6 +32,11 @@
     <path stroke-linecap="round" stroke-linejoin="round" d="M11 18a7 7 0 1 1 5.2-2.32L21 20.5" />
     <path stroke-linecap="round" stroke-linejoin="round" d="M8 11h6m-3-3v6" />
   </svg>
+  <!-- GLM / Z.ai logo (sparked Z) -->
+  <svg v-else-if="platform === 'glm'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M7 6h10L7 18h10" />
+    <path stroke-linecap="round" stroke-linejoin="round" d="M18 3l.6 2.1L21 6l-2.4.9L18 9l-.6-2.1L15 6l2.4-.9L18 3z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

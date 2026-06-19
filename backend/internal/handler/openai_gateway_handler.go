@@ -38,7 +38,7 @@ type OpenAIGatewayHandler struct {
 }
 
 func resolveOpenAICompatibleGatewayPlatform(apiKey *service.APIKey) string {
-	if apiKey != nil && apiKey.Group != nil && service.IsOpenAICompatiblePlatform(apiKey.Group.Platform) {
+	if apiKey != nil && apiKey.Group != nil && service.IsOpenAIChatCompletionsCompatiblePlatform(apiKey.Group.Platform) {
 		return apiKey.Group.Platform
 	}
 	return service.PlatformOpenAI

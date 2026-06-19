@@ -853,9 +853,18 @@ func IsOpenAICompatiblePlatform(platform string) bool {
 	}
 }
 
+func IsOpenAIChatCompletionsCompatiblePlatform(platform string) bool {
+	switch strings.TrimSpace(platform) {
+	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeOpenAICompatiblePlatform(platform string) string {
 	platform = strings.TrimSpace(platform)
-	if IsOpenAICompatiblePlatform(platform) {
+	if IsOpenAIChatCompletionsCompatiblePlatform(platform) {
 		return platform
 	}
 	return PlatformOpenAI
@@ -881,8 +890,33 @@ func (a *Account) IsOpenAICompatibleAPIKey() bool {
 	return a.IsOpenAICompatible() && a.Type == AccountTypeAPIKey
 }
 
+const (
+	GLMCompatModeAnthropic = "anthropic"
+	GLMCompatModeOpenAI    = "openai"
+)
+
+func (a *Account) GetGLMCompatMode() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(a.GetCredential("compat_mode"))) {
+	case GLMCompatModeOpenAI:
+		return GLMCompatModeOpenAI
+	default:
+		return GLMCompatModeAnthropic
+	}
+}
+
+func (a *Account) IsGLMAnthropicCompatible() bool {
+	return a != nil && a.Platform == PlatformGLM && a.Type == AccountTypeAPIKey && a.GetGLMCompatMode() == GLMCompatModeAnthropic
+}
+
+func (a *Account) IsGLMOpenAICompatible() bool {
+	return a != nil && a.Platform == PlatformGLM && a.Type == AccountTypeAPIKey && a.GetGLMCompatMode() == GLMCompatModeOpenAI
+}
+
 func (a *Account) GetOpenAIBaseURL() string {
-	if !a.IsOpenAICompatible() {
+	if a == nil || !IsOpenAIChatCompletionsCompatiblePlatform(a.Platform) {
 		return ""
 	}
 	if a.Type == AccountTypeAPIKey {
@@ -916,7 +950,16 @@ func (a *Account) GetOpenAIIDToken() string {
 }
 
 func (a *Account) GetOpenAIApiKey() string {
-	if !a.IsOpenAICompatibleAPIKey() {
+	if a == nil || a.Type != AccountTypeAPIKey {
+		return ""
+	}
+	if a.Platform == PlatformGLM {
+		if a.IsGLMOpenAICompatible() {
+			return a.GetCredential("api_key")
+		}
+		return ""
+	}
+	if !a.IsOpenAICompatible() {
 		return ""
 	}
 	return a.GetCredential("api_key")

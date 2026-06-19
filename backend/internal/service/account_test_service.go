@@ -198,6 +198,16 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.testGeminiAccountConnection(c, account, modelID, prompt)
 	}
 
+	if account.Platform == PlatformGLM {
+		if account.IsGLMOpenAICompatible() {
+			return s.testGLMOpenAIAccountConnection(c, account, modelID, prompt)
+		}
+		if strings.TrimSpace(modelID) == "" {
+			modelID = "glm-5.2"
+		}
+		return s.testClaudeAccountConnection(c, account, modelID)
+	}
+
 	if account.Platform == PlatformAntigravity {
 		return s.routeAntigravityTest(c, account, modelID, prompt)
 	}
@@ -1408,6 +1418,120 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 			return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 		}
 	}
+}
+
+func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+	ctx := c.Request.Context()
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = "glm-5.2"
+	}
+	testModelID = account.GetMappedModel(testModelID)
+
+	authToken := strings.TrimSpace(account.GetCredential("api_key"))
+	if authToken == "" {
+		return s.sendErrorAndEnd(c, "No API key available")
+	}
+	baseURL := account.GetOpenAIBaseURL()
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
+	}
+	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
+	}
+	apiURL := buildOpenAICompatibleChatCompletionsURL(PlatformGLM, normalizedBaseURL)
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	userPrompt := strings.TrimSpace(prompt)
+	if userPrompt == "" {
+		userPrompt = testConnectionPrompt
+	}
+	payload := map[string]any{
+		"model":      testModelID,
+		"stream":     false,
+		"max_tokens": 32,
+		"messages": []map[string]string{
+			{"role": "user", "content": userPrompt},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create request")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	var resp *http.Response
+	if s.tlsFPProfileService != nil {
+		resp, err = s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	} else {
+		resp, err = s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
+	}
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Connection failed: %s", err.Error()))
+	}
+	if resp == nil {
+		return s.sendErrorAndEnd(c, "Empty response from API")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
+			action := ClassifyAPIKeyStatusAction(account, resp.StatusCode, respBody)
+			switch action {
+			case APIKeyStatusActionPermanentDisable:
+				_ = s.accountRepo.SetError(ctx, account.ID, buildAPIKeyRuntimeErrorMessage(resp.StatusCode, respBody, "API key permanently disabled after test connection"))
+				if account.Schedulable {
+					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+				}
+			case APIKeyStatusActionTemporaryCooldown:
+				_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, time.Now().Add(apiKeyProbeCooldown), buildAPIKeyRuntimeErrorMessage(resp.StatusCode, respBody, "API key temporary cooldown after test connection"))
+			}
+		}
+		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, sanitizeUpstreamErrorMessage(string(respBody))))
+	}
+
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	_ = json.Unmarshal(respBody, &parsed)
+	text := ""
+	if len(parsed.Choices) > 0 {
+		text = strings.TrimSpace(parsed.Choices[0].Message.Content)
+	}
+	if text != "" {
+		s.sendEvent(c, TestEvent{Type: "response", Text: text})
+	}
+	if !strings.Contains(strings.ToLower(text), testExpectedOutput) {
+		errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, text)
+		if account != nil && s.accountRepo != nil {
+			_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
+			if account.Schedulable {
+				_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+			}
+		}
+		return s.sendErrorAndEnd(c, errMsg)
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }
 
 // testOpenAIImageAPIKey tests OpenAI image generation using an API Key account.

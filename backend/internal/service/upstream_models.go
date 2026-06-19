@@ -16,6 +16,26 @@ import (
 
 const upstreamModelsBodyLimit int64 = 8 << 20
 
+var builtinGLMModelIDs = []string{
+	"glm-5.2",
+	"glm-5-turbo",
+	"glm-5",
+	"glm-4.7",
+	"glm-4.7-flashx",
+	"glm-4.6",
+	"glm-4.5",
+	"glm-4-plus",
+	"glm-4-air",
+	"glm-4-airx",
+	"glm-4-flash",
+	"chatglm_turbo",
+	"chatglm_pro",
+}
+
+func BuiltinGLMModelIDs() []string {
+	return builtinGLMModelIDs
+}
+
 // UpstreamModelSyncErrorKind classifies model sync failures for safe HTTP mapping.
 type UpstreamModelSyncErrorKind string
 
@@ -81,6 +101,9 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {
 		return s.fetchAntigravityOAuthUpstreamModels(ctx, account)
 	}
+	if account.Platform == PlatformGLM && account.GetGLMCompatMode() == GLMCompatModeAnthropic {
+		return s.fetchGLMAnthropicUpstreamModels(ctx, account)
+	}
 
 	if s.httpUpstream == nil {
 		return nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
@@ -129,6 +152,8 @@ func (s *AccountTestService) buildUpstreamModelsRequest(ctx context.Context, acc
 		return s.buildAntigravityAPIKeyModelsRequest(ctx, account)
 	case account.IsOpenAI():
 		return s.buildOpenAIUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformGLM && account.IsGLMOpenAICompatible():
+		return s.buildGLMOpenAIUpstreamModelsRequest(ctx, account)
 	case account.IsGemini():
 		return s.buildGeminiUpstreamModelsRequest(ctx, account)
 	case account.IsAnthropic():
@@ -272,6 +297,34 @@ func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Contex
 	return req, nil
 }
 
+func (s *AccountTestService) buildGLMOpenAIUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account.Type != AccountTypeAPIKey {
+		return nil, newUpstreamModelSyncUnsupportedError(
+			fmt.Sprintf("Unsupported GLM account type for upstream model sync: %s", account.Type), nil,
+		)
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No GLM API key is available", nil)
+	}
+	baseURL := account.GetOpenAIBaseURL()
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
+	}
+	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid GLM base URL", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildGLMOpenAIModelsURL(normalizedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid GLM model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	return req, nil
+}
+
 func (s *AccountTestService) buildGeminiUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
 	baseURL := account.GetGeminiBaseURL(geminicli.AIStudioBaseURL)
 	if strings.TrimSpace(baseURL) == "" {
@@ -353,6 +406,70 @@ func (s *AccountTestService) fetchAntigravityOAuthUpstreamModels(ctx context.Con
 	return dedupeAndSortModelIDs(models), nil
 }
 
+func (s *AccountTestService) fetchGLMAnthropicUpstreamModels(ctx context.Context, account *Account) ([]string, error) {
+	if s.httpUpstream == nil {
+		return nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
+	}
+	if account.Type != AccountTypeAPIKey {
+		return nil, newUpstreamModelSyncUnsupportedError(
+			fmt.Sprintf("Unsupported GLM account type for upstream model sync: %s", account.Type), nil,
+		)
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No GLM API key is available", nil)
+	}
+
+	baseURL := anthropicCompatibleBaseURLForAccount(account)
+	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid GLM base URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildV1ModelsURL(normalizedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid GLM model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("x-api-key", apiKey)
+
+	resp, err := s.doUpstreamModelsRequest(req, upstreamModelsProxyURL(account), account)
+	if err != nil {
+		return nil, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, upstreamModelsBodyLimit+1))
+	if err != nil {
+		return nil, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
+	}
+	if int64(len(body)) > upstreamModelsBodyLimit {
+		return nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", upstreamModelsBodyLimit))
+	}
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, newUpstreamModelSyncUpstreamError(
+			fmt.Sprintf("Upstream model list request failed with HTTP %d", resp.StatusCode),
+			fmt.Errorf("upstream model list returned HTTP %d", resp.StatusCode),
+		)
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return BuiltinGLMModelIDs(), nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, newUpstreamModelSyncUpstreamError(
+			fmt.Sprintf("Upstream model list request failed with HTTP %d", resp.StatusCode),
+			fmt.Errorf("upstream model list returned HTTP %d", resp.StatusCode),
+		)
+	}
+
+	models, err := extractUpstreamModelIDs(body)
+	if err != nil || len(models) == 0 {
+		return BuiltinGLMModelIDs(), nil
+	}
+	return models, nil
+}
+
 func (s *AccountTestService) doUpstreamModelsRequest(req *http.Request, proxyURL string, account *Account) (*http.Response, error) {
 	if s.tlsFPProfileService == nil {
 		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
@@ -389,6 +506,20 @@ func buildOpenAIModelsURL(base string) string {
 	return normalized + "/v1/models"
 }
 
+func buildGLMOpenAIModelsURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if normalized == "" {
+		normalized = DefaultAPIKeyBaseURL(PlatformGLM)
+	}
+	if strings.HasSuffix(normalized, "/chat/completions") {
+		return strings.TrimSuffix(normalized, "/chat/completions") + "/models"
+	}
+	if strings.HasSuffix(normalized, "/models") {
+		return normalized
+	}
+	return normalized + "/models"
+}
+
 func buildGeminiModelsURL(base string) string {
 	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
 	if strings.HasSuffix(normalized, "/v1beta/models") {
@@ -398,6 +529,20 @@ func buildGeminiModelsURL(base string) string {
 		return normalized + "/models"
 	}
 	return normalized + "/v1beta/models"
+}
+
+func buildGLMAnthropicMessagesURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if normalized == "" {
+		normalized = DefaultGLMAnthropicBaseURL()
+	}
+	if strings.HasSuffix(normalized, "/v1/messages") {
+		return normalized
+	}
+	if strings.HasSuffix(normalized, "/v1") {
+		return normalized + "/messages"
+	}
+	return normalized + "/v1/messages"
 }
 
 type upstreamModelEntry struct {

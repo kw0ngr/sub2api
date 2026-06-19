@@ -26,6 +26,7 @@ const (
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformOpenRouter  = domain.PlatformOpenRouter
 	PlatformDeepSeek    = domain.PlatformDeepSeek
+	PlatformGLM         = domain.PlatformGLM
 )
 
 // Account type constants

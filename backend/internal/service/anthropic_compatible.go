@@ -11,7 +11,12 @@ const (
 	openRouterAnthropicBaseURL    = "https://openrouter.ai/api"
 	openRouterOpenAICompatBaseURL = "https://openrouter.ai/api/v1"
 	deepSeekOpenAICompatBaseURL   = "https://api.deepseek.com"
+	glmAnthropicBaseURL           = "https://open.bigmodel.cn/api/anthropic"
 )
+
+func DefaultGLMAnthropicBaseURL() string {
+	return glmAnthropicBaseURL
+}
 
 func defaultAnthropicCompatibleBaseURL(platform string) string {
 	switch strings.TrimSpace(platform) {
@@ -19,6 +24,8 @@ func defaultAnthropicCompatibleBaseURL(platform string) string {
 		return deepSeekAnthropicBaseURL
 	case PlatformOpenRouter:
 		return openRouterAnthropicBaseURL
+	case PlatformGLM:
+		return glmAnthropicBaseURL
 	default:
 		return defaultAnthropicBaseURL
 	}
@@ -44,6 +51,13 @@ func anthropicCompatibleBaseURLForAccount(account *Account) string {
 			normalized == openRouterAnthropicBaseURL ||
 			normalized == openRouterOpenAICompatBaseURL {
 			return openRouterAnthropicBaseURL
+		}
+	case PlatformGLM:
+		if normalized == "" ||
+			normalized == "https://open.bigmodel.cn" ||
+			normalized == "https://open.bigmodel.cn/api" ||
+			normalized == "https://open.bigmodel.cn/api/paas/v4" {
+			return glmAnthropicBaseURL
 		}
 	}
 

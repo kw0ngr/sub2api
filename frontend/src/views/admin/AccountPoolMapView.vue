@@ -794,6 +794,7 @@ function platformLabel(platform: string): string {
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     gemini: 'Gemini',
+    glm: 'GLM',
     antigravity: 'Antigravity',
     openrouter: 'OpenRouter',
     deepseek: 'DeepSeek',

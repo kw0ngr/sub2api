@@ -24,6 +24,7 @@ const (
 	PlatformAntigravity = "antigravity"
 	PlatformOpenRouter  = "openrouter"
 	PlatformDeepSeek    = "deepseek"
+	PlatformGLM         = "glm"
 )
 
 // Account type constants

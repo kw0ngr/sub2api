@@ -50,6 +50,19 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('deepseek-v4-flash')
   })
 
+  it('glm 模型列表优先包含 5.x 和 4.7 系列', () => {
+    const models = getModelsByPlatform('glm')
+
+    expect(models.slice(0, 5)).toEqual([
+      'glm-5.2',
+      'glm-5-turbo',
+      'glm-5',
+      'glm-4.7',
+      'glm-4.7-flashx'
+    ])
+    expect(models).toContain('chatglm_turbo')
+  })
+
   it('anthropic/antigravity 模型列表包含新发布的 Claude 模型', () => {
     expect(getModelsByPlatform('anthropic')).toContain('claude-fable-5')
     expect(getModelsByPlatform('antigravity')).toContain('claude-fable-5')

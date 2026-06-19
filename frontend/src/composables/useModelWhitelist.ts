@@ -93,10 +93,12 @@ const antigravityModels = [
 ]
 
 // 智谱 GLM
-const zhipuModels = [
+const glmModels = [
+  'glm-5.2', 'glm-5-turbo', 'glm-5',
+  'glm-4.7', 'glm-4.7-flashx', 'glm-4.6', 'glm-4.5',
   'glm-4', 'glm-4v', 'glm-4-plus', 'glm-4-0520',
   'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4-flash',
-  'glm-4v-plus', 'glm-4.5', 'glm-4.6',
+  'glm-4v-plus',
   'glm-3-turbo', 'glm-4-alltools',
   'chatglm_turbo', 'chatglm_pro', 'chatglm_std', 'chatglm_lite',
   'cogview-3', 'cogvideo'
@@ -223,7 +225,7 @@ const allModelsList: string[] = [
   ...openaiModels,
   ...claudeModels,
   ...geminiModels,
-  ...zhipuModels,
+  ...glmModels,
   ...qwenModels,
   ...deepseekModels,
   ...mistralModels,
@@ -377,7 +379,8 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'claude': return claudeModels
     case 'gemini': return geminiModels
     case 'antigravity': return antigravityModels
-    case 'zhipu': return zhipuModels
+    case 'glm': return glmModels
+    case 'zhipu': return glmModels
     case 'qwen': return qwenModels
     case 'deepseek': return deepseekModels
     case 'mistral': return mistralModels
@@ -400,6 +403,7 @@ export function getModelsByPlatform(platform: string): string[] {
 export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
+  if (platform === 'glm' || platform === 'zhipu') return []
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

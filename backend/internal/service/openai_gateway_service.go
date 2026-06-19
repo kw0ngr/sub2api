@@ -1767,7 +1767,13 @@ func isSchedulableOpenAICompatibleAccountForPlatform(account *Account, platform 
 		return false
 	}
 	platform = normalizeOpenAICompatiblePlatform(platform)
-	return account.Platform == platform && account.IsOpenAICompatible()
+	if account.Platform != platform {
+		return false
+	}
+	if platform == PlatformGLM {
+		return account.IsGLMOpenAICompatible()
+	}
+	return account.IsOpenAICompatible()
 }
 
 func isSchedulableOpenAICompatibleAccountForRequest(ctx context.Context, account *Account, platform string, requestedModel string) bool {
@@ -4973,6 +4979,9 @@ func buildOpenAICompatibleChatCompletionsURL(platform, base string) string {
 		return normalized
 	}
 	if strings.HasSuffix(normalized, "/v1") {
+		return normalized + "/chat/completions"
+	}
+	if strings.TrimSpace(platform) == PlatformGLM {
 		return normalized + "/chat/completions"
 	}
 	if strings.TrimSpace(platform) == PlatformDeepSeek {

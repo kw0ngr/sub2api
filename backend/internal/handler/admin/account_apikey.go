@@ -297,7 +297,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 
 	createdForHealthCheck := make([]*service.Account, 0, len(lines))
 	for _, line := range lines {
-		identity := buildAPIKeyIdentity(line.Platform, line.Key, line.BaseURL)
+		identity := buildAPIKeyIdentity(line.Platform, line.Key, line.BaseURL, inferGLMCompatModeFromBaseURL(line.BaseURL))
 		if existing, ok := existingByIdentity[identity]; ok && existing != nil {
 			result.Failed++
 			result.Results = append(result.Results, RawAPIKeyImportLineResult{
@@ -313,7 +313,15 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 		credentials := map[string]any{
 			"api_key": line.Key,
 		}
-		if line.BaseURL != "" {
+		if line.Platform == service.PlatformGLM {
+			compatMode := inferGLMCompatModeFromBaseURL(line.BaseURL)
+			credentials["compat_mode"] = compatMode
+			if line.BaseURL != "" {
+				credentials["base_url"] = line.BaseURL
+			} else {
+				credentials["base_url"] = service.DefaultGLMAnthropicBaseURL()
+			}
+		} else if line.BaseURL != "" {
 			credentials["base_url"] = line.BaseURL
 		} else if defaultBaseURL := service.DefaultAPIKeyBaseURL(line.Platform); defaultBaseURL != "" && line.Platform != service.PlatformAnthropic {
 			credentials["base_url"] = defaultBaseURL
@@ -570,7 +578,7 @@ func filterSupportedAPIKeyAccounts(accounts []*service.Account) []*service.Accou
 			continue
 		}
 		switch account.Platform {
-		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformOpenRouter, service.PlatformDeepSeek:
+		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformOpenRouter, service.PlatformDeepSeek, service.PlatformGLM:
 			result = append(result, account)
 		}
 	}
@@ -596,7 +604,7 @@ func (h *AccountHandler) loadExistingAPIKeyIndex(ctx context.Context) (map[strin
 				continue
 			}
 			accCopy := account
-			identity := buildAPIKeyIdentity(account.Platform, account.GetCredential("api_key"), account.GetCredential("base_url"))
+			identity := buildAPIKeyIdentity(account.Platform, account.GetCredential("api_key"), account.GetCredential("base_url"), account.GetCredential("compat_mode"))
 			// Keep the earliest account (lowest ID) for each identity to preserve original.
 			if existing, ok := index[identity]; !ok || account.ID < existing.ID {
 				index[identity] = &accCopy
@@ -651,7 +659,7 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 			if !ok {
 				results = append(results, RawAPIKeyImportLineResult{
 					Line:  lineNo,
-					Error: "invalid platform, expected openai, anthropic, gemini, openrouter, or deepseek",
+					Error: "invalid platform, expected openai, anthropic, gemini, openrouter, deepseek, or glm",
 				})
 				continue
 			}
@@ -712,6 +720,8 @@ func detectRawAPIKeyPlatformFromBaseURL(raw string) (string, bool) {
 		return service.PlatformOpenRouter, true
 	case strings.Contains(normalized, "deepseek.com"):
 		return service.PlatformDeepSeek, true
+	case strings.Contains(normalized, "open.bigmodel.cn") || strings.Contains(normalized, "bigmodel.cn") || strings.Contains(normalized, "api.z.ai"):
+		return service.PlatformGLM, true
 	case strings.Contains(normalized, "api.openai.com"):
 		return service.PlatformOpenAI, true
 	case strings.Contains(normalized, "anthropic.com"):
@@ -721,6 +731,15 @@ func detectRawAPIKeyPlatformFromBaseURL(raw string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func inferGLMCompatModeFromBaseURL(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(normalized, "/paas/") ||
+		strings.HasSuffix(strings.TrimRight(normalized, "/"), "/chat/completions") {
+		return service.GLMCompatModeOpenAI
+	}
+	return service.GLMCompatModeAnthropic
 }
 
 func splitRawAPIKeyImportLine(line string) []string {
@@ -737,14 +756,31 @@ func buildRawAPIKeyAccountName(platform, key string) string {
 	return fmt.Sprintf("%s-apikey-%s", platform, hex.EncodeToString(sum[:])[:10])
 }
 
-func buildAPIKeyIdentity(platform, key, baseURL string) string {
+func buildAPIKeyIdentity(platform, key, baseURL string, compatMode ...string) string {
 	normalizedPlatform := strings.TrimSpace(platform)
 	normalizedKey := strings.TrimSpace(key)
 	normalizedBaseURL := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
-	if normalizedBaseURL == "" {
-		normalizedBaseURL = service.DefaultAPIKeyBaseURL(normalizedPlatform)
+	normalizedCompatMode := ""
+	if normalizedPlatform == service.PlatformGLM {
+		normalizedCompatMode = inferGLMCompatModeFromBaseURL(normalizedBaseURL)
+		if len(compatMode) > 0 && strings.TrimSpace(compatMode[0]) == service.GLMCompatModeOpenAI {
+			normalizedCompatMode = service.GLMCompatModeOpenAI
+		} else if len(compatMode) > 0 && strings.TrimSpace(compatMode[0]) == service.GLMCompatModeAnthropic {
+			normalizedCompatMode = service.GLMCompatModeAnthropic
+		}
 	}
-	sum := sha256.Sum256([]byte(normalizedPlatform + "|" + normalizedBaseURL + "|" + normalizedKey))
+	if normalizedBaseURL == "" {
+		if normalizedPlatform == service.PlatformGLM {
+			if normalizedCompatMode == service.GLMCompatModeOpenAI {
+				normalizedBaseURL = service.DefaultAPIKeyBaseURL(service.PlatformGLM)
+			} else {
+				normalizedBaseURL = service.DefaultGLMAnthropicBaseURL()
+			}
+		} else {
+			normalizedBaseURL = service.DefaultAPIKeyBaseURL(normalizedPlatform)
+		}
+	}
+	sum := sha256.Sum256([]byte(normalizedPlatform + "|" + normalizedCompatMode + "|" + normalizedBaseURL + "|" + normalizedKey))
 	return hex.EncodeToString(sum[:])
 }
 

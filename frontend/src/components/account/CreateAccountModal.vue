@@ -136,6 +136,19 @@
           </button>
           <button
             type="button"
+            @click="form.platform = 'glm'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'glm'
+                ? 'bg-white text-teal-600 shadow-sm dark:bg-dark-600 dark:text-teal-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="bolt" size="sm" />
+            GLM
+          </button>
+          <button
+            type="button"
             @click="form.platform = 'antigravity'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -850,6 +863,13 @@
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
         <div>
+          <div v-if="form.platform === 'glm'" class="mb-4">
+            <label class="input-label">GLM 协议模式</label>
+            <select v-model="glmCompatMode" class="input mt-2">
+              <option value="anthropic">Anthropic Messages</option>
+              <option value="openai">OpenAI Chat Completions</option>
+            </select>
+          </div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="apiKeyBaseUrl"
@@ -860,7 +880,9 @@
                 ? 'https://api.openai.com'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
-                  : 'https://api.anthropic.com'
+                  : form.platform === 'glm'
+                    ? (glmCompatMode === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL)
+                    : 'https://api.anthropic.com'
             "
           />
           <p class="input-hint">{{ baseUrlHint }}</p>
@@ -877,7 +899,9 @@
                 ? 'sk-proj-...'
                 : form.platform === 'gemini'
                   ? 'AIza...'
-                  : 'sk-ant-...'
+                  : form.platform === 'glm'
+                    ? 'GLM API Key'
+                    : 'sk-ant-...'
             "
           />
           <p class="input-hint">{{ apiKeyHint }}</p>
@@ -3032,12 +3056,18 @@ const oauthStepTitle = computed(() => {
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (form.platform === 'glm') {
+    return glmCompatMode.value === 'openai'
+      ? 'GLM OpenAI 兼容入口，默认 https://open.bigmodel.cn/api/paas/v4；中转站可填自己的 base_url。'
+      : 'GLM Anthropic Messages 兼容入口，默认 https://open.bigmodel.cn/api/anthropic；中转站可填自己的 base_url。'
+  }
   return t('admin.accounts.baseUrlHint')
 })
 
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
+  if (form.platform === 'glm') return '填入智谱官方 GLM key 或中转站 GLM key。'
   return t('admin.accounts.apiKeyHint')
 })
 
@@ -3111,8 +3141,11 @@ const step = ref(1)
 const submitting = ref(false)
 const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock'>('oauth-based') // UI selection for account category
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
+const GLM_ANTHROPIC_BASE_URL = 'https://open.bigmodel.cn/api/anthropic'
+const GLM_OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const glmCompatMode = ref<'anthropic' | 'openai'>('anthropic')
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value.trim()) return undefined
@@ -3120,7 +3153,8 @@ const syncPreviewCredentials = computed(() => {
     platform: form.platform,
     type: form.type,
     base_url: apiKeyBaseUrl.value.trim() || undefined,
-    api_key: apiKeyValue.value.trim()
+    api_key: apiKeyValue.value.trim(),
+    ...(form.platform === 'glm' ? { compat_mode: glmCompatMode.value } : {})
   }
 })
 
@@ -3454,7 +3488,9 @@ watch(
         ? 'https://api.openai.com'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+          : newPlatform === 'glm'
+            ? GLM_ANTHROPIC_BASE_URL
+            : 'https://api.anthropic.com'
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3472,6 +3508,10 @@ watch(
       antigravityWhitelistModels.value = []
       antigravityModelMappings.value = []
       antigravityModelRestrictionMode.value = 'mapping'
+    }
+    if (newPlatform === 'glm') {
+      accountCategory.value = 'apikey'
+      glmCompatMode.value = 'anthropic'
     }
     // Reset Bedrock fields when switching platforms
     bedrockAccessKeyId.value = ''
@@ -3505,6 +3545,16 @@ watch(
     antigravityOAuth.resetState()
   }
 )
+
+watch(glmCompatMode, (newMode, oldMode) => {
+  if (form.platform !== 'glm') return
+  const oldDefault = oldMode === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL
+  const nextDefault = newMode === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL
+  const current = apiKeyBaseUrl.value.trim()
+  if (!current || current === oldDefault) {
+    apiKeyBaseUrl.value = nextDefault
+  }
+})
 
 // Gemini AI Studio OAuth availability (requires operator-configured OAuth client)
 watch(
@@ -3858,6 +3908,7 @@ const resetForm = () => {
   addMethod.value = 'oauth'
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  glmCompatMode.value = 'anthropic'
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4168,7 +4219,9 @@ const handleSubmit = async () => {
       ? 'https://api.openai.com'
       : form.platform === 'gemini'
         ? 'https://generativelanguage.googleapis.com'
-        : 'https://api.anthropic.com'
+        : form.platform === 'glm'
+          ? (glmCompatMode.value === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL)
+          : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {
@@ -4177,6 +4230,9 @@ const handleSubmit = async () => {
   }
   if (form.platform === 'gemini') {
     credentials.tier_id = geminiTierAIStudio.value
+  }
+  if (form.platform === 'glm') {
+    credentials.compat_mode = glmCompatMode.value
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）

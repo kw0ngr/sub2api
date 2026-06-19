@@ -78,6 +78,7 @@ const platformLabel = computed(() => {
   if (props.platform === 'gemini') return 'Gemini'
   if (props.platform === 'openrouter') return 'OpenRouter'
   if (props.platform === 'deepseek') return 'DeepSeek'
+  if (props.platform === 'glm') return 'GLM'
   return props.platform || 'API'
 })
 
@@ -132,6 +133,9 @@ const platformClass = computed(() => {
   if (props.platform === 'deepseek') {
     return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400'
   }
+  if (props.platform === 'glm') {
+    return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+  }
   return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
@@ -150,6 +154,9 @@ const typeClass = computed(() => {
   }
   if (props.platform === 'deepseek') {
     return 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400'
+  }
+  if (props.platform === 'glm') {
+    return 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400'
   }
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
 })

@@ -1,0 +1,369 @@
+package service
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+)
+
+func TestGLMDefaultBaseURLs(t *testing.T) {
+	require.Equal(t, "https://open.bigmodel.cn/api/anthropic", DefaultGLMAnthropicBaseURL())
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4", DefaultAPIKeyBaseURL("glm"))
+}
+
+func TestBuildGLMOpenAICompatibleChatCompletionsURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{
+			name: "official general base appends chat completions without v1",
+			base: "https://open.bigmodel.cn/api/paas/v4",
+			want: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+		},
+		{
+			name: "official coding base appends chat completions without v1",
+			base: "https://open.bigmodel.cn/api/coding/paas/v4",
+			want: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+		},
+		{
+			name: "generic relay v1 base keeps openai compatible shape",
+			base: "https://relay.example.test/v1",
+			want: "https://relay.example.test/v1/chat/completions",
+		},
+		{
+			name: "complete chat completions URL stays unchanged",
+			base: "https://relay.example.test/custom/chat/completions",
+			want: "https://relay.example.test/custom/chat/completions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildOpenAICompatibleChatCompletionsURL("glm", tt.base))
+		})
+	}
+}
+
+func TestBuildGLMAnthropicMessagesURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{
+			name: "official anthropic base appends v1 messages",
+			base: "https://open.bigmodel.cn/api/anthropic",
+			want: "https://open.bigmodel.cn/api/anthropic/v1/messages",
+		},
+		{
+			name: "generic relay v1 base appends messages",
+			base: "https://relay.example.test/v1",
+			want: "https://relay.example.test/v1/messages",
+		},
+		{
+			name: "complete messages URL stays unchanged",
+			base: "https://relay.example.test/custom/v1/messages",
+			want: "https://relay.example.test/custom/v1/messages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildGLMAnthropicMessagesURL(tt.base))
+		})
+	}
+}
+
+func TestBuildGLMOpenAIModelsURLHandlesCompleteChatURL(t *testing.T) {
+	require.Equal(
+		t,
+		"https://open.bigmodel.cn/api/paas/v4/models",
+		buildGLMOpenAIModelsURL("https://open.bigmodel.cn/api/paas/v4/chat/completions"),
+	)
+	require.Equal(
+		t,
+		"https://relay.example.test/v1/models",
+		buildGLMOpenAIModelsURL("https://relay.example.test/v1/chat/completions"),
+	)
+}
+
+func TestGLMPlatformHelpers(t *testing.T) {
+	require.False(t, IsOpenAICompatiblePlatform("glm"), "GLM should not enable /v1/responses passthrough")
+	require.True(t, IsOpenAIChatCompletionsCompatiblePlatform("glm"))
+	require.True(t, SupportedAPIKeyProbePlatform("glm"))
+	platform, ok := NormalizeAPIKeyPlatform("glm")
+	require.True(t, ok)
+	require.Equal(t, "glm", platform)
+}
+
+func TestGatewayServiceSelectGLMAnthropicModeOnly(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(41001)
+	accounts := []Account{
+		{
+			ID:          1,
+			Platform:    PlatformGLM,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Credentials: map[string]any{"api_key": "sk-glm-openai", "compat_mode": "openai"},
+		},
+		{
+			ID:          2,
+			Platform:    PlatformGLM,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    2,
+			Credentials: map[string]any{"api_key": "sk-glm-anthropic", "compat_mode": "anthropic"},
+		},
+	}
+	svc := &GatewayService{accountRepo: stubOpenAIAccountRepo{accounts: accounts}, cfg: &config.Config{}}
+
+	account, err := svc.selectAccountForModelWithPlatform(ctx, &groupID, "", "glm-5.2", nil, PlatformGLM)
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(2), account.ID)
+	require.True(t, account.IsGLMAnthropicCompatible())
+}
+
+func TestOpenAIGatewayServiceSelectGLMOpenAIModeOnly(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(41002)
+	accounts := []Account{
+		{
+			ID:          1,
+			Platform:    PlatformGLM,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Credentials: map[string]any{"api_key": "sk-glm-anthropic", "compat_mode": "anthropic"},
+		},
+		{
+			ID:          2,
+			Platform:    PlatformGLM,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    2,
+			Credentials: map[string]any{"api_key": "sk-glm-openai", "compat_mode": "openai"},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForPlatform(
+		ctx,
+		PlatformGLM,
+		&groupID,
+		"",
+		"",
+		"glm-5.2",
+		nil,
+		OpenAIUpstreamTransportAny,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(2), selection.Account.ID)
+	require.True(t, selection.Account.IsGLMOpenAICompatible())
+}
+
+func TestOpenAIGatewayServiceForwardGLMOpenAIUsesChatCompletionsEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"glm-req"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl_glm",
+				"object":"chat.completion",
+				"created":1,
+				"model":"glm-5.2",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":6,"completion_tokens":2,"total_tokens":8}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          99,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode": "openai",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-glm-test", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, 6, result.Usage.InputTokens)
+	require.Equal(t, 2, result.Usage.OutputTokens)
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestFetchUpstreamSupportedModelsGLMOpenAIModeUsesModelsEndpoint(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"},{"id":"glm-5-turbo"}]}`)),
+	}}
+	svc := NewAccountTestService(nil, nil, nil, nil, upstream, &config.Config{
+		Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
+	}, nil, nil)
+	account := &Account{
+		ID:          7,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode": "openai",
+		},
+	}
+
+	models, err := svc.FetchUpstreamSupportedModels(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"glm-5-turbo", "glm-5.2"}, models)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, http.MethodGet, upstream.lastReq.Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-glm-test", upstream.lastReq.Header.Get("Authorization"))
+}
+
+func TestFetchUpstreamSupportedModelsGLMAnthropicFallbackBuiltIns(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusNotFound,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"not found"}}`)),
+	}}
+	svc := NewAccountTestService(nil, nil, nil, nil, upstream, &config.Config{
+		Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
+	}, nil, nil)
+	account := &Account{
+		ID:          8,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/anthropic",
+			"compat_mode": "anthropic",
+		},
+	}
+
+	models, err := svc.FetchUpstreamSupportedModels(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Contains(t, models, "glm-5.2")
+	require.Contains(t, models, "glm-5-turbo")
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://open.bigmodel.cn/api/anthropic/v1/models", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-glm-test", upstream.lastReq.Header.Get("x-api-key"))
+}
+
+func TestCheckGLMAPIKeyAnthropicModeUsesMessagesProbe(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"content":[{"type":"text","text":"ok"}]}`)),
+	}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          11,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"compat_mode": "anthropic",
+		},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.True(t, health.Valid)
+	require.False(t, health.Invalid)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, http.MethodPost, upstream.lastReq.Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/anthropic/v1/messages", upstream.lastReq.URL.String())
+	require.Equal(t, "sk-glm-test", upstream.lastReq.Header.Get("x-api-key"))
+	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+}
+
+func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"}]}`)),
+	}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          12,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode": "openai",
+		},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.True(t, health.Valid)
+	require.False(t, health.Invalid)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, http.MethodGet, upstream.lastReq.Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-glm-test", upstream.lastReq.Header.Get("Authorization"))
+}
