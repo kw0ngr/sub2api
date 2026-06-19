@@ -97,6 +97,19 @@ func TestBuildGLMOpenAIModelsURLHandlesCompleteChatURL(t *testing.T) {
 	)
 }
 
+func TestClampGLMMaxTokens(t *testing.T) {
+	body := []byte(`{"model":"glm-5.2","max_tokens":131072,"messages":[{"role":"user","content":"hi"}]}`)
+
+	out, clamped := ClampGLMMaxTokens(body)
+
+	require.True(t, clamped)
+	require.Equal(t, int64(glmAnthropicMaxTokens), gjson.GetBytes(out, "max_tokens").Int())
+
+	out, clamped = ClampGLMMaxTokens([]byte(`{"model":"glm-5.2","max_tokens":128000}`))
+	require.False(t, clamped)
+	require.Equal(t, int64(128000), gjson.GetBytes(out, "max_tokens").Int())
+}
+
 func TestGLMPlatformHelpers(t *testing.T) {
 	require.False(t, IsOpenAICompatiblePlatform("glm"), "GLM should not enable /v1/responses passthrough")
 	require.True(t, IsOpenAIChatCompletionsCompatiblePlatform("glm"))

@@ -47,6 +47,13 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(deepSeek, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limited"}}`)))
 }
 
+func TestClassifyAPIKeyStatusAction_ParameterValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"message":"The parameter ` + "`max_tokens`" + ` specified in the request is not valid: integer above maximum value, expected a value <= 128000, but got 131072 instead."}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_OpenAIContentPolicyServerErrorIgnored(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 

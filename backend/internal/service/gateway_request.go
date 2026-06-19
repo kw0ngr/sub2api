@@ -83,6 +83,20 @@ type ParsedRequest struct {
 	OnUpstreamAccepted func()
 }
 
+const glmAnthropicMaxTokens = 128000
+
+func ClampGLMMaxTokens(body []byte) ([]byte, bool) {
+	maxTokens := gjson.GetBytes(body, "max_tokens")
+	if !maxTokens.Exists() || maxTokens.Int() <= glmAnthropicMaxTokens {
+		return body, false
+	}
+	out, err := sjson.SetBytes(body, "max_tokens", glmAnthropicMaxTokens)
+	if err != nil {
+		return body, false
+	}
+	return out, true
+}
+
 // NormalizeSessionUserAgent reduces UA noise for sticky-session and digest hashing.
 // It preserves the set of product names from Product/Version tokens while
 // discarding version-only changes and incidental comments.

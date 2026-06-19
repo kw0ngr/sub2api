@@ -119,6 +119,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	if account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(statusCode, responseBody) {
 		return APIKeyStatusActionIgnore
 	}
+	if statusCode == http.StatusBadRequest && isClientRequestParameterValidationError(msg) {
+		return APIKeyStatusActionIgnore
+	}
 
 	// 5xx and 529 are always temporary cooldowns regardless of platform
 	switch statusCode {
@@ -368,6 +371,18 @@ func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {
 		"content policy",
 		"content_policy",
 	)
+}
+
+func isClientRequestParameterValidationError(msg string) bool {
+	msg = strings.ToLower(strings.TrimSpace(msg))
+	if msg == "" {
+		return false
+	}
+	if strings.Contains(msg, "max_tokens") &&
+		containsAny(msg, "above maximum value", "expected a value <=", "less than or equal", "must be <=", "maximum value") {
+		return true
+	}
+	return false
 }
 
 func ShouldDisableAPIKeyAuthFailure(account *Account, statusCode int, responseBody []byte) bool {

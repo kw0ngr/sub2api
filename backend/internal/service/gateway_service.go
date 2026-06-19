@@ -4736,6 +4736,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		body = normalizedBody
 		logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type enabled->adaptive for %s", account.ID, reqModel)
 	}
+	if account.Platform == PlatformGLM {
+		if clampedBody, clamped := ClampGLMMaxTokens(body); clamped {
+			body = clampedBody
+			logger.LegacyPrintf("service.gateway", "Account %d: clamped GLM max_tokens to %d", account.ID, glmAnthropicMaxTokens)
+		}
+	}
 
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
 	setOpsUpstreamRequestBody(c, body)
