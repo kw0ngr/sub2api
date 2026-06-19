@@ -270,6 +270,8 @@ const (
 	SettingKeyEnableAnthropicCacheTTL1hInjection = "enable_anthropic_cache_ttl_1h_injection"
 	// SettingKeyRewriteMessageCacheControl 是否主动改写 messages cache_control 断点（默认 false）
 	SettingKeyRewriteMessageCacheControl = "rewrite_message_cache_control"
+	// SettingKeyEnableGLMZCodeStrongMimic 是否为官方 GLM Anthropic 直连启用 ZCode 重度伪装（默认 false）
+	SettingKeyEnableGLMZCodeStrongMimic = "enable_glm_zcode_strong_mimic"
 	// SettingKeyClaudeCodeFingerprintProfiles 自动捕获的 Claude Code HTTP 指纹样本库
 	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
 	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习

@@ -2999,146 +2999,77 @@
               </p>
             </div>
             <div class="grid gap-3 p-5 sm:p-6">
-              <!-- Fingerprint Unification -->
-              <div
-                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0 pr-0 sm:pr-6">
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.fingerprintUnification",
-                      )
-                    }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.fingerprintUnificationHint",
-                      )
-                    }}
-                  </p>
-                </div>
-                <Toggle
-                  v-model="form.enable_fingerprint_unification"
-                  class="shrink-0"
-                />
-              </div>
-
-              <!-- Metadata Passthrough -->
-              <div
-                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0 pr-0 sm:pr-6">
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t("admin.settings.gatewayForwarding.metadataPassthrough")
-                    }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.metadataPassthroughHint",
-                      )
-                    }}
-                  </p>
-                </div>
-                <Toggle
-                  v-model="form.enable_metadata_passthrough"
-                  class="shrink-0"
-                />
-              </div>
-
-              <!-- CCH Signing -->
-              <div
-                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0 pr-0 sm:pr-6">
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{ t("admin.settings.gatewayForwarding.cchSigning") }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.gatewayForwarding.cchSigningHint") }}
-                  </p>
-                </div>
-                <Toggle v-model="form.enable_cch_signing" class="shrink-0" />
-              </div>
-
-              <!-- Anthropic Cache TTL 1h Injection -->
-              <div
-                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0 pr-0 sm:pr-6">
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection",
-                      )
-                    }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint",
-                      )
-                    }}
-                  </p>
-                  <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionNote",
-                      )
-                    }}
-                  </p>
-                </div>
-                <Toggle
-                  v-model="form.enable_anthropic_cache_ttl_1h_injection"
-                  class="shrink-0"
-                />
-              </div>
-
-              <!-- Message cache_control Rewrite -->
-              <div
-                class="flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 transition-colors hover:border-primary-200 hover:bg-white dark:border-dark-700 dark:bg-dark-800/45 dark:hover:border-primary-500/40 dark:hover:bg-dark-800 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0 pr-0 sm:pr-6">
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.rewriteMessageCacheControl",
-                      )
-                    }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.rewriteMessageCacheControlHint",
-                      )
-                    }}
-                  </p>
-                  <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.rewriteMessageCacheControlNote",
-                      )
-                    }}
-                  </p>
-                </div>
-                <Toggle
-                  v-model="form.rewrite_message_cache_control"
-                  class="shrink-0"
-                />
-              </div>
+              <SettingsToggleCard
+                v-model="form.enable_fingerprint_unification"
+                :title="
+                  t('admin.settings.gatewayForwarding.fingerprintUnification')
+                "
+                :hint="
+                  t(
+                    'admin.settings.gatewayForwarding.fingerprintUnificationHint',
+                  )
+                "
+              />
+              <SettingsToggleCard
+                v-model="form.enable_metadata_passthrough"
+                :title="
+                  t('admin.settings.gatewayForwarding.metadataPassthrough')
+                "
+                :hint="
+                  t('admin.settings.gatewayForwarding.metadataPassthroughHint')
+                "
+              />
+              <SettingsToggleCard
+                v-model="form.enable_cch_signing"
+                :title="t('admin.settings.gatewayForwarding.cchSigning')"
+                :hint="t('admin.settings.gatewayForwarding.cchSigningHint')"
+              />
+              <SettingsToggleCard
+                v-model="form.enable_glm_zcode_strong_mimic"
+                :title="
+                  t('admin.settings.gatewayForwarding.glmZCodeStrongMimic')
+                "
+                :hint="
+                  t('admin.settings.gatewayForwarding.glmZCodeStrongMimicHint')
+                "
+                :note="
+                  t('admin.settings.gatewayForwarding.glmZCodeStrongMimicNote')
+                "
+              />
+              <SettingsToggleCard
+                v-model="form.enable_anthropic_cache_ttl_1h_injection"
+                :title="
+                  t(
+                    'admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection',
+                  )
+                "
+                :hint="
+                  t(
+                    'admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint',
+                  )
+                "
+                :note="
+                  t(
+                    'admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionNote',
+                  )
+                "
+              />
+              <SettingsToggleCard
+                v-model="form.rewrite_message_cache_control"
+                :title="
+                  t('admin.settings.gatewayForwarding.rewriteMessageCacheControl')
+                "
+                :hint="
+                  t(
+                    'admin.settings.gatewayForwarding.rewriteMessageCacheControlHint',
+                  )
+                "
+                :note="
+                  t(
+                    'admin.settings.gatewayForwarding.rewriteMessageCacheControlNote',
+                  )
+                "
+              />
             </div>
           </div>
           <!-- Web Search Emulation -->
@@ -5170,6 +5101,7 @@ import GroupOptionItem from "@/components/common/GroupOptionItem.vue";
 import Toggle from "@/components/common/Toggle.vue";
 import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
+import SettingsToggleCard from "@/components/settings/SettingsToggleCard.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
@@ -5480,6 +5412,7 @@ const form = reactive<SettingsForm>({
   enable_cch_signing: true,
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
+  enable_glm_zcode_strong_mimic: false,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6382,6 +6315,7 @@ async function saveSettings() {
       enable_anthropic_cache_ttl_1h_injection:
         form.enable_anthropic_cache_ttl_1h_injection,
       rewrite_message_cache_control: form.rewrite_message_cache_control,
+      enable_glm_zcode_strong_mimic: form.enable_glm_zcode_strong_mimic,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,

@@ -437,6 +437,7 @@ export interface SystemSettings {
   enable_cch_signing: boolean;
   enable_anthropic_cache_ttl_1h_injection: boolean;
   rewrite_message_cache_control: boolean;
+  enable_glm_zcode_strong_mimic: boolean;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -602,6 +603,7 @@ export interface UpdateSettingsRequest {
   enable_cch_signing?: boolean;
   enable_anthropic_cache_ttl_1h_injection?: boolean;
   rewrite_message_cache_control?: boolean;
+  enable_glm_zcode_strong_mimic?: boolean;
   // Payment configuration
   payment_enabled?: boolean;
   payment_min_amount?: number;

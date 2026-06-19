@@ -119,6 +119,139 @@ func TestGLMPlatformHelpers(t *testing.T) {
 	require.Equal(t, "glm", platform)
 }
 
+func TestApplyGLMZCodeMimicHeaders(t *testing.T) {
+	tests := []struct {
+		name        string
+		baseURL     string
+		strong      bool
+		wantApplied bool
+		wantUA      string
+	}{
+		{"official light", "https://open.bigmodel.cn/api/anthropic", false, true, "ZCode/unknown"},
+		{"official strong", "https://api.z.ai/api/anthropic", true, true, "ZCode/3.1.2"},
+		{"custom relay", "https://relay.example.test", true, false, "custom-client"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.baseURL+"/v1/messages?beta=true", nil)
+			req.Header.Set("User-Agent", "custom-client")
+			req.Header.Set("x-api-key", "sk-glm-test")
+
+			applied := applyGLMZCodeMimicHeaders(req, newGLMAnthropicAccount(0, tt.baseURL), tt.strong)
+
+			require.Equal(t, tt.wantApplied, applied)
+			require.Equal(t, "sk-glm-test", req.Header.Get("x-api-key"))
+			require.Equal(t, tt.wantUA, req.Header.Get("User-Agent"))
+			if !tt.wantApplied {
+				require.Empty(t, getHeaderRaw(req.Header, "X-ZCode-Agent"))
+				return
+			}
+			require.Equal(t, "https://zcode.z.ai", getHeaderRaw(req.Header, "HTTP-Referer"))
+			require.Equal(t, "Z Code@electron", getHeaderRaw(req.Header, "X-Title"))
+			require.Equal(t, "glm", getHeaderRaw(req.Header, "X-ZCode-Agent"))
+			if tt.strong {
+				require.Equal(t, "3.1.2", getHeaderRaw(req.Header, "X-ZCode-App-Version"))
+				require.Equal(t, "darwin-arm64", getHeaderRaw(req.Header, "X-Platform"))
+			} else {
+				require.Empty(t, getHeaderRaw(req.Header, "X-ZCode-App-Version"))
+				require.Empty(t, getHeaderRaw(req.Header, "X-Platform"))
+			}
+		})
+	}
+}
+
+func TestGatewayServiceBuildUpstreamRequestGLMZCodeMimic(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		settings map[string]string
+		clientUA string
+		wantURL  string
+		wantUA   string
+		wantApp  string
+		wantSkip bool
+	}{
+		{
+			name:     "official light",
+			baseURL:  "https://open.bigmodel.cn/api/anthropic",
+			clientUA: "curl/8",
+			wantURL:  "https://open.bigmodel.cn/api/anthropic/v1/messages?beta=true",
+			wantUA:   "ZCode/unknown",
+		},
+		{
+			name:     "official strong default base",
+			settings: map[string]string{SettingKeyEnableGLMZCodeStrongMimic: "true"},
+			wantURL:  "https://open.bigmodel.cn/api/anthropic/v1/messages?beta=true",
+			wantUA:   "ZCode/3.1.2",
+			wantApp:  "3.1.2",
+		},
+		{
+			name:     "custom relay skips mimic",
+			baseURL:  "https://relay.example.test/v1",
+			settings: map[string]string{SettingKeyEnableGLMZCodeStrongMimic: "true"},
+			clientUA: "custom-client",
+			wantURL:  "https://relay.example.test/v1/messages?beta=true",
+			wantUA:   "custom-client",
+			wantSkip: true,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := buildGLMUpstreamRequestForTest(t, int64(81000+i), tt.baseURL, tt.settings, tt.clientUA)
+
+			require.Equal(t, tt.wantURL, req.URL.String())
+			require.Equal(t, tt.wantUA, req.Header.Get("User-Agent"))
+			if tt.wantSkip {
+				require.Empty(t, getHeaderRaw(req.Header, "X-ZCode-Agent"))
+				return
+			}
+			require.Equal(t, "glm", getHeaderRaw(req.Header, "X-ZCode-Agent"))
+			require.Equal(t, tt.wantApp, getHeaderRaw(req.Header, "X-ZCode-App-Version"))
+		})
+	}
+}
+
+func newGLMAnthropicAccount(id int64, baseURL string) *Account {
+	credentials := map[string]any{
+		"api_key":     "sk-glm-test",
+		"compat_mode": "anthropic",
+	}
+	if baseURL != "" {
+		credentials["base_url"] = baseURL
+	}
+	return &Account{ID: id, Platform: PlatformGLM, Type: AccountTypeAPIKey, Credentials: credentials}
+}
+
+func buildGLMUpstreamRequestForTest(t *testing.T, accountID int64, baseURL string, settings map[string]string, clientUA string) *http.Request {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	if clientUA != "" {
+		c.Request.Header.Set("User-Agent", clientUA)
+	}
+	svc := &GatewayService{
+		cfg:            &config.Config{},
+		settingService: newGatewayForwardingSettingService(t, settings),
+	}
+	req, err := svc.buildUpstreamRequest(
+		context.Background(),
+		c,
+		newGLMAnthropicAccount(accountID, baseURL),
+		[]byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}`),
+		"sk-glm-test",
+		"apikey",
+		"glm-5.2",
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	return req
+}
+
 func TestGatewayServiceSelectGLMAnthropicModeOnly(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(41001)

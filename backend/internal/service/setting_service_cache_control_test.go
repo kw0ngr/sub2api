@@ -62,6 +62,7 @@ func TestSettingServiceParseSettingsDefaultsRewriteMessageCacheControlOff(t *tes
 	settings := svc.parseSettings(map[string]string{})
 
 	require.False(t, settings.RewriteMessageCacheControl)
+	require.False(t, settings.EnableGLMZCodeStrongMimic)
 }
 
 func TestSettingServiceUpdateSettingsPersistsRewriteMessageCacheControl(t *testing.T) {
@@ -74,4 +75,29 @@ func TestSettingServiceUpdateSettingsPersistsRewriteMessageCacheControl(t *testi
 
 	require.NoError(t, err)
 	require.Equal(t, "true", repo.values[SettingKeyRewriteMessageCacheControl])
+}
+
+func TestSettingServiceUpdateSettingsPersistsGLMZCodeStrongMimic(t *testing.T) {
+	repo := &cacheControlSettingRepoStub{values: map[string]string{}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		EnableGLMZCodeStrongMimic: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.values[SettingKeyEnableGLMZCodeStrongMimic])
+}
+
+func TestSettingServiceIsGLMZCodeStrongMimicEnabledUsesGatewayCache(t *testing.T) {
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	})
+	repo := &cacheControlSettingRepoStub{values: map[string]string{
+		SettingKeyEnableGLMZCodeStrongMimic: "true",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.True(t, svc.IsGLMZCodeStrongMimicEnabled(context.Background()))
 }

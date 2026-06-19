@@ -5636,7 +5636,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, err
 		}
-		targetURL = validatedURL + "/v1/messages?beta=true"
+		if account.Platform == PlatformGLM {
+			targetURL = buildGLMAnthropicMessagesURL(validatedURL) + "?beta=true"
+		} else {
+			targetURL = validatedURL + "/v1/messages?beta=true"
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
@@ -5691,6 +5695,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 			c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, claudeCodeMimicTokenLabel("apikey", account), true))
 		}
 	}
+	glmZCodeStrongMimic := false
+	if s.settingService != nil {
+		glmZCodeStrongMimic = s.settingService.IsGLMZCodeStrongMimicEnabled(ctx)
+	}
+	applyGLMZCodeMimicHeaders(req, account, glmZCodeStrongMimic)
 
 	return req, nil
 }
@@ -6500,7 +6509,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if err != nil {
 				return nil, err
 			}
-			targetURL = validatedURL + "/v1/messages?beta=true"
+			if account.Platform == PlatformGLM {
+				targetURL = buildGLMAnthropicMessagesURL(validatedURL) + "?beta=true"
+			} else {
+				targetURL = validatedURL + "/v1/messages?beta=true"
+			}
 		}
 	} else if account.IsCustomBaseURLEnabled() {
 		customURL := account.GetCustomBaseURL()
@@ -6669,6 +6682,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if getHeaderRaw(req.Header, "anthropic-version") == "" {
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
 	}
+	glmZCodeStrongMimic := false
+	glmZCodeMimicApplied := false
 	if tokenType == "oauth" {
 		applyClaudeOAuthHeaderDefaults(req, reqStream)
 		if sessionID != "" {
@@ -6684,6 +6699,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
 		}
 	}
+	if s.settingService != nil {
+		glmZCodeStrongMimic = s.settingService.IsGLMZCodeStrongMimicEnabled(ctx)
+	}
+	glmZCodeMimicApplied = applyGLMZCodeMimicHeaders(req, account, glmZCodeStrongMimic)
 
 	// Build effective drop set: merge static defaults with dynamic beta policy filter rules
 	policyFilterSet := s.getBetaPolicyFilterSet(ctx, c, account, modelID)
@@ -6749,6 +6768,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		"url":                 req.URL.String(),
 		"token_type":          tokenType,
 		"mimic_claude_code":   strconv.FormatBool(mimicClaudeCode),
+		"glm_zcode_mimic":     strconv.FormatBool(glmZCodeMimicApplied),
+		"glm_zcode_strong":    strconv.FormatBool(glmZCodeStrongMimic),
 		"fingerprint_applied": strconv.FormatBool(fingerprint != nil),
 		"enable_fp":           strconv.FormatBool(enableFP),
 		"enable_mpt":          strconv.FormatBool(enableMPT),

@@ -178,6 +178,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableCCHSigning:                     settings.EnableCCHSigning,
 		EnableAnthropicCacheTTL1hInjection:   settings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:           settings.RewriteMessageCacheControl,
+		EnableGLMZCodeStrongMimic:            settings.EnableGLMZCodeStrongMimic,
 		WebSearchEmulationEnabled:            settings.WebSearchEmulationEnabled,
 		BalanceLowNotifyEnabled:              settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:            settings.BalanceLowNotifyThreshold,
@@ -953,6 +954,7 @@ type UpdateSettingsRequest struct {
 	EnableCCHSigning                   *bool `json:"enable_cch_signing"`
 	EnableAnthropicCacheTTL1hInjection *bool `json:"enable_anthropic_cache_ttl_1h_injection"`
 	RewriteMessageCacheControl         *bool `json:"rewrite_message_cache_control"`
+	EnableGLMZCodeStrongMimic          *bool `json:"enable_glm_zcode_strong_mimic"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled              *bool                   `json:"balance_low_notify_enabled"`
@@ -1558,6 +1560,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.RewriteMessageCacheControl
 		}(),
+		EnableGLMZCodeStrongMimic: func() bool {
+			if req.EnableGLMZCodeStrongMimic != nil {
+				return *req.EnableGLMZCodeStrongMimic
+			}
+			return previousSettings.EnableGLMZCodeStrongMimic
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -1764,6 +1772,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableCCHSigning:                     updatedSettings.EnableCCHSigning,
 		EnableAnthropicCacheTTL1hInjection:   updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:           updatedSettings.RewriteMessageCacheControl,
+		EnableGLMZCodeStrongMimic:            updatedSettings.EnableGLMZCodeStrongMimic,
 		BalanceLowNotifyEnabled:              updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:            updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:          updatedSettings.BalanceLowNotifyRechargeURL,
@@ -2079,6 +2088,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.RewriteMessageCacheControl != after.RewriteMessageCacheControl {
 		changed = append(changed, "rewrite_message_cache_control")
+	}
+	if before.EnableGLMZCodeStrongMimic != after.EnableGLMZCodeStrongMimic {
+		changed = append(changed, "enable_glm_zcode_strong_mimic")
 	}
 	// Balance & quota notification
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

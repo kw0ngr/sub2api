@@ -85,6 +85,7 @@ type cachedGatewayForwardingSettings struct {
 	metadataPassthrough          bool
 	cchSigning                   bool
 	anthropicCacheTTL1hInjection bool
+	glmZCodeStrongMimic          bool
 	expiresAt                    int64 // unix nano
 }
 
@@ -697,6 +698,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
 	updates[SettingKeyEnableAnthropicCacheTTL1hInjection] = strconv.FormatBool(settings.EnableAnthropicCacheTTL1hInjection)
 	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
+	updates[SettingKeyEnableGLMZCodeStrongMimic] = strconv.FormatBool(settings.EnableGLMZCodeStrongMimic)
 
 	// Balance low notification
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -728,6 +730,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 			metadataPassthrough:          settings.EnableMetadataPassthrough,
 			cchSigning:                   settings.EnableCCHSigning,
 			anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
+			glmZCodeStrongMimic:          settings.EnableGLMZCodeStrongMimic,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
 		if s.onUpdate != nil {
@@ -842,12 +845,12 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		}
 	}
 	type gwfResult struct {
-		fp, mp, cch, cacheTTL1h bool
+		fp, mp, cch, cacheTTL1h, glmZCodeStrong bool
 	}
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
-				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning, cached.anthropicCacheTTL1hInjection}, nil
+				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning, cached.anthropicCacheTTL1hInjection, cached.glmZCodeStrongMimic}, nil
 			}
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
@@ -857,6 +860,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			SettingKeyEnableMetadataPassthrough,
 			SettingKeyEnableCCHSigning,
 			SettingKeyEnableAnthropicCacheTTL1hInjection,
+			SettingKeyEnableGLMZCodeStrongMimic,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
@@ -865,9 +869,10 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 				metadataPassthrough:          false,
 				cchSigning:                   true,
 				anthropicCacheTTL1hInjection: false,
+				glmZCodeStrongMimic:          false,
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false, true, false}, nil
+			return gwfResult{true, false, true, false, false}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
@@ -879,19 +884,38 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			cch = v == "true"
 		}
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
+		glmZCodeStrong := values[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:       fp,
 			metadataPassthrough:          mp,
 			cchSigning:                   cch,
 			anthropicCacheTTL1hInjection: cacheTTL1h,
+			glmZCodeStrongMimic:          glmZCodeStrong,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gwfResult{fp, mp, cch, cacheTTL1h}, nil
+		return gwfResult{fp, mp, cch, cacheTTL1h, glmZCodeStrong}, nil
 	})
 	if r, ok := val.(gwfResult); ok {
 		return r.fp, r.mp, r.cch
 	}
 	return true, false, true // fail-open defaults
+}
+
+// IsGLMZCodeStrongMimicEnabled reports whether official GLM Anthropic direct
+// requests should include the heavier ZCode app/platform header profile.
+func (s *SettingService) IsGLMZCodeStrongMimicEnabled(ctx context.Context) bool {
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.glmZCodeStrongMimic
+		}
+	}
+	_, _, _ = s.GetGatewayForwardingSettings(ctx)
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.glmZCodeStrongMimic
+		}
+	}
+	return false
 }
 
 // IsAnthropicCacheTTL1hInjectionEnabled checks whether Anthropic OAuth/SetupToken
@@ -1076,6 +1100,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Anthropic cache TTL injection defaults to off to avoid changing upstream billing/cache behavior unexpectedly.
 		SettingKeyEnableAnthropicCacheTTL1hInjection: "false",
 		SettingKeyRewriteMessageCacheControl:         "false",
+		SettingKeyEnableGLMZCodeStrongMimic:          "false",
 
 		// Channel monitor defaults
 		SettingKeyChannelMonitorEnabled:                "true",
@@ -1370,6 +1395,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.EnableAnthropicCacheTTL1hInjection = settings[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 	result.RewriteMessageCacheControl = settings[SettingKeyRewriteMessageCacheControl] == "true"
+	result.EnableGLMZCodeStrongMimic = settings[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {
