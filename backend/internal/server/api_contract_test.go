@@ -596,6 +596,7 @@ func TestAPIContracts(t *testing.T) {
 					"enable_anthropic_cache_ttl_1h_injection": false,
 					"rewrite_message_cache_control": false,
 					"enable_fingerprint_unification": true,
+					"enable_glm_zcode_strong_mimic": false,
 					"enable_metadata_passthrough": false,
 					"web_search_emulation_enabled": false,
 					"openai_fast_policy_settings": {
