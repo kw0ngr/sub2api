@@ -8,12 +8,12 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/user/profile/__tests__/ProfileInfoCard.spec.ts \
 	src/views/admin/__tests__/SettingsView.spec.ts
 
-# 一键编译前后端
-build: build-backend build-frontend
+# 一键编译前后端（先生成前端 dist，再把它嵌入后端二进制）
+build: build-frontend build-backend
 
-# 编译后端（复用 backend/Makefile）
+# 编译后端（复用 backend/Makefile，并嵌入前端）
 build-backend:
-	@$(MAKE) -C backend build
+	@$(MAKE) -C backend build-embed
 
 # 编译前端（需要已安装依赖）
 build-frontend:
