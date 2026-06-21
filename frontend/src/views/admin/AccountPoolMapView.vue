@@ -3763,16 +3763,20 @@ onUnmounted(() => {
   grid-template-columns: minmax(230px, 250px) minmax(0, 1fr) minmax(285px, 300px);
   gap: 0.7rem;
   align-items: stretch;
+  height: clamp(34rem, calc(100dvh - 13.8rem), 54rem);
+  min-height: 0;
 }
 
 .account-map-right-rail {
   min-width: 0;
+  min-height: 0;
 }
 
 .account-map-left-rail {
   display: grid;
   min-width: 0;
-  align-content: start;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0.7rem;
 }
 
@@ -3900,6 +3904,9 @@ onUnmounted(() => {
 }
 
 .account-map-group-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -3939,6 +3946,8 @@ onUnmounted(() => {
 
 .account-map-group-list {
   display: grid;
+  min-height: 0;
+  overflow-y: auto;
   padding: 0 0.45rem 0.7rem;
 }
 
@@ -4038,9 +4047,14 @@ onUnmounted(() => {
 
 .account-map-console .account-map-main-column {
   width: 100%;
+  min-height: 0;
+  gap: 0.7rem;
 }
 
 .account-map-console .account-map-table-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgb(16 34 46 / 0.96), rgb(8 24 35 / 0.98)),
@@ -4048,11 +4062,16 @@ onUnmounted(() => {
 }
 
 .account-map-console .account-map-account-detail-panel {
-  margin-top: 0.7rem;
+  flex: 1 1 0;
+  margin-top: 0;
 }
 
 .account-map-table-card {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
 }
 
 .account-map-table-title {
@@ -4084,7 +4103,8 @@ onUnmounted(() => {
 
 .account-map-table-scroll {
   min-width: 0;
-  overflow-x: auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .account-map-data-table {
@@ -4302,8 +4322,8 @@ onUnmounted(() => {
 .account-map-console .account-map-inspector {
   position: sticky;
   top: 0.75rem;
-  height: calc(100vh - 1.5rem);
-  max-height: 980px;
+  height: 100%;
+  max-height: none;
   overflow-y: auto;
   border: 1px solid var(--account-map-border);
   background:
@@ -4765,11 +4785,13 @@ onUnmounted(() => {
 
   .account-map-console .account-map-workspace {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .account-map-left-rail {
     grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
     align-items: start;
+    grid-template-rows: none;
   }
 
   .account-map-console .account-map-inspector {
