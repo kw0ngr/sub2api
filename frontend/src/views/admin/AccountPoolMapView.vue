@@ -1,10 +1,9 @@
 <template>
   <AppLayout>
-    <div class="account-map-page space-y-5 pb-12">
+    <div class="account-map-page account-map-console pb-12">
       <section class="account-map-toolbar">
         <div class="account-map-toolbar-copy">
           <div class="min-w-0">
-            <p class="account-map-eyebrow">Account pool map</p>
             <h1>
               <svg class="h-5 w-5 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -14,18 +13,16 @@
                   d="M4 7a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V7zm9 0a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V7zM4 16a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1zm9 0a2 2 0 012-2h3a2 2 0 012 2v1a2 2 0 01-2 2h-3a2 2 0 01-2-2v-1z"
                 />
               </svg>
-              账号池地图
+              账号池地图 / Account Pool Map
             </h1>
             <div class="account-map-meta">
-              <span class="flex items-center gap-1.5">
+              <span class="account-map-live-state">
                 <span class="relative inline-flex h-2 w-2 rounded-full" :class="loading ? 'bg-gray-400' : 'bg-green-500'"></span>
                 {{ loading ? '加载中' : '就绪' }}
               </span>
-              <span>·</span>
               <span>按平台、状态和账号池查看调度健康度</span>
               <template v-if="generatedAt">
-                <span>·</span>
-                <span>更新 {{ formatDate(generatedAt) }}</span>
+                <span>Updated {{ formatDate(generatedAt) }}</span>
               </template>
             </div>
           </div>
@@ -33,42 +30,61 @@
             <button
               type="button"
               class="account-map-secondary-button"
-              :disabled="checkingHealth || loading"
-              @click="runHealthCheck"
-            >
-              {{ checkingHealth ? '巡检中...' : '健康检测' }}
-            </button>
-            <button
-              type="button"
-              class="account-map-secondary-button"
+              :disabled="loading"
               @click="refresh"
             >
-              {{ loading ? '刷新中...' : '刷新地图' }}
+              <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 3v5h-5" />
+                <path d="M3 17v-5h5" />
+                <path d="M16.1 8A6.5 6.5 0 0 0 5 5.4L3 7.2" />
+                <path d="M3.9 12A6.5 6.5 0 0 0 15 14.6l2-1.8" />
+              </svg>
+              {{ loading ? '刷新中' : '刷新' }}
             </button>
-            <button
-              type="button"
-              class="account-map-primary-button"
-              @click="goAccounts"
-            >
-              账号管理
-            </button>
+            <label class="account-map-auto-toggle">
+              <span>Auto refresh</span>
+              <input v-model="autoRefreshEnabled" type="checkbox" />
+              <i aria-hidden="true"></i>
+            </label>
+            <span class="account-map-toolbar-divider" aria-hidden="true"></span>
+            <span class="account-map-updated">
+              Updated {{ generatedAt ? formatDate(generatedAt) : '未同步' }}
+            </span>
+            <label class="account-map-search">
+              <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+                <circle cx="9" cy="9" r="5.5" />
+                <path d="m13.2 13.2 3.3 3.3" />
+              </svg>
+              <input
+                v-model.trim="filters.search"
+                type="search"
+                placeholder="Search account / model / error"
+              />
+              <kbd>⌘ K</kbd>
+            </label>
           </div>
         </div>
       </section>
 
-      <section class="account-map-summary-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section class="account-map-summary-grid">
         <div
           v-for="item in summaryCards"
           :key="item.key"
           class="account-map-stat-card"
           :class="`account-map-stat-${item.tone}`"
         >
-          <div class="flex items-center justify-between gap-3">
+          <div class="account-map-stat-head">
+            <span class="account-map-stat-icon" :class="item.dotClass">
+              <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="item.iconPath" />
+              </svg>
+            </span>
             <p>{{ item.label }}</p>
-            <span class="h-2.5 w-2.5 rounded-full" :class="item.dotClass"></span>
+            <span class="account-map-stat-info">i</span>
           </div>
           <strong>{{ item.value }}</strong>
           <small>{{ item.detail }}</small>
+          <div class="account-map-stat-spark" aria-hidden="true"></div>
           <div v-if="item.metrics?.length" class="account-map-stat-metrics">
             <span v-for="metric in item.metrics" :key="metric.label">
               <b>{{ metric.value }}</b>
@@ -78,180 +94,322 @@
         </div>
       </section>
 
-      <section class="account-map-workspace">
-        <div class="account-map-main-column">
-        <div class="account-map-filter-card">
-          <div class="account-map-filter-header">
-            <div>
-              <h2>筛选账号池</h2>
-              <p>先缩小范围，再展开查看具体账号，避免异常账号一次性淹没页面。</p>
-            </div>
-          </div>
-          <div class="account-map-filter-grid">
-            <label class="account-map-field">
-              <span>搜索账号</span>
-              <input
-                v-model.trim="filters.search"
-                type="search"
-                class="account-map-control"
-                placeholder="名称、平台、分组、错误信息"
-              />
-            </label>
-            <label class="account-map-field">
-              <span>平台</span>
-              <select
-                v-model="filters.platform"
-                class="account-map-control"
-              >
-                <option value="all">全部平台</option>
-                <option v-for="platform in platformOptions" :key="platform" :value="platform">
-                  {{ platformLabel(platform) }}
-                </option>
-              </select>
-            </label>
-            <label class="account-map-field">
-              <span>状态</span>
-              <select
-                v-model="filters.status"
-                class="account-map-control"
-              >
-                <option value="all">全部状态</option>
-                <option value="healthy">健康</option>
-                <option value="degraded">降级/冷却</option>
-                <option value="rate_limited">限流</option>
-                <option value="error">错误</option>
-                <option value="disabled">停用</option>
-              </select>
-            </label>
-            <div class="flex items-end">
-              <div class="account-map-segmented">
-                <button
-                  v-for="mode in viewModes"
-                  :key="mode.value"
-                  type="button"
-                  :class="{ active: filters.view === mode.value }"
-                  @click="filters.view = mode.value"
-                >
-                  {{ mode.label }}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div
-            v-if="errorMessage"
-            class="mt-3 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <span>{{ errorMessage }}</span>
-            <button type="button" class="text-xs font-semibold underline underline-offset-4" @click="refresh">
-              重试
-            </button>
-          </div>
-          <div
-            v-if="sourceInfo?.truncated"
-            class="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200"
-          >
-            当前仅展示前 {{ sourceInfo.returned }} / {{ sourceInfo.total }} 个账号；可以通过搜索或平台筛选缩小范围。
-          </div>
-          <div
-            v-if="usingFallback"
-            class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
-          >
-            当前使用账号列表聚合数据；账号池地图 API 恢复后会自动回到服务端聚合结果。
-          </div>
+      <section
+        v-if="loading || errorMessage || usingFallback || sourceInfo?.truncated || (!loading && !accounts.length)"
+        class="account-map-state-strip"
+        aria-live="polite"
+      >
+        <div v-if="loading" class="account-map-state-pill account-map-state-loading">
+          <span class="account-map-state-pulse"></span>
+          正在同步账号池地图数据
         </div>
-
-        <div v-if="loading && !accounts.length" class="grid gap-3">
-          <div v-for="idx in 3" :key="idx" class="h-32 animate-pulse rounded-2xl bg-gray-100 dark:bg-dark-800"></div>
+        <div v-if="errorMessage" class="account-map-state-pill account-map-state-error">
+          <span class="account-map-status-dot"></span>
+          <span>{{ errorMessage }}</span>
+          <button type="button" :disabled="loading" @click="refresh">重试</button>
         </div>
-
-        <div v-else-if="!visiblePools.length" class="account-map-empty-state">
-          <p class="text-base font-semibold text-gray-900 dark:text-white">没有匹配的账号池</p>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">调整筛选条件，或者先在账号管理中导入/创建上游账号。</p>
+        <div v-if="usingFallback" class="account-map-state-pill account-map-state-fallback">
+          <span class="account-map-line-swatch"></span>
+          使用账号列表聚合数据；账号池地图 API 恢复后会自动回到服务端聚合结果。
         </div>
-
-        <div v-else class="account-pool-card-grid">
-          <article
-            v-for="pool in visiblePools"
-            :key="pool.key"
-            role="button"
-            tabindex="0"
-            class="account-pool-card"
-            :class="[
-              `account-pool-card-${poolStatusTone(pool)}`,
-              selectedPoolForDetail?.key === pool.key ? 'account-pool-card-active' : ''
-            ]"
-            @click="selectPool(pool)"
-            @keydown.enter.prevent="selectPool(pool)"
-            @keydown.space.prevent="selectPool(pool)"
-          >
-            <div class="account-pool-card-head">
-              <div class="account-pool-card-title">
-                <span class="account-pool-platform">{{ platformLabel(pool.platform) }}</span>
-                <h2>{{ accountTypeLabel(pool.type) }}</h2>
-              </div>
-              <span class="account-pool-status-chip" :class="`account-pool-status-chip-${poolStatusTone(pool)}`">
-                {{ statusKindLabel(poolStatusTone(pool)) }}
-              </span>
-            </div>
-            <div class="account-pool-card-main">
-              <div class="account-pool-card-count">
-                <strong>{{ pool.accounts.length }}</strong>
-                <span>账号</span>
-              </div>
-              <p>{{ poolSummaryText(pool) }}</p>
-            </div>
-            <div class="account-pool-card-metrics">
-              <span><b>{{ poolHealthyCount(pool) }}</b>健康</span>
-              <span><b>{{ poolAttentionCount(pool) }}</b>关注</span>
-              <span><b>{{ poolRPM(pool) }}</b>RPM</span>
-              <span><b>{{ poolConcurrency(pool) }}</b>并发</span>
-              <span><b>{{ poolFingerprintCount(pool) }}</b>TLS</span>
-              <span><b>{{ poolQuotaSignalCount(pool) }}</b>额度</span>
-            </div>
-            <div class="account-pool-card-signal">
-              <span>{{ poolQuotaSummary(pool) }}</span>
-              <strong :title="poolPrimaryIssue(pool)">{{ poolPrimaryIssue(pool) }}</strong>
-            </div>
-            <div class="account-pool-card-preview">
-              <span
-                v-for="account in poolPreviewAccounts(pool)"
-                :key="account.id"
-                class="account-pool-avatar"
-                :class="nodeClass(account)"
-                :title="account.name"
-              >
-                {{ accountInitial(account) }}
-              </span>
-              <span v-if="pool.accounts.length > poolPreviewAccounts(pool).length" class="account-pool-avatar account-pool-avatar-more">
-                +{{ pool.accounts.length - poolPreviewAccounts(pool).length }}
-              </span>
-            </div>
-            <div class="account-pool-card-foot">
-              <span>{{ poolTrafficSummary(pool) }}</span>
-              <button type="button" class="account-pool-detail-button" @click.stop="selectPool(pool)">
-                查看详情
-              </button>
-            </div>
-          </article>
+        <div v-if="sourceInfo?.truncated" class="account-map-state-pill account-map-state-info">
+          当前展示 {{ sourceInfo.returned }} / {{ sourceInfo.total }} 个账号，建议用搜索或平台筛选缩小范围。
         </div>
+        <div v-if="!loading && !accounts.length" class="account-map-state-pill account-map-state-info">
+          暂无可展示账号；创建或导入上游账号后，地图会自动生成泳道。
         </div>
       </section>
 
-      <div
-        v-if="detailDrawerOpen"
-        class="account-map-drawer-layer"
-        role="presentation"
-        @click.self="closeDrawer"
-      >
-        <aside
-          class="account-map-drawer"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="selectedAccount ? '账号详情' : '账号池详情'"
-        >
-        <section class="account-map-inspector" aria-live="polite">
+      <section class="account-map-workspace">
+        <aside class="account-map-left-rail" aria-label="账号池筛选">
+          <div class="account-map-filter-card">
+            <div class="account-map-filter-header">
+              <div>
+                <h2>平台筛选</h2>
+              </div>
+            </div>
+            <div class="account-map-chip-grid">
+              <button
+                type="button"
+                class="account-map-filter-chip"
+                :class="{ active: filters.platform === 'all' }"
+                @click="filters.platform = 'all'"
+              >
+                <span class="account-map-platform-mark">ALL</span>
+                全部平台
+              </button>
+              <button
+                v-for="platform in platformOptions"
+                :key="platform"
+                type="button"
+                class="account-map-filter-chip"
+                :class="{ active: filters.platform === platform }"
+                @click="filters.platform = platform"
+              >
+                <span class="account-map-platform-mark">{{ platformInitial(platform) }}</span>
+                {{ platformLabel(platform) }}
+              </button>
+            </div>
+
+            <div class="account-map-filter-header account-map-filter-header-spaced">
+              <div>
+                <h2>状态筛选</h2>
+              </div>
+            </div>
+            <div class="account-map-chip-grid account-map-status-chip-grid">
+              <button
+                v-for="status in statusFilterOptions"
+                :key="status.value"
+                type="button"
+                class="account-map-filter-chip account-map-status-filter-chip"
+                :class="[
+                  `account-map-status-filter-${status.tone}`,
+                  filters.status === status.value ? 'active' : ''
+                ]"
+                @click="filters.status = status.value"
+              >
+                <span class="account-map-status-dot"></span>
+                {{ status.label }}
+              </button>
+            </div>
+
+            <div
+              v-if="errorMessage"
+              class="account-map-rail-notice account-map-rail-notice-warn"
+            >
+              <span>{{ errorMessage }}</span>
+              <button type="button" @click="refresh">重试</button>
+            </div>
+            <div
+              v-if="sourceInfo?.truncated"
+              class="account-map-rail-notice account-map-rail-notice-info"
+            >
+              当前仅展示前 {{ sourceInfo.returned }} / {{ sourceInfo.total }} 个账号；可通过搜索或平台筛选缩小范围。
+            </div>
+            <div
+              v-if="usingFallback"
+              class="account-map-rail-notice account-map-rail-notice-info"
+            >
+              当前使用账号列表聚合数据；账号池地图 API 恢复后会自动回到服务端聚合结果。
+            </div>
+          </div>
+
+          <div class="account-map-group-panel">
+            <div class="account-map-group-panel-head">
+              <h2>分组列表</h2>
+              <button type="button" aria-label="刷新分组列表" @click="refresh">
+                <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3v5h-5" />
+                  <path d="M3 17v-5h5" />
+                  <path d="M16.1 8A6.5 6.5 0 0 0 5 5.4L3 7.2" />
+                  <path d="M3.9 12A6.5 6.5 0 0 0 15 14.6l2-1.8" />
+                </svg>
+              </button>
+            </div>
+            <div class="account-map-group-table-head">
+              <span>分组名称</span>
+              <span>平台</span>
+              <span>可用 / 总数</span>
+              <span>风险</span>
+              <span>健康度</span>
+            </div>
+            <div class="account-map-group-list">
+              <button
+                v-for="pool in visiblePools"
+                :key="pool.key"
+                type="button"
+                class="account-map-group-row"
+                :class="[
+                  `account-map-group-row-${poolStatusTone(pool)}`,
+                  selectedPoolForDetail?.key === pool.key ? 'active' : ''
+                ]"
+                @click="selectPool(pool)"
+              >
+                <span class="account-map-group-name">{{ platformLabel(pool.platform) }} {{ accountTypeLabel(pool.type) }}</span>
+                <span class="account-map-group-platform">
+                  <span class="account-map-platform-mark">{{ platformInitial(pool.platform) }}</span>
+                </span>
+                <span class="account-map-group-count">{{ poolHealthyCount(pool) }} / {{ pool.accounts.length }}</span>
+                <span class="account-map-risk-chip" :class="`account-map-risk-${poolStatusTone(pool)}`">
+                  {{ poolRiskLabel(pool) }}
+                </span>
+                <span class="account-map-health-cell">
+                  <span class="account-map-health-track">
+                    <span :style="{ width: `${poolHealthPercent(pool)}%` }"></span>
+                  </span>
+                  <small>{{ poolHealthPercent(pool) }}%</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+        </aside>
+
+        <div class="account-map-main-column">
+          <section class="account-map-table-panel" aria-label="账号池总览">
+            <div v-if="loading && !accounts.length" class="account-map-loading-shell">
+              <div v-for="idx in 3" :key="idx" class="account-map-skeleton-card"></div>
+            </div>
+
+            <div v-else-if="!visiblePools.length" class="account-map-empty-state">
+              <p class="text-base font-semibold text-gray-900 dark:text-white">没有匹配的账号池</p>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">调整筛选条件，或者先在账号管理中导入/创建上游账号。</p>
+            </div>
+
+            <div v-else class="account-map-table-card">
+              <div class="account-map-table-title">
+                <h2>账号池总览</h2>
+                <span>{{ visiblePools.length }} groups · {{ accounts.length }} accounts</span>
+              </div>
+              <div class="account-map-table-scroll">
+                <table class="account-map-data-table account-map-pool-table">
+                  <thead>
+                    <tr>
+                      <th>Group</th>
+                      <th>Platform</th>
+                      <th>Usable</th>
+                      <th>Cooldown</th>
+                      <th>Error</th>
+                      <th>Quota</th>
+                      <th>Latency</th>
+                      <th>Models</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="pool in visiblePools"
+                      :key="pool.key"
+                      :class="{ active: selectedPoolForDetail?.key === pool.key }"
+                      tabindex="0"
+                      @click="selectPool(pool)"
+                      @keydown.enter.prevent="selectPool(pool)"
+                      @keydown.space.prevent="selectPool(pool)"
+                    >
+                      <td>
+                        <button type="button" class="account-map-table-primary" @click.stop="selectPool(pool)">
+                          {{ platformLabel(pool.platform) }} {{ accountTypeLabel(pool.type) }}
+                        </button>
+                      </td>
+                      <td>
+                        <span class="account-map-platform-pill">{{ platformLabel(pool.platform) }}</span>
+                      </td>
+                      <td>{{ poolHealthyCount(pool) }} / {{ pool.accounts.length }}</td>
+                      <td class="account-map-number-warn">{{ poolCooldownAccounts(pool).length }}</td>
+                      <td :class="pool.summary?.error ? 'account-map-number-danger' : 'account-map-number-good'">
+                        {{ pool.summary?.error || 0 }}
+                      </td>
+                      <td>
+                        <span class="account-map-quota-cell">
+                          <span>{{ quotaPercentText(poolQuotaPercent(pool)) }}</span>
+                          <span class="account-map-mini-bar" :class="quotaBarClass(poolQuotaPercent(pool))">
+                            <i :style="{ width: quotaBarWidth(poolQuotaPercent(pool)) }"></i>
+                          </span>
+                        </span>
+                      </td>
+                      <td :class="poolLatencyClass(pool)">{{ poolLatencyText(pool) }}</td>
+                      <td>{{ poolModelCount(pool) }}</td>
+                      <td>
+                        <span class="account-map-status-label" :class="`account-map-status-label-${poolStatusTone(pool)}`">
+                          {{ poolStatusChipText(pool) }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="account-map-table-panel account-map-account-detail-panel" aria-label="选中池账号明细">
+            <div v-if="loading && !accounts.length" class="account-map-loading-shell account-map-loading-shell-compact">
+              <div v-for="idx in 2" :key="idx" class="account-map-skeleton-card"></div>
+            </div>
+
+            <div v-else-if="!activeDetailPool" class="account-map-empty-state account-map-empty-state-compact">
+              <p class="text-base font-semibold text-gray-900 dark:text-white">选择一个账号池查看账号明细</p>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">点击左侧分组或上方总览表格中的行后，这里会展示池内账号。</p>
+            </div>
+
+            <div v-else class="account-map-table-card">
+              <div class="account-map-table-title">
+                <h2>{{ poolDisplayName(activeDetailPool) }} · 账号明细</h2>
+                <span>{{ poolHealthyCount(activeDetailPool) }} / {{ activeDetailPool.accounts.length }} usable</span>
+              </div>
+              <div class="account-map-table-scroll">
+                <table class="account-map-data-table account-map-account-table">
+                  <thead>
+                    <tr>
+                      <th>Account</th>
+                      <th>Status</th>
+                      <th>Models</th>
+                      <th>RPM</th>
+                      <th>Tokens</th>
+                      <th>Quota</th>
+                      <th>Last error</th>
+                      <th>Cooldown until</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="account in visiblePoolAccounts(activeDetailPool)"
+                      :key="account.id"
+                      :class="{ active: selectedAccount?.id === account.id }"
+                      tabindex="0"
+                      @click="selectAccount(account)"
+                      @keydown.enter.prevent="selectAccount(account)"
+                      @keydown.space.prevent="selectAccount(account)"
+                    >
+                      <td>
+                        <button type="button" class="account-map-table-primary" @click.stop="selectAccount(account)">
+                          {{ account.name }}
+                        </button>
+                      </td>
+                      <td>
+                        <span class="account-map-account-status" :class="nodeClass(account)">
+                          <i></i>{{ statusLabel(account) }}
+                        </span>
+                      </td>
+                      <td>{{ accountModelNames(account).length || '-' }}</td>
+                      <td>{{ account.current_rpm ?? 0 }}</td>
+                      <td>{{ accountTokenMeta(account) || '-' }}</td>
+                      <td>
+                        <span class="account-map-quota-cell">
+                          <span>{{ quotaPercentText(accountQuotaPercent(account)) }}</span>
+                          <span class="account-map-mini-bar" :class="quotaBarClass(accountQuotaPercent(account))">
+                            <i :style="{ width: quotaBarWidth(accountQuotaPercent(account)) }"></i>
+                          </span>
+                        </span>
+                      </td>
+                      <td :class="statusKind(account) === 'error' ? 'account-map-number-danger' : ''">
+                        {{ accountLastError(account) }}
+                      </td>
+                      <td>{{ accountCooldownUntilText(account) }}</td>
+                      <td>
+                        <button type="button" class="account-map-row-action" @click.stop="selectAccount(account)">
+                          查看
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-if="poolHiddenCount(activeDetailPool) > 0" class="account-map-table-footnote">
+                <span class="account-map-status-info-dot">i</span>
+                当前显示前 {{ visiblePoolAccounts(activeDetailPool).length }} 个账号；可展开查看剩余 {{ poolHiddenCount(activeDetailPool) }} 个。
+                <button type="button" @click="togglePoolExpanded(activeDetailPool)">展开全部</button>
+              </div>
+              <div v-else class="account-map-table-footnote">
+                <span class="account-map-status-info-dot">i</span>
+                No disabled accounts in this group
+              </div>
+            </div>
+          </section>
+        </div>
+        <aside class="account-map-right-rail" aria-label="账号池详情检查器">
+          <section class="account-map-inspector" aria-live="polite">
           <template v-if="selectedAccount">
-            <!-- Drawer sticky header -->
             <div class="inspector-drawer-header">
               <div class="inspector-drawer-header-left">
                 <span class="inspector-kicker">账号详情</span>
@@ -370,31 +528,155 @@
           </template>
 
           <template v-else-if="selectedPoolForDetail">
-            <!-- Drawer sticky header -->
             <div class="inspector-drawer-header">
               <div class="inspector-drawer-header-left">
-                <span class="inspector-kicker">池详情</span>
-                <h2 class="inspector-title">{{ platformLabel(selectedPoolForDetail.platform) }} · {{ accountTypeLabel(selectedPoolForDetail.type) }}</h2>
+                <span class="inspector-kicker">Pool inspector</span>
+                <h2 class="inspector-title">{{ poolDisplayName(selectedPoolForDetail) }}</h2>
+                <p class="inspector-subtitle">
+                  <span class="account-map-node-status-dot" :class="`inspector-dot-${poolStatusTone(selectedPoolForDetail)}`"></span>
+                  {{ poolStatusText(selectedPoolForDetail) }}
+                </p>
               </div>
-              <button type="button" class="inspector-close" aria-label="取消选择账号池" @click="clearPoolSelection">
-                <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <path d="M1 1l12 12M13 1L1 13"/>
-                </svg>
-              </button>
-            </div>
-            <div class="inspector-profile-card inspector-pool-card">
-              <div class="inspector-profile-meta">
-                <span>{{ selectedPoolForDetail.accounts.length }} 个账号</span>
-                <span>健康 {{ poolHealthyCount(selectedPoolForDetail) }}</span>
-                <span>需关注 {{ poolAttentionCount(selectedPoolForDetail) }}</span>
+              <div class="inspector-selection-actions">
+                <span class="inspector-selected-badge">已选中</span>
+                <button type="button" class="inspector-close" aria-label="取消选择账号池" @click="clearPoolSelection">
+                  <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M1 1l12 12M13 1L1 13"/>
+                  </svg>
+                </button>
               </div>
             </div>
 
-            <div class="inspector-snapshot-grid">
-              <MetricTile label="RPM" :value="String(poolRPM(selectedPoolForDetail))" />
-              <MetricTile label="并发" :value="String(poolConcurrency(selectedPoolForDetail))" />
-              <MetricTile label="TLS 覆盖" :value="poolFingerprintCount(selectedPoolForDetail)" />
-              <MetricTile label="额度信号" :value="String(poolQuotaSignalCount(selectedPoolForDetail))" />
+            <div class="inspector-diagnosis-card" :class="`inspector-diagnosis-${poolStatusTone(selectedPoolForDetail)}`">
+              <div class="inspector-diagnosis-head">
+                <span class="account-map-status-label" :class="`account-map-status-label-${poolStatusTone(selectedPoolForDetail)}`">
+                  {{ poolStatusChipText(selectedPoolForDetail) }}
+                </span>
+                <strong>{{ poolHealthyCount(selectedPoolForDetail) }} / {{ selectedPoolForDetail.accounts.length }} usable</strong>
+              </div>
+              <h3>当前判断</h3>
+              <p>{{ poolDiagnosisText(selectedPoolForDetail) }}</p>
+            </div>
+
+            <div class="inspector-action-grid">
+              <button type="button" class="inspector-action" @click="runHealthCheck">
+                {{ checkingHealth ? '重试健康检查中' : '重试健康检查' }}
+              </button>
+              <button type="button" class="inspector-action" @click="goAccounts">
+                降权高风险账号
+              </button>
+              <button type="button" class="inspector-action" @click="goPoolUsage(selectedPoolForDetail)">
+                查看请求记录
+              </button>
+              <button type="button" class="inspector-action" @click="goFingerprints">
+                复制配置
+              </button>
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>可用模型</h3>
+                  <p>来自账号模型限流配置与最近额度探测模型</p>
+                </div>
+              </div>
+              <div v-if="poolModelRows(selectedPoolForDetail).length" class="inspector-model-chips">
+                <span v-for="model in poolModelRows(selectedPoolForDetail)" :key="model.name">
+                  {{ model.name }}
+                </span>
+              </div>
+              <p v-else class="inspector-empty-line">暂无模型映射</p>
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>不可用原因</h3>
+                  <p>按当前账号状态与配额信号聚合</p>
+                </div>
+                <span>{{ poolUnavailableReasons(selectedPoolForDetail).length }} 类</span>
+              </div>
+              <div v-if="poolUnavailableReasons(selectedPoolForDetail).length" class="inspector-reason-table">
+                <div
+                  v-for="item in poolUnavailableReasons(selectedPoolForDetail)"
+                  :key="item.reason"
+                  class="inspector-reason-row"
+                  :class="`inspector-reason-${item.tone}`"
+                >
+                  <span>{{ item.reason }}</span>
+                  <strong>{{ item.count }}</strong>
+                </div>
+              </div>
+              <p v-else class="inspector-empty-line">当前未发现不可用账号</p>
+            </div>
+
+            <div class="inspector-section inspector-policy-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>调度策略</h3>
+                  <p>{{ selectedPoolForDetail.platform }} · {{ selectedPoolForDetail.type }}</p>
+                </div>
+              </div>
+              <InspectorRow
+                v-for="row in poolPolicyRows(selectedPoolForDetail)"
+                :key="row.label"
+                :label="row.label"
+                :value="row.value"
+              />
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>最近错误</h3>
+                  <p>基于账号状态、错误消息和调度暂停原因</p>
+                </div>
+                <span>{{ poolRecentErrors(selectedPoolForDetail).length }} 条</span>
+              </div>
+              <div v-if="poolRecentErrors(selectedPoolForDetail).length" class="inspector-event-list">
+                <button
+                  v-for="item in poolRecentErrors(selectedPoolForDetail)"
+                  :key="item.account.id"
+                  type="button"
+                  class="inspector-event-row"
+                  :class="nodeClass(item.account)"
+                  @click="selectAccount(item.account)"
+                >
+                  <span class="inspector-account-dot"></span>
+                  <span>
+                    <b>{{ item.account.name }}</b>
+                    <small>{{ item.reason }}</small>
+                  </span>
+                  <em>{{ statusLabel(item.account) }}</em>
+                </button>
+              </div>
+              <p v-else class="inspector-empty-line">暂无最近错误</p>
+            </div>
+
+            <div class="inspector-section">
+              <div class="inspector-section-title">
+                <div>
+                  <h3>最近 10 次请求</h3>
+                  <p>无请求日志字段时展示当前 RPM/并发/会话状态</p>
+                </div>
+                <span>{{ poolRequestSignals(selectedPoolForDetail).length }} 条</span>
+              </div>
+              <div v-if="poolRequestSignals(selectedPoolForDetail).length" class="inspector-request-list">
+                <button
+                  v-for="item in poolRequestSignals(selectedPoolForDetail)"
+                  :key="item.account.id"
+                  type="button"
+                  class="inspector-request-row"
+                  :class="nodeClass(item.account)"
+                  @click="selectAccount(item.account)"
+                >
+                  <span>{{ item.account.name }}</span>
+                  <span>{{ statusLabel(item.account) }}</span>
+                  <span>{{ accountModelMeta(item.account) }}</span>
+                  <span>{{ item.signal }}</span>
+                </button>
+              </div>
+              <p v-else class="inspector-empty-line">暂无最近请求信号</p>
             </div>
 
             <div class="inspector-section">
@@ -412,7 +694,6 @@
                   {{ isPoolExpanded(selectedPoolForDetail) ? '收起' : `展开 ${poolHiddenCount(selectedPoolForDetail)} 个` }}
                 </button>
               </div>
-
               <div class="inspector-account-list">
                 <button
                   v-for="account in visiblePoolAccounts(selectedPoolForDetail)"
@@ -480,9 +761,9 @@
               </div>
             </div>
           </template>
-        </section>
+          </section>
         </aside>
-      </div>
+      </section>
     </div>
   </AppLayout>
 </template>
@@ -502,11 +783,15 @@ import type {
   APIKeyProbeQuotaSnapshot
 } from '@/api/admin/accounts'
 
-type ViewMode = 'status' | 'traffic' | 'error'
 type AccountStatusKind = AccountPoolMapStatusKind
 type AccountPool = AccountPoolMapPool
 type DetailRow = { label: string; value: string }
 type QuotaStatItem = { label: string; value: string; hint: string }
+type StatusFilterOption = {
+  value: 'all' | AccountStatusKind
+  label: string
+  tone: 'all' | AccountStatusKind
+}
 type PlatformHealthRow = {
   platform: string
   total: number
@@ -515,6 +800,11 @@ type PlatformHealthRow = {
   quota: number
   healthyPercent: number
 }
+type PoolModelRow = { name: string; supported: number; total: number }
+type PoolIssueRow = { account: AccountPoolMapAccount; reason: string }
+type PoolCooldownRow = { account: AccountPoolMapAccount; resetText: string; reason: string }
+type PoolRequestSignal = { account: AccountPoolMapAccount; signal: string }
+type PoolUnavailableReason = { reason: string; count: number; tone: AccountStatusKind }
 
 const MetricTile = defineComponent({
   props: {
@@ -547,26 +837,30 @@ const selectedAccountId = ref<number | null>(null)
 const selectedPoolKey = ref<string | null>(null)
 const expandedPoolKeys = ref<Set<string>>(new Set())
 const checkingHealth = ref(false)
+const autoRefreshEnabled = ref(true)
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let healthPollTimer: ReturnType<typeof setTimeout> | null = null
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 const POOL_PREVIEW_LIMIT = 12
+const AUTO_REFRESH_INTERVAL_MS = 60_000
 
 const filters = reactive<{
   search: string
   platform: string
   status: 'all' | AccountStatusKind
-  view: ViewMode
 }>({
   search: '',
   platform: 'all',
-  status: 'all',
-  view: 'status'
+  status: 'all'
 })
 
-const viewModes: Array<{ value: ViewMode; label: string }> = [
-  { value: 'status', label: '状态' },
-  { value: 'traffic', label: '流量' },
-  { value: 'error', label: '错误' }
+const statusFilterOptions: StatusFilterOption[] = [
+  { value: 'all', label: '全部', tone: 'all' },
+  { value: 'healthy', label: 'Healthy', tone: 'healthy' },
+  { value: 'degraded', label: 'Cooldown', tone: 'degraded' },
+  { value: 'error', label: 'Error', tone: 'error' },
+  { value: 'disabled', label: 'Disabled', tone: 'disabled' },
+  { value: 'rate_limited', label: 'Quota Risk', tone: 'rate_limited' }
 ]
 
 const {
@@ -603,6 +897,8 @@ const selectedPoolForDetail = computed(() => {
   if (!selectedPoolKey.value) return null
   return visiblePools.value.find((pool) => pool.key === selectedPoolKey.value) || null
 })
+
+const activeDetailPool = computed(() => selectedPoolForDetail.value || visiblePools.value[0] || null)
 
 const detailDrawerOpen = computed(() => Boolean(selectedAccount.value || selectedPoolForDetail.value))
 
@@ -654,56 +950,77 @@ const summary = computed(() => {
   return serverSummary.value || buildSummary(accounts.value, pools.value)
 })
 
-const summaryCards = computed(() => [
-  {
-    key: 'total',
-    label: '账号总数',
-    value: summary.value.total,
-    detail: `${summary.value.pools || visiblePools.value.length} 个池/泳道`,
-    dotClass: 'bg-slate-400',
-    tone: 'neutral',
-    metrics: [
-      { label: '平台', value: String(platformHealthRows.value.length) },
-      { label: 'TLS', value: `${summary.value.tls_enabled}/${summary.value.total || 0}` }
-    ]
-  },
-  {
-    key: 'healthy',
-    label: '健康可调度',
-    value: summary.value.healthy,
-    detail: summary.value.total ? `${Math.round((summary.value.healthy / summary.value.total) * 100)}% 可用` : '无账号',
-    dotClass: 'bg-emerald-500',
-    tone: 'good',
-    metrics: [
-      { label: 'RPM', value: String(summary.value.rpm || 0) },
-      { label: '并发', value: String(summary.value.concurrency || 0) }
-    ]
-  },
-  {
-    key: 'attention',
-    label: '需要关注',
-    value: summary.value.attention,
-    detail: '错误、冷却、限流或停用',
-    dotClass: summary.value.attention > 0 ? 'bg-amber-500' : 'bg-emerald-500',
-    tone: summary.value.attention > 0 ? 'warn' : 'good',
-    metrics: [
-      { label: '错误', value: String(summary.value.error || 0) },
-      { label: '冷却/限流', value: String((summary.value.degraded || 0) + (summary.value.rate_limited || 0)) }
-    ]
-  },
-  {
-    key: 'quota',
-    label: '额度信号',
-    value: summary.value.quota_signals || 0,
-    detail: `${summary.value.rate_limited} 限流 · ${summary.value.disabled} 停用`,
-    dotClass: summary.value.quota_signals > 0 ? 'bg-sky-500' : 'bg-slate-300',
-    tone: summary.value.quota_signals > 0 ? 'accent' : 'neutral',
-    metrics: [
-      { label: '会话', value: String(summary.value.active_sessions || 0) },
-      { label: '停用', value: String(summary.value.disabled || 0) }
-    ]
-  }
-])
+const summaryCards = computed(() => {
+  const cooldown = (summary.value.degraded || 0) + (summary.value.rate_limited || 0)
+  const riskyPools = visiblePools.value.filter((pool) => poolStatusTone(pool) !== 'healthy').length
+  return [
+    {
+      key: 'healthy',
+      label: '可用账号',
+      value: summary.value.healthy,
+      detail: summary.value.total ? `${Math.round((summary.value.healthy / summary.value.total) * 100)}% 可调度` : '无账号',
+      dotClass: 'account-map-stat-icon-good',
+      tone: 'good',
+      iconPath: 'M6.5 10.2 8.8 12.5 13.8 7.5 M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15',
+      metrics: [
+        { label: '总数', value: String(summary.value.total || 0) },
+        { label: 'TLS', value: `${summary.value.tls_enabled}/${summary.value.total || 0}` }
+      ]
+    },
+    {
+      key: 'cooldown',
+      label: '临时冷却',
+      value: cooldown,
+      detail: `${summary.value.degraded || 0} 降级 · ${summary.value.rate_limited || 0} 限流`,
+      dotClass: cooldown > 0 ? 'account-map-stat-icon-warn' : 'account-map-stat-icon-good',
+      tone: cooldown > 0 ? 'warn' : 'good',
+      iconPath: 'M10 3v7l3.8 2.1 M10 17.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15',
+      metrics: [
+        { label: 'RPM', value: String(summary.value.rpm || 0) },
+        { label: '并发', value: String(summary.value.concurrency || 0) }
+      ]
+    },
+    {
+      key: 'error',
+      label: '异常账号',
+      value: summary.value.error || 0,
+      detail: `${summary.value.attention || 0} 个账号需要关注`,
+      dotClass: summary.value.error > 0 ? 'account-map-stat-icon-danger' : 'account-map-stat-icon-good',
+      tone: summary.value.error > 0 ? 'danger' : 'good',
+      iconPath: 'M10 5.2v5.2 M10 13.8h.01 M8.8 2.8 2.3 16.4h13.8L11.2 2.8a1.4 1.4 0 0 0-2.4 0',
+      metrics: [
+        { label: '停用', value: String(summary.value.disabled || 0) },
+        { label: '限流', value: String(summary.value.rate_limited || 0) }
+      ]
+    },
+    {
+      key: 'risk',
+      label: '高风险分组',
+      value: riskyPools,
+      detail: `${visiblePools.value.length} 个池/泳道已载入`,
+      dotClass: riskyPools > 0 ? 'account-map-stat-icon-orange' : 'account-map-stat-icon-good',
+      tone: riskyPools > 0 ? 'orange' : 'good',
+      iconPath: 'M10 3.2 15.8 5.5v4.3c0 3.8-2.4 6.2-5.8 7-3.4-.8-5.8-3.2-5.8-7V5.5L10 3.2Z M10 7v4',
+      metrics: [
+        { label: '平台', value: String(platformHealthRows.value.length) },
+        { label: '额度', value: String(summary.value.quota_signals || 0) }
+      ]
+    },
+    {
+      key: 'sessions',
+      label: '活动会话',
+      value: summary.value.active_sessions || 0,
+      detail: `${summary.value.rpm || 0} RPM · ${summary.value.concurrency || 0} 并发`,
+      dotClass: 'account-map-stat-icon-accent',
+      tone: 'accent',
+      iconPath: 'M3.5 10a6.5 6.5 0 0 1 13 0 M6.2 10a3.8 3.8 0 0 1 7.6 0 M10 10v4 M5 14h10',
+      metrics: [
+        { label: '池', value: String(summary.value.pools || visiblePools.value.length) },
+        { label: '回退', value: usingFallback.value ? '是' : '否' }
+      ]
+    }
+  ]
+})
 
 function statusKind(account: Account): AccountStatusKind {
   const mappedKind = (account as Partial<AccountPoolMapAccount>).status_kind
@@ -759,26 +1076,12 @@ function statusBadgeClass(account: Account): string {
 }
 
 function nodeClass(account: Account): string {
-  if (filters.view === 'traffic') {
-    const load = (account.current_rpm || 0) + (account.current_concurrency || 0) + (account.active_sessions || 0)
-    if (load >= 20) return 'account-node-blue-strong'
-    if (load > 0) return 'account-node-blue'
-    return 'account-node-muted'
-  }
-  if (filters.view === 'error') {
-    if (statusKind(account) === 'healthy') return 'account-node-muted'
-    return statusNodeClass(account)
-  }
-  return statusNodeClass(account)
-}
-
-function statusNodeClass(account: Account): string {
   const classes: Record<AccountStatusKind, string> = {
-    healthy: 'account-node-healthy',
-    degraded: 'account-node-degraded',
-    rate_limited: 'account-node-limited',
-    error: 'account-node-error',
-    disabled: 'account-node-muted'
+    healthy: 'account-map-account-status-healthy',
+    degraded: 'account-map-account-status-degraded',
+    rate_limited: 'account-map-account-status-rate_limited',
+    error: 'account-map-account-status-error',
+    disabled: 'account-map-account-status-disabled'
   }
   return classes[statusKind(account)]
 }
@@ -801,6 +1104,17 @@ function platformLabel(platform: string): string {
     bedrock: 'Bedrock'
   }
   return labels[platform] || platform || 'Unknown'
+}
+
+function platformInitial(platform: string): string {
+  const label = platformLabel(platform)
+  if (!label || label === 'Unknown') return 'UN'
+  return label
+    .split(/[\s_-]+/)
+    .map((part) => part.slice(0, 1))
+    .join('')
+    .slice(0, 3)
+    .toUpperCase()
 }
 
 function accountTypeLabel(type: string): string {
@@ -848,6 +1162,18 @@ function poolStatusTone(pool: AccountPool): AccountStatusKind {
   return 'healthy'
 }
 
+function poolRiskLabel(pool: AccountPool): string {
+  const tone = poolStatusTone(pool)
+  if (tone === 'healthy') return '低'
+  if (tone === 'degraded' || tone === 'rate_limited') return '中'
+  return '高'
+}
+
+function poolHealthPercent(pool: AccountPool): number {
+  if (!pool.accounts.length) return 0
+  return Math.round((poolHealthyCount(pool) / pool.accounts.length) * 100)
+}
+
 function poolSummaryText(pool: AccountPool): string {
   const attention = poolAttentionCount(pool)
   const limited = pool.summary?.rate_limited || 0
@@ -858,36 +1184,205 @@ function poolSummaryText(pool: AccountPool): string {
   return parts.join(' · ')
 }
 
-function poolTrafficSummary(pool: AccountPool): string {
-  const sessions = pool.summary?.active_sessions ?? pool.accounts.reduce((sum, item) => sum + (item.active_sessions || 0), 0)
-  return `${poolRPM(pool)} RPM · ${poolConcurrency(pool)} 并发 · ${sessions} 会话`
+function poolDisplayName(pool: AccountPool): string {
+  return `${platformLabel(pool.platform)} ${accountTypeLabel(pool.type)}`
 }
 
-function poolQuotaSummary(pool: AccountPool): string {
-  const quotaSignals = poolQuotaSignalCount(pool)
-  const total = pool.accounts.length
-  if (quotaSignals > 0) return `额度信号 ${quotaSignals}/${total}`
-  if (pool.platform === 'gemini') return 'Gemini 多为项目级额度'
-  return '额度未探测'
+function poolStatusText(pool: AccountPool): string {
+  const tone = poolStatusTone(pool)
+  const reason = poolPrimaryReason(pool)
+  return `${statusKindLabel(tone)} · ${reason}`
 }
 
-function poolPrimaryIssue(pool: AccountPool): string {
-  const summary = pool.summary
-  if ((summary?.error || 0) > 0) return `${summary?.error || 0} 个错误账号`
-  if ((summary?.rate_limited || 0) > 0) return `${summary?.rate_limited || 0} 个限流中`
-  if ((summary?.degraded || 0) > 0) return `${summary?.degraded || 0} 个冷却/降级`
-  if ((summary?.disabled || 0) > 0) return `${summary?.disabled || 0} 个已停用`
-  if (poolHealthyCount(pool) === pool.accounts.length) return '全部可调度'
-  return `${poolAttentionCount(pool)} 个需关注`
+function poolStatusChipText(pool: AccountPool): string {
+  const tone = poolStatusTone(pool)
+  if (tone === 'healthy') return 'Healthy'
+  if (tone === 'degraded') return 'Cooldown'
+  if (tone === 'rate_limited') return 'Quota Risk'
+  if (tone === 'error') return 'Error'
+  return 'Disabled'
 }
 
-function poolPreviewAccounts(pool: AccountPool): AccountPoolMapAccount[] {
-  return pool.accounts.slice(0, 5)
+function poolDiagnosisText(pool: AccountPool): string {
+  const unavailable = pool.accounts.length - poolHealthyCount(pool)
+  if (!unavailable) return '当前账号池可参与调度，未发现错误、冷却或额度风险。'
+  const cooldown = poolCooldownAccounts(pool).length
+  const error = pool.summary?.error || 0
+  const quota = pool.summary?.rate_limited || poolQuotaSignalCount(pool)
+  const parts = [`${unavailable} 个账号不可用或需关注`]
+  if (cooldown) parts.push(`${cooldown} 个账号处于冷却窗口`)
+  if (error) parts.push(`${error} 个账号存在错误`)
+  if (quota) parts.push(`${quota} 个账号存在额度或限流信号`)
+  return `${parts.join('，')}。`
 }
 
-function accountInitial(account: AccountPoolMapAccount): string {
-  const text = (account.name || account.platform || '?').trim()
-  return text.slice(0, 1).toUpperCase() || '?'
+function poolPrimaryReason(pool: AccountPool): string {
+  const issue = pool.accounts.find((account) => statusKind(account) !== 'healthy')
+  if (!issue) return '当前账号池可参与调度'
+  return accountIssueReason(issue)
+}
+
+function accountIssueReason(account: AccountPoolMapAccount): string {
+  return truncateText(
+    account.status_reason ||
+      account.temp_unschedulable_reason ||
+      account.error_message ||
+      quotaBrief(account) ||
+      statusKindLabel(statusKind(account)),
+    44
+  )
+}
+
+function poolPolicyRows(pool: AccountPool): DetailRow[] {
+  const policy = pool.accounts.some((account) => account.priority !== 0) ? '按优先级与健康度调度' : '按健康度与可用负载调度'
+  const distribution = poolRPM(pool) > 0 || poolConcurrency(pool) > 0 ? `RPM ${poolRPM(pool)} · 并发 ${poolConcurrency(pool)}` : '暂无实时负载'
+  const failThreshold = `${pool.summary?.error || 0} 错误 · ${pool.summary?.rate_limited || 0} 限流`
+  const cooldown = poolCooldownAccounts(pool)[0]?.resetText || '暂无冷却窗口'
+  return [
+    { label: '策略类型', value: policy },
+    { label: '负载分配', value: distribution },
+    { label: '失败阈值', value: failThreshold },
+    { label: '冷却时间', value: cooldown },
+    { label: '健康检查', value: poolQuotaSignalCount(pool) ? `${poolQuotaSignalCount(pool)} 个额度信号` : '等待额度探测' },
+    { label: 'TLS 覆盖', value: poolFingerprintCount(pool) }
+  ]
+}
+
+function poolModelRows(pool: AccountPool): PoolModelRow[] {
+  const modelMap = new Map<string, Set<number>>()
+  for (const account of pool.accounts) {
+    for (const model of accountModelNames(account)) {
+      const accountSet = modelMap.get(model) || new Set<number>()
+      accountSet.add(account.id)
+      modelMap.set(model, accountSet)
+    }
+  }
+  return Array.from(modelMap.entries())
+    .map(([name, accountIds]) => ({
+      name,
+      supported: accountIds.size,
+      total: pool.accounts.length
+    }))
+    .sort((a, b) => b.supported - a.supported || a.name.localeCompare(b.name))
+    .slice(0, 10)
+}
+
+function poolRecentErrors(pool: AccountPool): PoolIssueRow[] {
+  return pool.accounts
+    .filter((account) => statusKind(account) === 'error' || Boolean(account.error_message))
+    .map((account) => ({ account, reason: accountIssueReason(account) }))
+    .slice(0, 6)
+}
+
+function poolCooldownAccounts(pool: AccountPool): PoolCooldownRow[] {
+  return pool.accounts
+    .filter((account) => {
+      const kind = statusKind(account)
+      return kind === 'degraded' || kind === 'rate_limited' || isFuture(account.rate_limit_reset_at) || isFuture(account.overload_until) || isFuture(account.temp_unschedulable_until)
+    })
+    .map((account) => ({
+      account,
+      resetText: accountCooldownText(account),
+      reason: accountIssueReason(account)
+    }))
+    .slice(0, 6)
+}
+
+function poolUnavailableReasons(pool: AccountPool): PoolUnavailableReason[] {
+  const reasonMap = new Map<string, PoolUnavailableReason>()
+  for (const account of pool.accounts) {
+    const kind = statusKind(account)
+    if (kind === 'healthy') continue
+    const reason = accountIssueReason(account)
+    const existing = reasonMap.get(reason) || { reason, count: 0, tone: kind }
+    existing.count += 1
+    reasonMap.set(reason, existing)
+  }
+  return Array.from(reasonMap.values()).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 6)
+}
+
+function accountCooldownText(account: AccountPoolMapAccount): string {
+  const resetAt = account.rate_limit_reset_at || account.overload_until || account.temp_unschedulable_until
+  if (resetAt) return formatDate(resetAt)
+  const quotaReset = quotaResetText(quotaSnapshot(account))
+  return quotaReset === '-' ? '未记录' : quotaReset
+}
+
+function accountCooldownUntilText(account: AccountPoolMapAccount): string {
+  const text = accountCooldownText(account)
+  return text === '未记录' ? '-' : text
+}
+
+function poolRequestSignals(pool: AccountPool): PoolRequestSignal[] {
+  return pool.accounts
+    .map((account) => ({
+      account,
+      signal: accountRuntimeSignal(account)
+    }))
+    .filter((item) => item.signal !== 'idle')
+    .sort((a, b) => accountLoadScore(b.account) - accountLoadScore(a.account) || statusWeight(a.account) - statusWeight(b.account))
+    .slice(0, 10)
+}
+
+function accountRuntimeSignal(account: AccountPoolMapAccount): string {
+  const parts: string[] = []
+  if (account.current_rpm) parts.push(`${account.current_rpm} RPM`)
+  if (account.current_concurrency) parts.push(`${account.current_concurrency} 并发`)
+  if (account.active_sessions) parts.push(`${account.active_sessions} 会话`)
+  if (statusKind(account) !== 'healthy') parts.push(accountIssueReason(account))
+  return parts.length ? parts.join(' · ') : 'idle'
+}
+
+function accountLoadScore(account: AccountPoolMapAccount): number {
+  return (account.current_rpm || 0) + (account.current_concurrency || 0) * 5 + (account.active_sessions || 0) * 2
+}
+
+function poolModelCount(pool: AccountPool): number {
+  const models = new Set<string>()
+  for (const account of pool.accounts) {
+    for (const model of accountModelNames(account)) {
+      models.add(model)
+    }
+  }
+  return models.size
+}
+
+function accountModelNames(account: AccountPoolMapAccount): string[] {
+  const models = new Set<string>()
+  const modelLimits = account.extra?.model_rate_limits
+  if (modelLimits && typeof modelLimits === 'object') {
+    for (const model of Object.keys(modelLimits)) models.add(model)
+  }
+  const snapshotModel = quotaSnapshot(account)?.model
+  if (snapshotModel) models.add(snapshotModel)
+  return Array.from(models)
+}
+
+function accountModelMeta(account: AccountPoolMapAccount): string {
+  const models = accountModelNames(account)
+  if (models.length > 1) return `${models.length} models`
+  if (models.length === 1) return models[0]
+  return accountTypeLabel(account.type)
+}
+
+function accountTokenMeta(account: AccountPoolMapAccount): string {
+  const snapshot = quotaSnapshot(account)
+  if (!snapshot) return ''
+  if (snapshot.tokens_remaining || snapshot.tokens_limit) {
+    return `Tok ${formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit)}`
+  }
+  if (snapshot.input_tokens_remaining || snapshot.input_tokens_limit || snapshot.output_tokens_remaining || snapshot.output_tokens_limit) {
+    return `Tok ${formatQuotaPair(snapshot.input_tokens_remaining, snapshot.input_tokens_limit)} / ${formatQuotaPair(snapshot.output_tokens_remaining, snapshot.output_tokens_limit)}`
+  }
+  if (snapshot.requests_remaining || snapshot.requests_limit) {
+    return `Req ${formatQuotaPair(snapshot.requests_remaining, snapshot.requests_limit)}`
+  }
+  return ''
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}…`
 }
 
 function quotaSnapshot(account: Account | AccountPoolMapAccount | null | undefined): APIKeyProbeQuotaSnapshot | null {
@@ -1010,6 +1505,98 @@ function quotaBrief(account: Account | AccountPoolMapAccount | null | undefined)
   if (!snapshot.supported && snapshot.provider === 'gemini') return '项目级额度'
   if (!quotaHasAnySignal(snapshot)) return '未返回额度'
   return '已采集额度'
+}
+
+function quotaPercentText(value: number | null): string {
+  return value === null ? '-' : `${value}%`
+}
+
+function quotaBarWidth(value: number | null): string {
+  return `${Math.max(6, Math.min(100, value ?? 0))}%`
+}
+
+function quotaBarClass(value: number | null): string {
+  if (value === null) return 'account-map-mini-bar-muted'
+  if (value >= 85) return 'account-map-mini-bar-danger'
+  if (value >= 70) return 'account-map-mini-bar-warn'
+  return 'account-map-mini-bar-good'
+}
+
+function poolQuotaPercent(pool: AccountPool): number | null {
+  const values = pool.accounts.map((account) => accountQuotaPercent(account)).filter((value): value is number => value !== null)
+  if (!values.length) return null
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function accountQuotaPercent(account: AccountPoolMapAccount): number | null {
+  const direct = quotaUsagePercent(account.quota_used, account.quota_limit)
+  if (direct !== null) return direct
+  const daily = quotaUsagePercent(account.quota_daily_used, account.quota_daily_limit)
+  if (daily !== null) return daily
+  const weekly = quotaUsagePercent(account.quota_weekly_used, account.quota_weekly_limit)
+  if (weekly !== null) return weekly
+  return quotaSnapshotPercent(quotaSnapshot(account))
+}
+
+function quotaUsagePercent(used?: number | null, limit?: number | null): number | null {
+  if (!limit || limit <= 0 || used === null || used === undefined) return null
+  return Math.round(Math.max(0, Math.min(100, (used / limit) * 100)))
+}
+
+function quotaSnapshotPercent(snapshot: APIKeyProbeQuotaSnapshot | null): number | null {
+  if (!snapshot) return null
+  const tokenPercent = remainingLimitPercent(snapshot.tokens_remaining, snapshot.tokens_limit)
+  if (tokenPercent !== null) return tokenPercent
+  const requestPercent = remainingLimitPercent(snapshot.requests_remaining, snapshot.requests_limit)
+  if (requestPercent !== null) return requestPercent
+  const inputPercent = remainingLimitPercent(snapshot.input_tokens_remaining, snapshot.input_tokens_limit)
+  const outputPercent = remainingLimitPercent(snapshot.output_tokens_remaining, snapshot.output_tokens_limit)
+  if (inputPercent !== null && outputPercent !== null) return Math.round((inputPercent + outputPercent) / 2)
+  return inputPercent ?? outputPercent
+}
+
+function remainingLimitPercent(remaining?: string, limit?: string): number | null {
+  const remainingValue = numericStringValue(remaining)
+  const limitValue = numericStringValue(limit)
+  if (remainingValue === null || limitValue === null || limitValue <= 0) return null
+  return Math.round(Math.max(0, Math.min(100, ((limitValue - remainingValue) / limitValue) * 100)))
+}
+
+function numericStringValue(value?: string): number | null {
+  if (!value) return null
+  const next = Number(value.replace(/,/g, ''))
+  return Number.isFinite(next) ? next : null
+}
+
+function accountLatencyMs(account: AccountPoolMapAccount): number | null {
+  const extra = account.extra as Record<string, unknown> | undefined
+  return numberValue(extra?.latency_ms) ?? numberValue(extra?.base_latency_ms) ?? numberValue(extra?.average_duration_ms) ?? null
+}
+
+function poolLatencyMs(pool: AccountPool): number | null {
+  const values = pool.accounts.map(accountLatencyMs).filter((value): value is number => value !== null)
+  if (!values.length) return null
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function poolLatencyText(pool: AccountPool): string {
+  const latency = poolLatencyMs(pool)
+  if (latency === null) return '-'
+  if (latency >= 1000) return `${(latency / 1000).toFixed(2)}s`
+  return `${latency}ms`
+}
+
+function poolLatencyClass(pool: AccountPool): string {
+  const latency = poolLatencyMs(pool)
+  if (latency === null) return ''
+  if (latency >= 1000) return 'account-map-number-danger'
+  if (latency >= 800) return 'account-map-number-warn'
+  return 'account-map-number-good'
+}
+
+function accountLastError(account: AccountPoolMapAccount): string {
+  if (statusKind(account) === 'healthy') return '-'
+  return accountIssueReason(account)
 }
 
 function quotaSourceLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
@@ -1240,6 +1827,21 @@ function clearHealthPollTimer() {
   }
 }
 
+function clearAutoRefreshTimer() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+}
+
+function syncAutoRefreshTimer() {
+  clearAutoRefreshTimer()
+  if (!autoRefreshEnabled.value) return
+  autoRefreshTimer = setInterval(() => {
+    if (!loading.value) void refresh()
+  }, AUTO_REFRESH_INTERVAL_MS)
+}
+
 async function runHealthCheck() {
   if (checkingHealth.value) return
   checkingHealth.value = true
@@ -1406,18 +2008,31 @@ function goUsage(account: Account) {
   router.push({ path: '/admin/usage', query: { account_id: String(account.id) } })
 }
 
+function goPoolUsage(pool: AccountPool) {
+  const first = pool.accounts[0]
+  if (first) {
+    goUsage(first)
+    return
+  }
+  router.push('/admin/usage')
+}
+
 watch(
   () => [filters.search, filters.platform, filters.status],
   () => scheduleRefresh()
 )
 
+watch(autoRefreshEnabled, syncAutoRefreshTimer)
+
 onMounted(() => {
   void refresh()
+  syncAutoRefreshTimer()
   document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
   if (refreshTimer) clearTimeout(refreshTimer)
+  clearAutoRefreshTimer()
   clearHealthPollTimer()
   document.removeEventListener('keydown', handleKeydown)
 })
@@ -1455,17 +2070,17 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-:global(.dark) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector) {
+:global(.dark) .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-map-inspector) {
   border-color: rgb(51 65 85);
   background: var(--account-map-surface);
   color: var(--account-map-ink);
 }
 
-:global(.dark) .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-card-main p, .account-pool-card-count span, .account-pool-card-foot, .account-node-meta, .account-map-meta, .inspector-account-main small, .inspector-account-quota) {
+:global(.dark) .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-map-meta, .inspector-account-main small, .inspector-account-quota) {
   color: var(--account-map-muted);
 }
 
-:global(.dark) .account-map-page :is(.account-map-stat-card strong, .account-pool-card-main h2, .account-pool-card-count strong, .account-node p:first-child, .inspector-title, .inspector-account-main b) {
+:global(.dark) .account-map-page :is(.account-map-stat-card strong, .inspector-title, .inspector-account-main b) {
   color: var(--account-map-ink);
 }
 
@@ -1499,15 +2114,6 @@ onUnmounted(() => {
   font-size: 1.35rem;
   font-weight: 850;
   line-height: 1.2;
-}
-
-.account-map-eyebrow {
-  margin-bottom: 0.3rem;
-  color: var(--account-map-accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .account-map-meta {
@@ -1643,36 +2249,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 4px rgb(14 165 233 / 0.11);
 }
 
-.account-map-segmented {
-  display: inline-flex;
-  border: 1px solid var(--account-map-border);
-  border-radius: 0.9rem;
-  background: var(--account-map-subtle);
-  padding: 0.25rem;
-}
-
-.account-map-segmented button {
-  border-radius: 0.68rem;
-  padding: 0.48rem 0.75rem;
-  color: var(--account-map-muted);
-  font-size: 0.78rem;
-  font-weight: 760;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.account-map-segmented button:hover {
-  color: var(--account-map-ink);
-}
-
-.account-map-segmented button.active {
-  background: var(--account-map-surface);
-  color: var(--account-map-accent-strong);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
-}
-
 .account-map-empty-state {
   border-style: dashed;
   border-radius: 1.25rem;
@@ -1703,7 +2279,6 @@ onUnmounted(() => {
   color: var(--account-map-accent);
 }
 
-.account-map-primary-button,
 .account-map-secondary-button {
   display: inline-flex;
   align-items: center;
@@ -1719,16 +2294,6 @@ onUnmounted(() => {
     box-shadow 0.15s ease;
 }
 
-.account-map-primary-button {
-  background: var(--account-map-accent-strong);
-  color: white;
-  box-shadow: 0 1px 2px rgb(37 99 235 / 0.18);
-}
-
-.account-map-primary-button:hover {
-  background: rgb(29 78 216);
-}
-
 .account-map-secondary-button {
   border: 1px solid var(--account-map-border);
   background: var(--account-map-surface);
@@ -1740,7 +2305,6 @@ onUnmounted(() => {
   color: var(--account-map-accent-strong);
 }
 
-.account-map-primary-button:disabled,
 .account-map-secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
@@ -2305,228 +2869,6 @@ onUnmounted(() => {
   border-bottom-color: rgb(31 41 55);
 }
 
-.account-node {
-  position: relative;
-  min-height: 5.45rem;
-  overflow: hidden;
-  border: 1px solid var(--account-map-border);
-  border-radius: 0.95rem;
-  padding: 0.82rem 0.86rem 0.82rem 0.95rem;
-  background: var(--account-map-surface);
-  color: var(--account-map-ink);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.account-node::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: currentColor;
-  opacity: 0.5;
-}
-
-.account-node > * {
-  position: relative;
-}
-
-.account-node:hover {
-  transform: translateY(-1px);
-  background: var(--account-map-subtle);
-  box-shadow: 0 10px 24px rgb(15 23 42 / 0.07);
-}
-
-:global(.dark) .account-node {
-  border-color: rgb(51 65 85);
-  background: rgb(15 23 42 / 0.72);
-  color: var(--account-map-ink);
-}
-
-:global(.dark) .account-node:hover {
-  background: rgb(30 41 59 / 0.82);
-  box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
-}
-
-.account-node-selected {
-  border-color: rgb(14 165 233 / 0.75) !important;
-  background: rgb(240 249 255);
-  box-shadow: 0 0 0 4px rgb(59 130 246 / 0.13), 0 12px 28px rgb(15 23 42 / 0.1);
-}
-
-.account-node-healthy {
-  color: var(--account-map-good);
-}
-
-.account-node-degraded {
-  color: var(--account-map-warn);
-}
-
-.account-node-limited {
-  color: rgb(124 58 237);
-}
-
-.account-node-error {
-  color: var(--account-map-danger);
-}
-
-.account-node-muted {
-  color: var(--account-map-faint);
-}
-
-.account-node-blue {
-  color: var(--account-map-accent-strong);
-}
-
-.account-node-blue-strong {
-  border-color: rgb(14 165 233 / 0.42);
-  background: rgb(240 249 255);
-  color: var(--account-map-accent-strong);
-}
-
-:global(.dark) .account-node-healthy {
-  color: rgb(167 243 208);
-}
-
-:global(.dark) .account-node-degraded {
-  color: rgb(253 230 138);
-}
-
-:global(.dark) .account-node-limited {
-  color: rgb(221 214 254);
-}
-
-:global(.dark) .account-node-error {
-  color: rgb(254 205 211);
-}
-
-:global(.dark) .account-node-muted {
-  color: rgb(156 163 175);
-}
-
-:global(.dark) .account-node-blue,
-:global(.dark) .account-node-blue-strong {
-  color: rgb(191 219 254);
-}
-
-.account-node p:first-child {
-  color: var(--account-map-ink);
-}
-
-.account-node-subtitle {
-  margin-top: 0.35rem;
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--account-map-muted);
-  font-size: 0.72rem;
-}
-
-.account-node-status {
-  border-radius: 999px;
-  background: rgb(226 232 240);
-  padding: 0.12rem 0.42rem;
-  color: rgb(71 85 105);
-  font-weight: 780;
-}
-
-.account-node-healthy .account-node-status {
-  background: rgb(209 250 229);
-  color: rgb(4 120 87);
-}
-
-.account-node-degraded .account-node-status {
-  background: rgb(254 243 199);
-  color: rgb(180 83 9);
-}
-
-.account-node-limited .account-node-status {
-  background: rgb(237 233 254);
-  color: rgb(109 40 217);
-}
-
-.account-node-error .account-node-status {
-  background: rgb(255 228 230);
-  color: rgb(190 18 60);
-}
-
-:global(.dark) .account-node-status {
-  background: rgb(51 65 85);
-  color: rgb(203 213 225);
-}
-
-:global(.dark) .account-node-healthy .account-node-status {
-  background: rgb(6 78 59 / 0.55);
-  color: rgb(167 243 208);
-}
-
-:global(.dark) .account-node-degraded .account-node-status {
-  background: rgb(120 53 15 / 0.5);
-  color: rgb(253 230 138);
-}
-
-:global(.dark) .account-node-limited .account-node-status {
-  background: rgb(76 29 149 / 0.5);
-  color: rgb(221 214 254);
-}
-
-:global(.dark) .account-node-error .account-node-status {
-  background: rgb(136 19 55 / 0.5);
-  color: rgb(254 205 211);
-}
-
-.account-node-meta {
-  margin-top: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
-  color: var(--account-map-muted);
-  font-size: 0.72rem;
-}
-
-.account-node-quota {
-  margin-top: 0.65rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  border-radius: 0.65rem;
-  background: rgb(240 249 255);
-  padding: 0.4rem 0.5rem;
-  color: rgb(3 105 161);
-  font-size: 0.72rem;
-  font-weight: 760;
-}
-
-.account-node-quota small {
-  flex: none;
-  color: rgb(100 116 139);
-  font-size: 0.66rem;
-  font-weight: 650;
-}
-
-.account-node-quota span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:global(.dark) .account-node-quota {
-  background: rgb(12 74 110 / 0.26);
-  color: rgb(125 211 252);
-}
-
-:global(.dark) .account-node-quota small {
-  color: rgb(148 163 184);
-}
-
 .inspector-action,
 .inspector-action-primary {
   width: 100%;
@@ -2587,7 +2929,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -2596,8 +2938,7 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
+:global(.app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .quota-stat-card, .quota-empty-state, .inspector-account-quota) {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
   background: var(--anti-paper) !important;
@@ -2614,14 +2955,6 @@ onUnmounted(() => {
   min-height: 5.4rem;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-eyebrow {
-  display: inline-flex;
-  border: 3px solid var(--anti-ink);
-  background: var(--anti-red);
-  color: var(--anti-paper) !important;
-  padding: 0.2rem 0.35rem;
-}
-
 :global(.app-shell.app-shell-anti) .account-map-page :is(h1, h2, h3, p, label, strong, small) {
   color: var(--anti-ink) !important;
 }
@@ -2634,7 +2967,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close) {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.inspector-account-row):not(.inspector-close) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.2rem !important;
   box-shadow: 4px 4px 0 var(--anti-ink) !important;
@@ -2642,62 +2975,15 @@ onUnmounted(() => {
   font-weight: 950;
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close):hover {
+:global(.app-shell.app-shell-anti) .account-map-page button:not(.inspector-account-row):not(.inspector-close):hover {
   background: var(--anti-green) !important;
   transform: rotate(-1deg) translate(-1px, -1px);
 }
 
-:global(.app-shell.app-shell-anti) .account-map-page .account-node {
-  border: 2px solid var(--anti-ink) !important;
-  border-radius: 0.5rem !important;
-  background: var(--anti-paper) !important;
-  box-shadow: 3px 3px 0 var(--anti-ink) !important;
-  transform: none !important;
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node p:first-child,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-meta,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-subtitle,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-quota,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-quota small,
 :global(.app-shell.app-shell-anti) .account-map-page .quota-empty-state p,
 :global(.app-shell.app-shell-anti) .account-map-page .quota-stat-card small,
 :global(.app-shell.app-shell-anti) .account-map-page .inspector-profile-meta span {
   color: var(--anti-ink) !important;
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-status {
-  border: 2px solid var(--anti-ink);
-  border-radius: 0.2rem;
-  background: var(--anti-yellow) !important;
-  color: var(--anti-ink) !important;
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-healthy {
-  color: #007f3b;
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-degraded {
-  color: #a16207;
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page :is(.account-node-limited, .account-node-blue, .account-node-blue-strong) {
-  color: var(--anti-blue);
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-error {
-  color: var(--anti-red);
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-muted {
-  color: var(--anti-muted);
-}
-
-:global(.app-shell.app-shell-anti) .account-map-page .account-node:hover,
-:global(.app-shell.app-shell-anti) .account-map-page .account-node-selected {
-  background: #f6ff57 !important;
-  box-shadow: 5px 5px 0 var(--anti-red) !important;
-  transform: translate(-1px, -1px) !important;
 }
 
 :global(.app-shell.app-shell-anti) .account-map-page .inspector-status-card {
@@ -2730,13 +3016,12 @@ onUnmounted(() => {
   --account-map-soft: #1e293b;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector, .inspector-profile-card) {
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-map-inspector, .inspector-profile-card) {
   background: linear-gradient(135deg, #101827, #0b1020) !important;
   box-shadow: 6px 6px 0 #334155 !important;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-pool-card-metrics span, .inspector-account-quota) {
+:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .quota-stat-card, .quota-empty-state, .inspector-account-quota) {
   background: #111827 !important;
   box-shadow: 3px 3px 0 #334155 !important;
 }
@@ -2747,7 +3032,7 @@ onUnmounted(() => {
     linear-gradient(135deg, #111827, #0b1020) !important;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page :is(.account-map-eyebrow, .inspector-kicker) {
+:global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-kicker {
   border-color: #f8fafc;
   background: #ef4444;
   color: #ffffff !important;
@@ -2764,38 +3049,14 @@ onUnmounted(() => {
 }
 
 :global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-secondary-button,
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-segmented button,
 :global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-action {
   background: #0f172a !important;
   color: #f8fafc !important;
 }
 
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-primary-button,
 :global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-action-primary {
   background: #2563eb !important;
   color: #ffffff !important;
-}
-
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-map-segmented button.active {
-  background: #facc15 !important;
-  color: #111827 !important;
-}
-
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node {
-  background: #101827 !important;
-  box-shadow: 3px 3px 0 #334155 !important;
-}
-
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node:hover,
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node-selected {
-  background: #172554 !important;
-  box-shadow: 5px 5px 0 #facc15 !important;
-}
-
-:global(.dark .app-shell.app-shell-anti) .account-map-page .account-node-status {
-  border-color: #f8fafc;
-  background: #facc15 !important;
-  color: #111827 !important;
 }
 
 :global(.dark .app-shell.app-shell-anti) .account-map-page .inspector-status-card {
@@ -2819,13 +3080,6 @@ onUnmounted(() => {
     justify-content: flex-start;
   }
 
-  .account-map-segmented {
-    width: 100%;
-  }
-
-  .account-map-segmented button {
-    flex: 1;
-  }
 }
 
 @media (max-width: 640px) {
@@ -2918,191 +3172,6 @@ onUnmounted(() => {
   .account-map-filter-grid {
     grid-template-columns: 1fr;
   }
-}
-
-.account-pool-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 204px), 1fr));
-  gap: 0.9rem;
-}
-
-.account-pool-card {
-  position: relative;
-  display: grid;
-  min-height: 15.25rem;
-  cursor: pointer;
-  grid-template-rows: auto 1fr auto auto;
-  overflow: hidden;
-  border: 1px solid var(--account-map-border);
-  border-radius: 1.15rem;
-  background: var(--account-map-surface);
-  box-shadow: var(--account-map-shadow);
-  color: var(--account-map-good);
-  outline: none;
-  padding: 0.9rem;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease,
-    background-color 0.16s ease;
-}
-
-.account-pool-card:hover,
-.account-pool-card:focus-visible {
-  transform: translateY(-2px);
-  border-color: rgb(14 165 233 / 0.46);
-  box-shadow: 0 16px 34px rgb(15 23 42 / 0.10);
-}
-
-.account-pool-card-active {
-  border-color: rgb(14 165 233 / 0.72);
-  box-shadow: 0 0 0 4px rgb(14 165 233 / 0.12), 0 18px 38px rgb(15 23 42 / 0.12);
-}
-
-.account-pool-card-degraded {
-  color: var(--account-map-warn);
-}
-
-.account-pool-card-rate_limited {
-  color: rgb(124 58 237);
-}
-
-.account-pool-card-error {
-  color: var(--account-map-danger);
-}
-
-.account-pool-card-disabled {
-  color: var(--account-map-faint);
-}
-
-.account-pool-card-head,
-.account-pool-card-foot,
-.account-pool-card-preview {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.account-pool-card-head,
-.account-pool-card-foot {
-  justify-content: space-between;
-  gap: 0.65rem;
-}
-
-.account-pool-status-dot {
-  height: 0.62rem;
-  width: 0.62rem;
-  flex: none;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 13%, transparent);
-}
-
-.account-pool-card-main {
-  position: relative;
-  margin-top: 0.95rem;
-  min-width: 0;
-}
-
-.account-pool-card-main h2 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--account-map-ink);
-  font-size: 0.98rem;
-  font-weight: 880;
-}
-
-.account-pool-card-count {
-  margin-top: 0.8rem;
-  display: flex;
-  align-items: baseline;
-  gap: 0.38rem;
-  color: var(--account-map-ink);
-}
-
-.account-pool-card-count strong {
-  color: var(--account-map-ink);
-  font-size: 2.35rem;
-  font-weight: 950;
-  letter-spacing: -0.05em;
-  line-height: 0.9;
-}
-
-.account-pool-card-count span {
-  color: var(--account-map-muted);
-  font-size: 0.78rem;
-  font-weight: 760;
-}
-
-.account-pool-card-main p {
-  margin-top: 0.65rem;
-  color: var(--account-map-muted);
-  font-size: 0.74rem;
-  line-height: 1.35;
-}
-
-.account-pool-card-metrics {
-  position: relative;
-  margin-top: 0.9rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.account-pool-card-metrics span {
-  min-width: 0;
-  border-radius: 0.72rem;
-  background: var(--account-map-subtle);
-  padding: 0.42rem 0.5rem;
-  color: var(--account-map-muted);
-  font-size: 0.68rem;
-  font-weight: 760;
-}
-
-.account-pool-card-metrics b {
-  margin-right: 0.22rem;
-  color: var(--account-map-ink);
-  font-size: 0.76rem;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
-
-.account-pool-card-preview {
-  margin-top: 0.85rem;
-  min-height: 2rem;
-}
-
-.account-pool-avatar {
-  display: inline-flex;
-  height: 2rem;
-  width: 2rem;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--account-map-surface);
-  border-radius: 999px;
-  background: var(--account-map-subtle);
-  color: currentColor;
-  font-size: 0.72rem;
-  font-weight: 900;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-}
-
-.account-pool-avatar + .account-pool-avatar {
-  margin-left: -0.42rem;
-}
-
-.account-pool-avatar-more {
-  color: var(--account-map-muted);
-}
-
-.account-pool-card-foot {
-  margin-top: 0.85rem;
-  border-top: 1px solid var(--account-map-border);
-  padding-top: 0.75rem;
-  color: var(--account-map-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
 }
 
 .account-map-detail-rail {
@@ -3293,7 +3362,6 @@ onUnmounted(() => {
 
 }
 
-/* Drawer pass: the map stays scan-friendly; deep inspection moves to a focused side panel. */
 .account-map-workspace {
   display: block;
 }
@@ -3302,225 +3370,1537 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.account-pool-card-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+.account-map-console {
+  --account-map-border: rgb(44 62 79);
+  --account-map-border-strong: rgb(68 88 105);
+  --account-map-ink: rgb(235 242 248);
+  --account-map-muted: rgb(155 168 181);
+  --account-map-faint: rgb(103 119 135);
+  --account-map-surface: rgb(18 35 47 / 0.88);
+  --account-map-subtle: rgb(12 27 38 / 0.82);
+  --account-map-soft: rgb(26 45 59 / 0.9);
+  --account-map-shadow: 0 22px 60px rgb(0 0 0 / 0.28);
+  display: grid;
+  width: 100%;
+  max-width: min(1500px, calc(100vw - 2rem));
+  gap: 0.7rem;
+  border-radius: 0;
+  color: var(--account-map-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.account-map-console::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% -8%, rgb(32 125 166 / 0.18), transparent 24rem),
+    radial-gradient(circle at 82% 10%, rgb(55 86 115 / 0.16), transparent 22rem),
+    linear-gradient(135deg, rgb(8 17 25), rgb(8 28 39) 48%, rgb(6 23 34));
+}
+
+.account-map-console .account-map-toolbar,
+.account-map-console .account-map-stat-card,
+.account-map-console .account-map-filter-card,
+.account-map-console .account-map-group-panel,
+.account-map-console .account-map-table-panel,
+.account-map-console .account-map-inspector,
+.account-map-console .account-map-empty-state {
+  border: 1px solid var(--account-map-border);
+  background:
+    linear-gradient(180deg, rgb(22 42 56 / 0.92), rgb(12 29 40 / 0.9)),
+    var(--account-map-surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.account-map-console .account-map-toolbar {
+  border-radius: 0.35rem;
+  padding: 0.75rem 0.9rem;
+  background:
+    radial-gradient(circle at 0 0, rgb(32 125 166 / 0.15), transparent 14rem),
+    linear-gradient(180deg, rgb(16 32 44 / 0.96), rgb(9 23 34 / 0.94));
+}
+
+.account-map-console .account-map-toolbar-copy {
+  align-items: center;
   gap: 1rem;
 }
 
-.account-pool-card {
-  min-height: 0;
-  grid-template-rows: auto auto auto auto auto auto;
-  padding: 1rem;
-  background: linear-gradient(180deg, var(--account-map-surface), color-mix(in srgb, var(--account-map-subtle) 44%, var(--account-map-surface)));
-}
-
-.account-pool-card-head {
-  align-items: flex-start;
-}
-
-.account-pool-card-title {
-  min-width: 0;
-}
-
-.account-pool-card-title h2 {
-  margin-top: 0.55rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.account-map-console .account-map-toolbar h1 {
+  gap: 0.45rem;
   color: var(--account-map-ink);
-  font-size: 1rem;
-  font-weight: 880;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
-.account-pool-status-chip {
-  flex: none;
+.account-map-console .account-map-toolbar h1 svg {
+  color: rgb(145 165 183);
+}
+
+.account-map-console .account-map-meta {
+  margin-top: 0.25rem;
+  gap: 0.7rem;
+  color: rgb(132 148 163);
+  font-size: 0.8rem;
+}
+
+.account-map-live-state {
   display: inline-flex;
   align-items: center;
-  gap: 0.32rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, currentColor 32%, transparent);
-  background: color-mix(in srgb, currentColor 12%, var(--account-map-surface));
-  padding: 0.28rem 0.62rem 0.28rem 0.48rem;
-  color: currentColor;
-  font-size: 0.68rem;
-  font-weight: 860;
+  gap: 0.4rem;
 }
 
-.account-pool-status-chip::before {
-  content: '';
-  display: inline-block;
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  background: currentColor;
-  flex-shrink: 0;
+.account-map-console .account-map-toolbar-actions {
+  flex-wrap: nowrap;
+  gap: 0.65rem;
 }
 
-.account-pool-card-main {
-  margin-top: 0.75rem;
+.account-map-console .account-map-secondary-button {
+  min-height: 2rem;
+  gap: 0.38rem;
+  border-radius: 0.35rem;
+  padding: 0.42rem 0.66rem;
+  font-size: 0.8rem;
+  font-weight: 650;
 }
 
-.account-pool-card-count {
-  margin-top: 0;
+.account-map-console .account-map-secondary-button {
+  border-color: rgb(65 83 99);
+  background: rgb(13 27 38 / 0.8);
+  color: rgb(221 231 240);
 }
 
-.account-pool-card-count strong {
-  font-size: 2.15rem;
+.account-map-console .account-map-secondary-button:hover {
+  border-color: rgb(68 145 220);
+  color: rgb(147 197 253);
 }
 
-.account-pool-card-main p {
-  margin-top: 0.5rem;
+.account-map-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: rgb(224 232 240);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
-.account-pool-card-metrics {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 0.85rem;
+.account-map-auto-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.account-pool-card-metrics span {
-  min-height: 2.55rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.12rem;
-}
-
-.account-pool-card-metrics b {
-  display: block;
-  margin-right: 0;
-  font-size: 0.92rem;
-}
-
-.account-pool-card-signal {
+.account-map-auto-toggle i {
   position: relative;
-  margin-top: 0.8rem;
-  display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
-  gap: 0.5rem;
+  display: inline-flex;
+  width: 2rem;
+  height: 1.1rem;
+  border: 1px solid rgb(58 78 95);
+  border-radius: 999px;
+  background: rgb(28 44 58);
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
-.account-pool-card-signal span,
-.account-pool-card-signal strong {
+.account-map-auto-toggle i::after {
+  content: '';
+  position: absolute;
+  top: 0.12rem;
+  left: 0.13rem;
+  width: 0.76rem;
+  height: 0.76rem;
+  border-radius: 999px;
+  background: rgb(148 163 184);
+  transition: transform 0.16s ease, background-color 0.16s ease;
+}
+
+.account-map-auto-toggle input:checked + i {
+  border-color: rgb(68 145 220);
+  background: rgb(37 99 235);
+}
+
+.account-map-auto-toggle input:checked + i::after {
+  transform: translateX(0.86rem);
+  background: white;
+}
+
+.account-map-toolbar-divider {
+  width: 1px;
+  height: 1.35rem;
+  background: rgb(67 83 99);
+}
+
+.account-map-updated {
+  color: rgb(132 148 163);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.account-map-search {
+  display: inline-flex;
+  min-width: 230px;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgb(48 67 83);
+  border-radius: 0.35rem;
+  background: rgb(8 20 30 / 0.78);
+  padding: 0.42rem 0.6rem;
+  color: rgb(116 132 148);
+}
+
+.account-map-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--account-map-ink);
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.account-map-search input::placeholder {
+  color: rgb(103 119 135);
+}
+
+.account-map-search kbd {
+  flex: none;
+  border: 1px solid rgb(58 76 92);
+  border-radius: 0.26rem;
+  background: rgb(25 41 54 / 0.82);
+  padding: 0.04rem 0.32rem;
+  color: rgb(141 158 174);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.account-map-console .account-map-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 0.7rem;
+}
+
+.account-map-console .account-map-stat-card {
+  position: relative;
+  min-height: 5.4rem;
+  overflow: hidden;
+  border-radius: 0.35rem;
+  padding: 0.75rem 0.85rem 0.68rem;
+}
+
+.account-map-stat-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.account-map-stat-head p {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(226 236 244);
+  font-size: 0.82rem;
+  font-weight: 680;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.account-map-stat-info {
+  display: inline-flex;
+  width: 0.9rem;
+  height: 0.9rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(93 111 128);
+  border-radius: 999px;
+  color: rgb(133 150 166);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.account-map-stat-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.4rem;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+  color: currentColor;
+}
+
+.account-map-stat-icon-good { color: rgb(55 199 119); }
+.account-map-stat-icon-warn { color: rgb(224 179 48); }
+.account-map-stat-icon-danger { color: rgb(232 86 76); }
+.account-map-stat-icon-orange { color: rgb(231 112 39); }
+.account-map-stat-icon-accent { color: rgb(68 145 220); }
+
+.account-map-console .account-map-stat-card strong {
+  margin-top: 0.45rem;
+  color: rgb(245 249 252);
+  font-size: 1.8rem;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+.account-map-console .account-map-stat-card small {
+  margin-top: 0.28rem;
+  color: rgb(143 158 173);
+  font-size: 0.72rem;
+}
+
+.account-map-stat-spark {
+  position: absolute;
+  right: 0.72rem;
+  bottom: 0.68rem;
+  width: 5rem;
+  height: 1.15rem;
+  opacity: 0.9;
+  background:
+    linear-gradient(135deg, transparent 0 14%, currentColor 14% 18%, transparent 18% 32%, currentColor 32% 36%, transparent 36% 48%, currentColor 48% 52%, transparent 52% 63%, currentColor 63% 67%, transparent 67% 82%, currentColor 82% 86%, transparent 86%),
+    linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 22%, transparent), transparent);
+  color: rgb(70 177 122);
+  clip-path: polygon(0 64%, 12% 70%, 22% 58%, 34% 62%, 46% 42%, 58% 54%, 70% 35%, 84% 50%, 100% 28%, 100% 100%, 0 100%);
+}
+
+.account-map-stat-warn .account-map-stat-spark { color: rgb(224 179 48); }
+.account-map-stat-danger .account-map-stat-spark { color: rgb(232 86 76); }
+.account-map-stat-orange .account-map-stat-spark { color: rgb(231 112 39); }
+.account-map-stat-accent .account-map-stat-spark { color: rgb(68 145 220); }
+
+.account-map-console .account-map-stat-metrics {
+  display: none;
+}
+
+.account-map-state-strip {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--account-map-border);
+  border-radius: 0.35rem;
+  background:
+    linear-gradient(180deg, rgb(16 32 44 / 0.9), rgb(8 23 34 / 0.92)),
+    var(--account-map-surface);
+  padding: 0.58rem 0.68rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.account-map-state-pill {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(51 70 86);
+  border-radius: 0.34rem;
+  background: rgb(11 25 36 / 0.72);
+  padding: 0.4rem 0.55rem;
+  color: rgb(190 205 218);
+  font-size: 0.72rem;
+  font-weight: 680;
+  line-height: 1.35;
+}
+
+.account-map-state-pill > span:not(.account-map-status-dot):not(.account-map-line-swatch):not(.account-map-state-pulse) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-radius: 0.78rem;
-  border: 1px solid var(--account-map-border);
-  background: var(--account-map-surface);
-  padding: 0.5rem 0.58rem;
-  font-size: 0.7rem;
-  line-height: 1.1;
 }
 
-.account-pool-card-signal span {
-  color: var(--account-map-muted);
+.account-map-state-pill button {
+  flex: none;
+  color: rgb(147 197 253);
+  font-weight: 820;
+}
+
+.account-map-state-pill button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.account-map-state-loading {
+  border-color: rgb(68 145 220 / 0.48);
+  background: rgb(12 74 110 / 0.18);
+  color: rgb(191 219 254);
+}
+
+.account-map-state-error {
+  border-color: rgb(248 113 113 / 0.48);
+  background: rgb(127 29 29 / 0.22);
+  color: rgb(254 202 202);
+}
+
+.account-map-state-fallback,
+.account-map-state-info {
+  border-color: rgb(68 145 220 / 0.42);
+  background: rgb(12 74 110 / 0.15);
+}
+
+.account-map-state-pulse {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
+  border-radius: 999px;
+  background: rgb(96 165 250);
+  box-shadow: 0 0 0 0 rgb(96 165 250 / 0.45);
+  animation: account-map-pulse 1.35s ease-out infinite;
+}
+
+@keyframes account-map-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(96 165 250 / 0.45); }
+  100% { box-shadow: 0 0 0 0.55rem rgb(96 165 250 / 0); }
+}
+
+.account-map-console .account-map-workspace {
+  display: grid;
+  grid-template-columns: minmax(230px, 250px) minmax(0, 1fr) minmax(285px, 300px);
+  gap: 0.7rem;
+  align-items: stretch;
+}
+
+.account-map-right-rail {
+  min-width: 0;
+}
+
+.account-map-left-rail {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.7rem;
+}
+
+.account-map-console .account-map-filter-card,
+.account-map-console .account-map-group-panel,
+.account-map-console .account-map-table-panel,
+.account-map-console .account-map-inspector {
+  border-radius: 0.35rem;
+}
+
+.account-map-console .account-map-filter-card {
+  padding: 0.85rem;
+}
+
+.account-map-console .account-map-filter-header {
+  margin-bottom: 0.65rem;
+}
+
+.account-map-console .account-map-filter-header h2,
+.account-map-group-panel-head h2 {
+  color: rgb(235 242 248);
+  font-size: 0.86rem;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.account-map-filter-header-spaced {
+  margin-top: 0.9rem;
+}
+
+.account-map-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.account-map-filter-chip {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(51 70 86);
+  border-radius: 0.32rem;
+  background: rgb(13 29 41 / 0.78);
+  padding: 0.42rem 0.55rem;
+  color: rgb(214 224 233);
+  font-size: 0.76rem;
+  font-weight: 620;
+  text-align: left;
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+.account-map-filter-chip:hover,
+.account-map-filter-chip.active {
+  border-color: rgb(68 145 220);
+  background: rgb(23 49 68);
+  color: white;
+}
+
+.account-map-platform-mark {
+  display: inline-flex;
+  width: 1.42rem;
+  height: 1.42rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.32rem;
+  border: 1px solid rgb(68 145 220 / 0.45);
+  background: rgb(23 70 122 / 0.38);
+  color: rgb(139 194 248);
+  font-size: 0.58rem;
+  font-weight: 850;
+}
+
+.account-map-status-chip-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-map-status-filter-chip {
+  gap: 0.42rem;
+}
+
+.account-map-status-dot {
+  display: inline-flex;
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 17%, transparent);
+}
+
+.account-map-status-filter-all { color: rgb(148 163 184); }
+.account-map-status-filter-healthy { color: rgb(52 211 153); }
+.account-map-status-filter-degraded { color: rgb(250 204 21); }
+.account-map-status-filter-rate_limited { color: rgb(251 146 60); }
+.account-map-status-filter-error { color: rgb(248 113 113); }
+.account-map-status-filter-disabled { color: rgb(116 132 148); }
+
+.account-map-rail-notice {
+  margin-top: 0.7rem;
+  border-radius: 0.32rem;
+  border: 1px solid rgb(51 70 86);
+  padding: 0.55rem 0.6rem;
+  color: rgb(192 207 221);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.account-map-rail-notice button {
+  margin-left: 0.45rem;
+  color: rgb(147 197 253);
   font-weight: 760;
 }
 
-.account-pool-card-signal strong {
-  color: var(--account-map-ink);
-  font-weight: 880;
+.account-map-rail-notice-warn {
+  border-color: rgb(245 158 11 / 0.45);
+  background: rgb(120 53 15 / 0.2);
 }
 
-.account-pool-card-preview {
-  margin-top: 0.85rem;
+.account-map-rail-notice-info {
+  border-color: rgb(68 145 220 / 0.45);
+  background: rgb(12 74 110 / 0.18);
 }
 
-.account-pool-card-foot {
-  margin-top: 0.85rem;
+.account-map-group-panel {
+  overflow: hidden;
+}
+
+.account-map-group-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--account-map-border);
+  padding: 0.78rem 0.85rem;
+}
+
+.account-map-group-panel-head button {
+  display: inline-flex;
+  width: 1.65rem;
+  height: 1.65rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(67 86 102);
+  border-radius: 0.32rem;
+  color: rgb(154 171 187);
+}
+
+.account-map-group-table-head,
+.account-map-group-row {
+  display: grid;
+  grid-template-columns: minmax(6.2rem, 1fr) 2.3rem 3.9rem 2.6rem 4rem;
+  gap: 0.35rem;
   align-items: center;
 }
 
-.account-pool-detail-button {
+.account-map-group-table-head {
+  padding: 0.72rem 0.85rem 0.45rem;
+  color: rgb(122 138 153);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.account-map-group-list {
+  display: grid;
+  padding: 0 0.45rem 0.7rem;
+}
+
+.account-map-group-row {
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  padding: 0.58rem 0.4rem;
+  color: rgb(215 226 236);
+  font-size: 0.76rem;
+  text-align: left;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.account-map-group-row:hover,
+.account-map-group-row.active {
+  border-color: rgb(68 145 220);
+  background: rgb(23 71 122 / 0.38);
+}
+
+.account-map-group-name,
+.account-map-group-count {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-map-group-count {
+  color: rgb(197 211 224);
+}
+
+.account-map-risk-chip {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 0.28rem;
+  padding: 0.18rem 0.36rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.account-map-risk-healthy {
+  background: rgb(52 211 153 / 0.15);
+  color: rgb(74 222 128);
+}
+
+.account-map-risk-degraded,
+.account-map-risk-rate_limited {
+  background: rgb(245 158 11 / 0.18);
+  color: rgb(251 191 36);
+}
+
+.account-map-risk-error,
+.account-map-risk-disabled {
+  background: rgb(239 68 68 / 0.18);
+  color: rgb(248 113 113);
+}
+
+.account-map-health-cell {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.account-map-health-track {
+  height: 0.32rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(37 52 66);
+}
+
+.account-map-health-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(74 222 128), rgb(125 211 252));
+}
+
+.account-map-health-cell small {
+  color: rgb(170 184 197);
+  font-size: 0.66rem;
+}
+
+.account-map-line-swatch {
+  display: inline-flex;
+  width: 1.45rem;
+  height: 0;
+  border-top: 2px solid rgb(45 143 255);
+}
+
+.account-map-line-swatch-dashed {
+  border-top-style: dashed;
+  border-top-color: rgb(151 164 176);
+}
+
+.account-map-console .account-map-main-column {
+  width: 100%;
+}
+
+.account-map-console .account-map-table-panel {
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgb(16 34 46 / 0.96), rgb(8 24 35 / 0.98)),
+    var(--account-map-surface);
+}
+
+.account-map-console .account-map-account-detail-panel {
+  margin-top: 0.7rem;
+}
+
+.account-map-table-card {
+  min-width: 0;
+}
+
+.account-map-table-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--account-map-border);
+  padding: 0.9rem 1rem;
+}
+
+.account-map-table-title h2 {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(245 249 252);
+  font-size: 1rem;
+  font-weight: 780;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-map-table-title span {
+  flex: none;
+  color: rgb(143 158 173);
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.account-map-table-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.account-map-data-table {
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: rgb(224 234 242);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-map-account-table {
+  min-width: 100%;
+}
+
+.account-map-data-table th,
+.account-map-data-table td {
+  border-bottom: 1px solid rgb(39 56 72 / 0.92);
+  overflow: hidden;
+  padding: 0.68rem 0.5rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.account-map-data-table th {
+  background: rgb(19 36 49 / 0.68);
+  color: rgb(177 191 204);
+  font-size: 0.68rem;
+  font-weight: 720;
+}
+
+.account-map-data-table tbody tr {
+  cursor: pointer;
+  background: rgb(11 26 38 / 0.18);
+  transition: background-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.account-map-data-table tbody tr:hover,
+.account-map-data-table tbody tr:focus-visible,
+.account-map-data-table tbody tr.active {
+  background: rgb(23 71 122 / 0.28);
+  box-shadow: inset 2px 0 0 rgb(45 143 255), inset -1px 0 0 rgb(45 143 255 / 0.5);
+  outline: none;
+}
+
+.account-map-table-primary {
+  max-width: 100%;
+  overflow: hidden;
+  color: rgb(239 246 252);
+  font-weight: 760;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-map-table-primary:hover {
+  color: rgb(125 188 255);
+}
+
+.account-map-platform-pill,
+.account-map-status-label,
+.account-map-row-action {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.34rem;
+  border: 1px solid rgb(67 86 102);
+  background: rgb(13 29 41 / 0.75);
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.2rem 0.4rem;
+  color: rgb(218 230 240);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.account-map-status-label-healthy {
+  border-color: rgb(52 211 153 / 0.28);
+  background: rgb(22 101 52 / 0.24);
+  color: rgb(74 222 128);
+}
+
+.account-map-status-label-degraded,
+.account-map-status-label-rate_limited {
+  border-color: rgb(245 158 11 / 0.34);
+  background: rgb(120 53 15 / 0.26);
+  color: rgb(251 191 36);
+}
+
+.account-map-status-label-error,
+.account-map-status-label-disabled {
+  border-color: rgb(248 113 113 / 0.34);
+  background: rgb(127 29 29 / 0.24);
+  color: rgb(248 113 113);
+}
+
+.account-map-number-good { color: rgb(52 211 153); }
+.account-map-number-warn { color: rgb(250 204 21); }
+.account-map-number-danger { color: rgb(248 113 113); }
+
+.account-map-quota-cell {
+  display: inline-grid;
+  min-width: 0;
+  width: 100%;
+  grid-template-columns: 1.8rem minmax(1.9rem, 1fr);
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.account-map-mini-bar {
+  display: inline-flex;
+  height: 0.34rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(36 51 65);
+}
+
+.account-map-mini-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.account-map-mini-bar-good i { background: rgb(52 211 153); }
+.account-map-mini-bar-warn i { background: rgb(250 204 21); }
+.account-map-mini-bar-danger i { background: rgb(248 113 113); }
+.account-map-mini-bar-muted i { background: rgb(100 116 139); }
+
+.account-map-account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  color: rgb(203 213 225);
+  font-weight: 720;
+}
+
+.account-map-account-status i {
+  width: 0.48rem;
+  height: 0.48rem;
   flex: none;
   border-radius: 999px;
-  border: 1px solid rgb(14 165 233 / 0.26);
-  background: rgb(240 249 255);
-  padding: 0.38rem 0.68rem;
-  color: var(--account-map-accent-strong);
-  font-size: 0.7rem;
-  font-weight: 860;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease;
+  background: currentColor;
 }
 
-.account-pool-detail-button:hover {
-  transform: translateY(-1px);
-  border-color: rgb(14 165 233 / 0.46);
-  background: rgb(224 242 254);
+.account-map-account-status-healthy {
+  color: rgb(52 211 153);
 }
 
-.account-map-drawer-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
+.account-map-account-status-degraded {
+  color: rgb(250 204 21);
+}
+
+.account-map-account-status-rate_limited {
+  color: rgb(251 146 60);
+}
+
+.account-map-account-status-error {
+  color: rgb(248 113 113);
+}
+
+.account-map-account-status-disabled {
+  color: rgb(116 132 148);
+}
+
+.account-map-row-action {
+  border-color: transparent;
+  background: transparent;
+  color: rgb(96 165 250);
+  padding-inline: 0;
+}
+
+.account-map-row-action:hover {
+  color: rgb(147 197 253);
+}
+
+.account-map-table-footnote {
   display: flex;
-  justify-content: flex-end;
-  background: rgb(15 23 42 / 0.4);
-  padding: 1rem;
-  backdrop-filter: blur(8px);
-  animation: drawer-overlay-in 0.2s ease-out;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.72rem 0.86rem 0.86rem;
+  border: 1px solid rgb(45 62 78);
+  border-radius: 0.34rem;
+  background: rgb(20 36 49 / 0.55);
+  padding: 0.6rem 0.7rem;
+  color: rgb(162 177 191);
+  font-size: 0.72rem;
 }
 
-@keyframes drawer-overlay-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.account-map-table-footnote button {
+  color: rgb(96 165 250);
+  font-weight: 780;
 }
 
-.account-map-drawer {
-  width: min(560px, calc(100vw - 2rem));
-  height: 100%;
-  max-height: calc(100vh - 2rem);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--account-map-border);
-  border-radius: 1.35rem;
-  background: var(--account-map-surface);
-  box-shadow: 0 32px 80px rgb(15 23 42 / 0.22), 0 0 0 1px rgb(255 255 255 / 0.06);
-  animation: account-map-drawer-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+.account-map-status-info-dot {
+  display: inline-flex;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(113 128 143);
+  border-radius: 999px;
+  color: rgb(175 189 201);
+  font-size: 0.58rem;
+  font-weight: 760;
 }
 
-.account-map-drawer .account-map-inspector {
-  position: static;
-  flex: 1;
-  height: auto;
-  max-height: none;
+.account-map-empty-state-compact,
+.account-map-loading-shell-compact {
+  min-height: 16rem;
+}
+
+.account-map-console .account-map-inspector {
+  position: sticky;
+  top: 0.75rem;
+  height: calc(100vh - 1.5rem);
+  max-height: 980px;
   overflow-y: auto;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  border: 1px solid var(--account-map-border);
+  background:
+    linear-gradient(180deg, rgb(18 35 47 / 0.96), rgb(8 24 35 / 0.96)),
+    var(--account-map-surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
-@keyframes account-map-drawer-in {
-  from {
-    opacity: 0;
-    transform: translateX(1.5rem) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
+.account-map-console .inspector-drawer-header {
+  border-bottom-color: var(--account-map-border);
+  background: rgb(13 29 41 / 0.94);
+  padding: 0.72rem 0.82rem;
 }
 
-@media (max-width: 760px) {
-  .account-map-drawer-layer {
-    padding: 0;
+.account-map-console .inspector-drawer-header-left .inspector-title {
+  color: rgb(245 249 252);
+  font-size: 0.98rem;
+  letter-spacing: 0;
+}
+
+.account-map-console .inspector-kicker {
+  color: rgb(148 163 184);
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.account-map-console .inspector-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: rgb(156 172 187);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.inspector-selection-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.inspector-selected-badge {
+  border-radius: 0.3rem;
+  background: rgb(37 99 235 / 0.32);
+  padding: 0.16rem 0.46rem;
+  color: rgb(147 197 253);
+  font-size: 0.66rem;
+  font-weight: 780;
+}
+
+.account-map-console .inspector-close {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-color: rgb(64 84 101);
+  border-radius: 0.32rem;
+  color: rgb(148 163 184);
+}
+
+.account-map-console .inspector-close:hover {
+  background: rgb(20 46 63);
+  color: rgb(226 238 248);
+  transform: none;
+}
+
+.inspector-dot-healthy { color: rgb(52 211 153); }
+.inspector-dot-degraded,
+.inspector-dot-rate_limited { color: rgb(250 204 21); }
+.inspector-dot-error { color: rgb(248 113 113); }
+.inspector-dot-disabled { color: rgb(116 132 148); }
+
+.inspector-pool-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.48rem;
+  padding: 0.72rem 0.82rem 0.18rem;
+}
+
+.inspector-pool-summary div {
+  min-width: 0;
+  border: 1px solid rgb(56 77 94);
+  border-radius: 0.38rem;
+  background: rgb(9 25 37 / 0.72);
+  padding: 0.55rem;
+}
+
+.inspector-pool-summary span,
+.inspector-empty-line,
+.inspector-model-row strong,
+.inspector-event-row small,
+.inspector-event-row em,
+.inspector-cooldown-head,
+.inspector-cooldown-row,
+.inspector-request-row {
+  color: rgb(152 168 183);
+  font-size: 0.7rem;
+}
+
+.inspector-pool-summary strong {
+  display: block;
+  margin-top: 0.22rem;
+  overflow: hidden;
+  color: rgb(241 247 252);
+  font-size: 0.96rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-diagnosis-card {
+  margin: 0.7rem 0.82rem 0;
+  border: 1px solid rgb(56 77 94);
+  border-radius: 0.36rem;
+  background: rgb(10 26 38 / 0.72);
+  padding: 0.72rem;
+}
+
+.inspector-diagnosis-card h3 {
+  margin-top: 0.58rem;
+  color: rgb(235 242 248);
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.inspector-diagnosis-card p {
+  margin-top: 0.35rem;
+  color: rgb(176 190 203);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.inspector-diagnosis-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.inspector-diagnosis-head strong {
+  flex: none;
+  color: rgb(207 220 231);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.inspector-diagnosis-healthy {
+  border-color: rgb(52 211 153 / 0.32);
+}
+
+.inspector-diagnosis-degraded,
+.inspector-diagnosis-rate_limited {
+  border-color: rgb(245 158 11 / 0.36);
+  background: rgb(120 53 15 / 0.18);
+}
+
+.inspector-diagnosis-error,
+.inspector-diagnosis-disabled {
+  border-color: rgb(248 113 113 / 0.36);
+  background: rgb(127 29 29 / 0.2);
+}
+
+.inspector-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.72rem 0.82rem 0.1rem;
+}
+
+.inspector-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.inspector-model-chips span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgb(62 82 98);
+  border-radius: 0.32rem;
+  background: rgb(12 29 41 / 0.74);
+  padding: 0.3rem 0.48rem;
+  color: rgb(220 232 241);
+  font-size: 0.72rem;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-reason-table {
+  overflow: hidden;
+  border: 1px solid rgb(49 69 86);
+  border-radius: 0.34rem;
+}
+
+.inspector-reason-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  border-bottom: 1px solid rgb(39 56 72);
+  background: rgb(12 29 41 / 0.56);
+  padding: 0.38rem 0.5rem;
+  color: rgb(184 199 212);
+  font-size: 0.72rem;
+}
+
+.inspector-reason-row:last-child {
+  border-bottom: 0;
+}
+
+.inspector-reason-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-reason-row strong {
+  color: rgb(231 241 248);
+  font-weight: 820;
+}
+
+.inspector-reason-healthy { color: rgb(52 211 153); }
+.inspector-reason-degraded,
+.inspector-reason-rate_limited { color: rgb(250 204 21); }
+.inspector-reason-error { color: rgb(248 113 113); }
+.inspector-reason-disabled { color: rgb(148 163 184); }
+
+.account-map-console .inspector-section {
+  margin: 0.62rem 0.82rem 0;
+  border-color: rgb(54 74 90);
+  border-radius: 0.36rem;
+  background: rgb(10 26 38 / 0.62);
+  padding: 0.72rem;
+}
+
+.account-map-console .inspector-section-title {
+  margin-bottom: 0.58rem;
+}
+
+.account-map-console .inspector-section-title h3 {
+  color: rgb(235 242 248);
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.account-map-console .inspector-section-title p,
+.account-map-console .inspector-section-title span {
+  color: rgb(138 154 169);
+  font-size: 0.68rem;
+}
+
+.account-map-console .inspector-row {
+  border-bottom-color: rgb(44 62 79);
+  color: rgb(211 224 235);
+  font-size: 0.74rem;
+}
+
+.account-map-console .inspector-row span:first-child {
+  color: rgb(132 148 163) !important;
+}
+
+.account-map-console .inspector-row span:last-child {
+  color: rgb(226 238 248) !important;
+}
+
+.inspector-model-list,
+.inspector-event-list,
+.inspector-cooldown-table,
+.inspector-request-list,
+.inspector-account-list {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.inspector-model-row,
+.inspector-event-row,
+.inspector-cooldown-row,
+.inspector-request-row {
+  min-width: 0;
+  border: 1px solid rgb(49 69 86);
+  border-radius: 0.34rem;
+  background: rgb(12 29 41 / 0.72);
+}
+
+.inspector-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.36rem 0.48rem;
+}
+
+.inspector-model-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(221 233 243);
+  font-size: 0.72rem;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-empty-line {
+  border: 1px dashed rgb(56 77 94);
+  border-radius: 0.34rem;
+  padding: 0.55rem;
+}
+
+.inspector-event-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.48rem;
+  padding: 0.48rem;
+  text-align: left;
+}
+
+.inspector-event-row b,
+.inspector-event-row small,
+.inspector-event-row em,
+.inspector-cooldown-row span,
+.inspector-request-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-event-row b {
+  display: block;
+  color: rgb(232 242 250);
+  font-size: 0.72rem;
+}
+
+.inspector-event-row small {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.inspector-event-row em {
+  border-radius: 0.24rem;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  padding: 0.12rem 0.32rem;
+  color: currentColor;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.inspector-cooldown-head,
+.inspector-cooldown-row,
+.inspector-request-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(4.2rem, 0.8fr) minmax(0, 1.25fr);
+  gap: 0.42rem;
+  align-items: center;
+  padding: 0.4rem 0.46rem;
+  text-align: left;
+}
+
+.inspector-cooldown-head {
+  border-bottom: 1px solid rgb(44 62 79);
+  font-weight: 780;
+}
+
+.inspector-cooldown-row {
+  width: 100%;
+}
+
+.inspector-cooldown-row:hover,
+.inspector-event-row:hover,
+.inspector-request-row:hover {
+  border-color: rgb(68 145 220 / 0.7);
+  background: rgb(18 43 58 / 0.88);
+}
+
+.inspector-failover-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.inspector-failover-chain button {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgb(54 74 90);
+  border-radius: 0.34rem;
+  background: rgb(12 29 41 / 0.72);
+  padding: 0.34rem 0.52rem;
+  color: rgb(181 197 212);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.inspector-failover-chain button::after {
+  content: '>';
+  margin-left: 0.38rem;
+  color: rgb(85 103 119);
+}
+
+.inspector-failover-chain button:last-child::after {
+  content: '';
+  margin-left: 0;
+}
+
+.inspector-failover-chain button.active {
+  border-color: rgb(68 145 220);
+  background: rgb(23 71 122 / 0.42);
+  color: rgb(191 219 254);
+}
+
+.inspector-request-row {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) 3.2rem minmax(0, 0.8fr) minmax(0, 1fr);
+}
+
+.account-map-node-status-dot {
+  height: 0.48rem;
+  width: 0.48rem;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.account-map-console .account-pool-platform {
+  border-color: rgb(57 77 93);
+  background: rgb(11 28 40 / 0.78);
+  color: rgb(200 214 227);
+}
+
+.account-map-loading-shell {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 36rem;
+  align-content: center;
+}
+
+.account-map-skeleton-card {
+  min-height: 8rem;
+  border-radius: 0.55rem;
+  background: linear-gradient(90deg, rgb(22 42 56), rgb(35 58 73), rgb(22 42 56));
+  background-size: 220% 100%;
+  animation: account-map-skeleton 1.2s ease-in-out infinite;
+}
+
+@keyframes account-map-skeleton {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (max-width: 1260px) {
+  .account-map-console .account-map-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 
-  .account-map-drawer {
-    width: 100vw;
-    max-height: 100vh;
-    border-radius: 0;
-  }
-
-  .account-pool-card-grid {
+  .account-map-console .account-map-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .account-map-left-rail {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    align-items: start;
+  }
+
+  .account-map-console .account-map-inspector {
+    position: static;
+    height: auto;
+    max-height: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .account-map-console .account-map-toolbar-copy {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-map-console .account-map-toolbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .account-map-console .account-map-toolbar-actions > * {
+    min-width: 0;
+  }
+
+  .account-map-search {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .account-map-updated {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .account-map-toolbar-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .account-map-console {
+    max-width: calc(100vw - 1rem);
+    gap: 0.55rem;
+  }
+
+  .account-map-console .account-map-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .account-map-console .account-map-toolbar-actions,
+  .account-map-left-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .account-map-console .account-map-secondary-button,
+  .account-map-auto-toggle,
+  .account-map-search {
+    width: 100%;
+  }
+
+  .account-map-auto-toggle {
+    justify-content: space-between;
+    border: 1px solid rgb(51 70 86);
+    border-radius: 0.34rem;
+    background: rgb(11 25 36 / 0.72);
+    padding: 0.42rem 0.55rem;
+  }
+
+  .account-map-state-strip,
+  .account-map-state-pill {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-map-state-pill > span:not(.account-map-status-dot):not(.account-map-line-swatch):not(.account-map-state-pulse) {
+    white-space: normal;
+  }
+
+  .account-map-chip-grid,
+  .account-map-status-chip-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-map-group-table-head {
+    display: none;
+  }
+
+  .account-map-group-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .account-map-group-platform,
+  .account-map-group-count,
+  .account-map-risk-chip {
+    display: none;
+  }
+
+  .account-map-health-cell {
+    width: 5.5rem;
+  }
+
+  .inspector-cooldown-head,
+  .inspector-cooldown-row,
+  .inspector-request-row {
+    grid-template-columns: 1fr;
+  }
+
+  .inspector-pool-summary,
+  .quota-stat-grid,
+  .inspector-snapshot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-map-console .inspector-section {
+    margin-inline: 0.62rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .account-map-console {
+    max-width: calc(100vw - 0.5rem);
+  }
+
+  .account-map-console .account-map-toolbar,
+  .account-map-console .account-map-filter-card,
+  .account-map-console .account-map-group-panel,
+  .account-map-console .account-map-inspector {
+    border-radius: 0.28rem;
   }
 }
 </style>
@@ -3539,7 +4919,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-.dark .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-inspector) {
+.dark .account-map-page :is(.account-map-toolbar, .account-map-stat-card, .account-map-filter-card, .account-map-empty-state, .account-map-inspector) {
   border-color: rgb(51 65 85);
   background: var(--account-map-surface);
   color: var(--account-map-ink);
@@ -3550,15 +4930,15 @@ onUnmounted(() => {
   border-bottom-color: rgb(51 65 85);
 }
 
-.dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-pool-card-main p, .account-pool-card-count span, .account-pool-card-foot, .account-node-meta, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span, .inspector-account-main small, .inspector-account-quota) {
+.dark .account-map-page :is(.account-map-stat-card p, .account-map-stat-card small, .account-map-meta, .account-map-field > span, .inspector-subtitle, .inspector-section-title p, .inspector-section-title span, .inspector-account-main small, .inspector-account-quota) {
   color: var(--account-map-muted);
 }
 
-.dark .account-map-page :is(.account-map-stat-card strong, .account-pool-card-main h2, .account-pool-card-count strong, .account-node p:first-child, .account-map-filter-header h2, .inspector-title, .inspector-section-title h3, .inspector-metric p:last-child, .inspector-account-main b) {
+.dark .account-map-page :is(.account-map-stat-card strong, .account-map-filter-header h2, .inspector-title, .inspector-section-title h3, .inspector-metric p:last-child, .inspector-account-main b) {
   color: var(--account-map-ink);
 }
 
-.dark .account-map-page :is(.account-map-control, .account-map-segmented, .account-map-stat-metrics span, .account-pool-card-metrics span, .inspector-metric, .inspector-section, .inspector-account-row, .inspector-account-quota) {
+.dark .account-map-page :is(.account-map-control, .account-map-stat-metrics span, .inspector-metric, .inspector-section, .inspector-account-row, .inspector-account-quota) {
   border-color: rgb(55 65 81 / 0.74);
   background: var(--account-map-subtle);
   color: var(--account-map-ink);
@@ -3577,56 +4957,6 @@ onUnmounted(() => {
 .dark .account-map-page .account-map-secondary-button:hover {
   border-color: rgb(59 130 246 / 0.7);
   color: rgb(147 197 253);
-}
-
-.dark .account-map-page .account-map-segmented button.active {
-  background: rgb(15 23 42 / 0.96);
-  color: rgb(147 197 253);
-}
-
-.dark .account-map-page .account-node {
-  border-color: rgb(51 65 85);
-  background: rgb(15 23 42 / 0.72);
-  color: var(--account-map-ink);
-}
-
-.dark .account-map-page .account-node:hover {
-  background: rgb(30 41 59 / 0.82);
-  box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
-}
-
-.dark .account-map-page .account-node-status {
-  background: rgb(51 65 85);
-  color: rgb(203 213 225);
-}
-
-.dark .account-map-page .account-node-healthy .account-node-status {
-  background: rgb(6 78 59 / 0.55);
-  color: rgb(167 243 208);
-}
-
-.dark .account-map-page .account-node-degraded .account-node-status {
-  background: rgb(120 53 15 / 0.5);
-  color: rgb(253 230 138);
-}
-
-.dark .account-map-page .account-node-limited .account-node-status {
-  background: rgb(76 29 149 / 0.5);
-  color: rgb(221 214 254);
-}
-
-.dark .account-map-page .account-node-error .account-node-status {
-  background: rgb(136 19 55 / 0.5);
-  color: rgb(254 205 211);
-}
-
-.dark .account-map-page .account-node-quota {
-  background: rgb(12 74 110 / 0.26);
-  color: rgb(125 211 252);
-}
-
-.dark .account-map-page .account-node-quota small {
-  color: rgb(148 163 184);
 }
 
 .dark .account-map-page :is(.inspector-heading, .inspector-empty-header, .quota-fact-list, .inspector-row) {
@@ -3759,7 +5089,7 @@ onUnmounted(() => {
   --account-map-shadow: none;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-drawer, .account-map-inspector, .inspector-profile-card) {
+.app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-map-inspector, .inspector-profile-card) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.55rem !important;
   background: var(--anti-paper) !important;
@@ -3768,8 +5098,7 @@ onUnmounted(() => {
   transform: none !important;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .account-pool-card-signal span, .account-pool-card-signal strong, .account-pool-status-chip, .inspector-account-quota) {
+.app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .quota-stat-card, .quota-empty-state, .inspector-account-quota) {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.45rem !important;
   background: var(--anti-paper) !important;
@@ -3781,7 +5110,7 @@ onUnmounted(() => {
   background: var(--anti-yellow) !important;
 }
 
-.app-shell.app-shell-anti .account-map-page :is(.account-map-eyebrow, .inspector-kicker) {
+.app-shell.app-shell-anti .account-map-page .inspector-kicker {
   display: inline-flex;
   border: 3px solid var(--anti-ink);
   background: var(--anti-red);
@@ -3790,7 +5119,7 @@ onUnmounted(() => {
 }
 
 .app-shell.app-shell-anti .account-map-page :is(h1, h2, h3, p, label, strong, small),
-.app-shell.app-shell-anti .account-map-page :is(.account-node-meta, .account-node-subtitle, .inspector-profile-meta span) {
+.app-shell.app-shell-anti .account-map-page .inspector-profile-meta span {
   color: var(--anti-ink) !important;
 }
 
@@ -3802,7 +5131,7 @@ onUnmounted(() => {
   color: var(--anti-ink) !important;
 }
 
-.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close) {
+.app-shell.app-shell-anti .account-map-page button:not(.inspector-account-row):not(.inspector-close) {
   border: 3px solid var(--anti-ink) !important;
   border-radius: 0.2rem !important;
   box-shadow: 4px 4px 0 var(--anti-ink) !important;
@@ -3810,30 +5139,9 @@ onUnmounted(() => {
   font-weight: 950;
 }
 
-.app-shell.app-shell-anti .account-map-page button:not(.account-node):not(.inspector-account-row):not(.inspector-close):hover {
+.app-shell.app-shell-anti .account-map-page button:not(.inspector-account-row):not(.inspector-close):hover {
   background: var(--anti-green) !important;
   transform: rotate(-1deg) translate(-1px, -1px);
-}
-
-.app-shell.app-shell-anti .account-map-page .account-node {
-  border: 2px solid var(--anti-ink) !important;
-  border-radius: 0.5rem !important;
-  background: var(--anti-paper) !important;
-  box-shadow: 3px 3px 0 var(--anti-ink) !important;
-  transform: none !important;
-}
-
-.app-shell.app-shell-anti .account-map-page .account-node-status {
-  border: 2px solid var(--anti-ink);
-  border-radius: 0.2rem;
-  background: var(--anti-yellow) !important;
-  color: var(--anti-ink) !important;
-}
-
-.app-shell.app-shell-anti .account-map-page :is(.account-node:hover, .account-node-selected) {
-  background: #f6ff57 !important;
-  box-shadow: 5px 5px 0 var(--anti-red) !important;
-  transform: translate(-1px, -1px) !important;
 }
 
 .app-shell.app-shell-anti .account-map-page .inspector-status-card {
@@ -3842,11 +5150,6 @@ onUnmounted(() => {
   background: var(--anti-yellow) !important;
   box-shadow: 4px 4px 0 var(--anti-blue) !important;
   color: var(--anti-ink) !important;
-}
-
-.app-shell.app-shell-anti .account-map-page .account-map-drawer-layer {
-  background: rgb(5 5 5 / 0.52) !important;
-  backdrop-filter: blur(3px) contrast(1.12);
 }
 
 .dark .app-shell.app-shell-anti .account-map-page {
@@ -3863,13 +5166,12 @@ onUnmounted(() => {
   --account-map-soft: #1e293b;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-pool-card, .account-map-drawer, .account-map-inspector, .inspector-profile-card) {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-toolbar, .account-map-filter-card, .account-map-empty-state, .account-map-inspector, .inspector-profile-card) {
   background: linear-gradient(135deg, #101827, #0b1020) !important;
   box-shadow: 6px 6px 0 #334155 !important;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .account-node-quota, .quota-stat-card, .quota-empty-state),
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-pool-card-metrics span, .account-pool-card-signal span, .account-pool-card-signal strong, .account-pool-status-chip, .inspector-account-quota) {
+.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-stat-card, .account-map-stat-metrics span, .inspector-section, .inspector-metric, .inspector-account-row, .inspector-alert, .quota-stat-card, .quota-empty-state, .inspector-account-quota) {
   background: #111827 !important;
   box-shadow: 3px 3px 0 #334155 !important;
 }
@@ -3880,28 +5182,7 @@ onUnmounted(() => {
     linear-gradient(135deg, #111827, #0b1020) !important;
 }
 
-.dark .app-shell.app-shell-anti .account-map-page .account-node {
-  background: #101827 !important;
-  box-shadow: 3px 3px 0 #334155 !important;
-}
-
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-node:hover, .account-node-selected) {
-  background: #172554 !important;
-  box-shadow: 5px 5px 0 #facc15 !important;
-}
-
-.dark .app-shell.app-shell-anti .account-map-page .account-node-status {
-  border-color: #f8fafc;
-  background: #facc15 !important;
-  color: #111827 !important;
-}
-
-.dark .app-shell.app-shell-anti .account-map-page .account-map-segmented button.active {
-  background: #facc15 !important;
-  color: #111827 !important;
-}
-
-.app-shell.app-shell-anti .account-map-page :is(.account-map-platform-row, .account-node-meta span) {
+.app-shell.app-shell-anti .account-map-page .account-map-platform-row {
   border: 2px solid var(--anti-ink) !important;
   border-radius: 0.35rem !important;
   background: var(--anti-paper) !important;
@@ -3919,7 +5200,7 @@ onUnmounted(() => {
   background: var(--anti-green);
 }
 
-.dark .app-shell.app-shell-anti .account-map-page :is(.account-map-platform-row, .account-node-meta span) {
+.dark .app-shell.app-shell-anti .account-map-page .account-map-platform-row {
   background: #111827 !important;
   box-shadow: 2px 2px 0 #334155 !important;
 }

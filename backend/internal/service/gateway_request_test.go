@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestParseGatewayRequest(t *testing.T) {
@@ -377,6 +378,56 @@ func TestFilterThinkingBlocksForRetry_RemovesRedactedThinkingAndKeepsValidConten
 	require.True(t, ok)
 	require.Equal(t, "text", content0["type"])
 	require.Equal(t, "Visible", content0["text"])
+}
+
+func TestFilterGLMAnthropicUnsupportedBlocks_RemovesRedactedThinkingOnly(t *testing.T) {
+	input := []byte(`{
+		"thinking":{"type":"enabled","budget_tokens":1024},
+		"messages":[
+			{"role":"assistant","content":[
+				{"type":"redacted_thinking","data":"opaque"},
+				{"type":"thinking","thinking":"visible reasoning"},
+				{"type":"text","text":"Visible"}
+			]}
+		]
+	}`)
+
+	out := FilterGLMAnthropicUnsupportedBlocks(input)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(out, &req))
+	require.True(t, gjson.GetBytes(out, "thinking").Exists(), "GLM supports ordinary thinking blocks")
+	require.False(t, strings.Contains(string(out), "redacted_thinking"))
+
+	msgs, ok := req["messages"].([]any)
+	require.True(t, ok)
+	content, ok := msgs[0].(map[string]any)["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 2)
+	require.Equal(t, "thinking", content[0].(map[string]any)["type"])
+	require.Equal(t, "text", content[1].(map[string]any)["type"])
+}
+
+func TestFilterGLMAnthropicUnsupportedBlocks_AddsPlaceholderWhenOnlyRedactedThinking(t *testing.T) {
+	input := []byte(`{
+		"messages":[
+			{"role":"assistant","content":[{"type":"redacted_thinking","data":"opaque"}]}
+		]
+	}`)
+
+	out := FilterGLMAnthropicUnsupportedBlocks(input)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(out, &req))
+	msgs, ok := req["messages"].([]any)
+	require.True(t, ok)
+	content, ok := msgs[0].(map[string]any)["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	block, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "text", block["type"])
+	require.NotEmpty(t, block["text"])
 }
 
 func TestFilterThinkingBlocksForRetry_EmptyContentGetsPlaceholder(t *testing.T) {

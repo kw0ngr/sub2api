@@ -314,7 +314,57 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			}
 			return APIKeyStatusActionTemporaryCooldown
 		}
-	case PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
+	case PlatformGLM:
+		switch statusCode {
+		case http.StatusUnauthorized:
+			return APIKeyStatusActionPermanentDisable
+		case http.StatusForbidden:
+			if isGLMResettableQuotaError(responseBody) {
+				return APIKeyStatusActionTemporaryCooldown
+			}
+			if containsAny(code, "invalid_api_key", "invalid_token", "authentication_error") ||
+				containsAny(msg,
+					"invalid api key",
+					"incorrect api key",
+					"no api key provided",
+					"authentication failed",
+					"invalid token",
+					"api key 无效",
+					"密钥无效",
+					"鉴权失败",
+					"认证失败",
+				) {
+				return APIKeyStatusActionPermanentDisable
+			}
+			return APIKeyStatusActionTemporaryCooldown
+		case http.StatusPaymentRequired:
+			return APIKeyStatusActionPermanentDisable
+		case http.StatusTooManyRequests:
+			return APIKeyStatusActionTemporaryCooldown
+		case http.StatusBadRequest:
+			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error") ||
+				containsAny(msg,
+					"invalid api key",
+					"incorrect api key",
+					"no api key provided",
+					"authentication failed",
+					"invalid token",
+					"insufficient balance",
+					"insufficient credits",
+					"insufficient quota",
+					"credit balance",
+					"balance is insufficient",
+					"credits exhausted",
+					"resource package",
+					"no available resource",
+					"资源包",
+					"余额不足",
+				) {
+				return APIKeyStatusActionPermanentDisable
+			}
+			return APIKeyStatusActionTemporaryCooldown
+		}
+	case PlatformOpenRouter, PlatformDeepSeek:
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return APIKeyStatusActionPermanentDisable
@@ -373,6 +423,16 @@ func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {
 	)
 }
 
+func isGLMResettableQuotaError(responseBody []byte) bool {
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	if code == "1310" {
+		return true
+	}
+	return containsAny(msg, "usage limit", "使用上限", "限额将在") &&
+		containsAny(msg, "reset", "重置")
+}
+
 func isClientRequestParameterValidationError(msg string) bool {
 	msg = strings.ToLower(strings.TrimSpace(msg))
 	if msg == "" {
@@ -380,6 +440,11 @@ func isClientRequestParameterValidationError(msg string) bool {
 	}
 	if strings.Contains(msg, "max_tokens") &&
 		containsAny(msg, "above maximum value", "expected a value <=", "less than or equal", "must be <=", "maximum value") {
+		return true
+	}
+	if strings.Contains(msg, "messages.content.type") &&
+		strings.Contains(msg, "redacted_thinking") &&
+		containsAny(msg, "invalid value", "not valid", "supported values") {
 		return true
 	}
 	return false

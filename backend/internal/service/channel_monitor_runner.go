@@ -134,6 +134,10 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 		r.Unschedule(m.ID)
 		return
 	}
+	if m.APIKeyDecryptFailed {
+		r.Unschedule(m.ID)
+		return
+	}
 	interval := time.Duration(m.IntervalSeconds) * time.Second
 	if interval <= 0 {
 		// Create/Update 已通过 validateInterval 校验区间，正常路径不可能到这里。
@@ -288,6 +292,7 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 	if _, err := r.svc.RunCheck(ctx, id); err != nil {
 		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
 			r.Unschedule(id)
+			return
 		}
 		slog.Warn("channel_monitor: run check failed",
 			"monitor_id", id, "name", name, "error", err)

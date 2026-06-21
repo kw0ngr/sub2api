@@ -49,6 +49,30 @@ func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey403ModelAccessCooldown
 	require.Equal(t, 1, repo.tempCalls)
 }
 
+func TestRateLimitService_HandleUpstreamError_GLMResettableQuotaUsesRetryAfter(t *testing.T) {
+	// Given
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       114,
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"error":{"code":"1310","message":"[1310][您已达到每周/每月使用上限，您的限额将在 2026-06-26 15:46:24 重置。][20260621010506]","type":"rate_limit_error"},"retry-after":"7200"}`)
+
+	// When
+	before := time.Now()
+	shouldDisable := service.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{}, body)
+	after := time.Now()
+
+	// Then
+	require.True(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.NotNil(t, repo.lastTempUntil)
+	require.WithinDuration(t, before.Add(2*time.Hour), *repo.lastTempUntil, after.Sub(before)+time.Second)
+}
+
 func TestRateLimitService_HandleUpstreamError_GeminiAPIKey400InvalidDisables(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

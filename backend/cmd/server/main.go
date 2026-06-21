@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -39,6 +40,14 @@ var (
 	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
 )
 
+type startupCommandAction int
+
+const (
+	startupCommandServer startupCommandAction = iota
+	startupCommandSetup
+	startupCommandVersion
+)
+
 func init() {
 	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
 	if strings.TrimSpace(Version) != "" {
@@ -58,18 +67,11 @@ func main() {
 	logger.InitBootstrap()
 	defer logger.Sync()
 
-	// Parse command line flags
-	setupMode := flag.Bool("setup", false, "Run setup wizard in CLI mode")
-	showVersion := flag.Bool("version", false, "Show version information")
-	flag.Parse()
-
-	if *showVersion {
-		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
+	switch startupCommand(os.Args[1:]) {
+	case startupCommandVersion:
+		log.Printf("%s\n", versionCommand(Version, Commit, Date))
 		return
-	}
-
-	// CLI setup mode
-	if *setupMode {
+	case startupCommandSetup:
 		if err := setup.RunCLI(); err != nil {
 			log.Fatalf("Setup failed: %v", err)
 		}
@@ -94,6 +96,28 @@ func main() {
 
 	// Normal server mode
 	runMainServer()
+}
+
+func startupCommand(args []string) startupCommandAction {
+	flags := flag.NewFlagSet("sub2api", flag.ExitOnError)
+	setupMode := flags.Bool("setup", false, "Run setup wizard in CLI mode")
+	showVersion := flags.Bool("version", false, "Show version information")
+	_ = flags.Parse(args)
+
+	if *showVersion {
+		return startupCommandVersion
+	}
+	if len(args) == 1 && args[0] == "version" {
+		return startupCommandVersion
+	}
+	if *setupMode {
+		return startupCommandSetup
+	}
+	return startupCommandServer
+}
+
+func versionCommand(version, commit, date string) string {
+	return fmt.Sprintf("Sub2API %s (commit: %s, built: %s)", version, commit, date)
 }
 
 func runSetupServer() {

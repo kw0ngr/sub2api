@@ -750,7 +750,11 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		if account.Platform == PlatformGemini {
 			cooldown = s.GeminiCooldown(ctx, account)
 		}
-		resetAt := time.Now().Add(cooldown)
+		now := time.Now()
+		resetAt := now.Add(cooldown)
+		if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
+			resetAt = *parsed
+		}
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
 			slog.Warn("apikey_rate_limit_set_failed", "account_id", account.ID, "status_code", statusCode, "error", err)
 			return
@@ -774,7 +778,13 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 	default:
 		// 400/402/403 等其他被分类为 TemporaryCooldown 的状态码（如模型权限不足、临时欠费等）
 		// 执行临时封禁，冷却后自动恢复调度。
-		until := time.Now().Add(apiKeyServerErrorCooldown)
+		now := time.Now()
+		until := now.Add(apiKeyServerErrorCooldown)
+		if account.Platform == PlatformGLM && isGLMResettableQuotaError(responseBody) {
+			if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
+				until = *parsed
+			}
+		}
 		reason := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "API key temporary cooldown")
 		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
 			slog.Warn("apikey_temp_unsched_set_failed", "account_id", account.ID, "status_code", statusCode, "error", err)
@@ -1640,7 +1650,23 @@ func parseRetryAfterResetTime(headers http.Header, now time.Time) *time.Time {
 	if headers == nil {
 		return nil
 	}
-	raw := strings.TrimSpace(headers.Get("Retry-After"))
+	return parseRetryAfterValue(headers.Get("Retry-After"), now)
+}
+
+func parseAPIKeyRetryAfterResetTime(headers http.Header, body []byte, now time.Time) *time.Time {
+	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil {
+		return resetAt
+	}
+	for _, path := range []string{"retry-after", "retry_after", "error.retry-after", "error.retry_after"} {
+		if resetAt := parseRetryAfterValue(gjson.GetBytes(body, path).String(), now); resetAt != nil {
+			return resetAt
+		}
+	}
+	return nil
+}
+
+func parseRetryAfterValue(raw string, now time.Time) *time.Time {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}

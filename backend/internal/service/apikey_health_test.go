@@ -54,6 +54,25 @@ func TestClassifyAPIKeyStatusAction_ParameterValidationIgnored(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_GLMRedactedThinkingValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"code":"InvalidParameter","message":"The parameter ` + "`messages.content.type`" + ` specified in the request are not valid: invalid value: ` + "`redacted_thinking`" + `, supported values are: ` + "`text`" + `, ` + "`thinking`" + `, ` + "`image`" + `, 'tool_use' and ` + "`tool_result`" + `.","type":"BadRequest"}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
+func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
+	// Given
+	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"code":"1310","message":"[1310][您已达到每周/每月使用上限，您的限额将在 2026-06-26 15:46:24 重置。][20260621010506]","type":"rate_limit_error"},"retry-after":"484876"}`)
+
+	// When
+	action := ClassifyAPIKeyStatusAction(account, http.StatusForbidden, body)
+
+	// Then
+	require.Equal(t, APIKeyStatusActionTemporaryCooldown, action)
+}
+
 func TestClassifyAPIKeyStatusAction_OpenAIContentPolicyServerErrorIgnored(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
