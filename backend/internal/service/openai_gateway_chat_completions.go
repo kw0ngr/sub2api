@@ -331,6 +331,9 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	if err != nil {
 		return nil, fmt.Errorf("rewrite chat completions model: %w", err)
 	}
+	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
+		chatBody = normalizedBody
+	}
 	if chatReq != nil && chatReq.Stream {
 		chatBody, err = ensureOpenAIChatStreamUsage(chatBody)
 		if err != nil {

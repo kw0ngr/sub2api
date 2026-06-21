@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -14,11 +13,7 @@ import (
 // the trailing message-derived suffix (e.g. ".c02") if present.
 var ccVersionInBillingRe = regexp.MustCompile(`cc_version=\d+\.\d+\.\d+`)
 
-// cchPlaceholderRe matches the cch=00000 placeholder in billing header text,
-// scoped to x-anthropic-billing-header to avoid touching user content.
-var cchPlaceholderRe = regexp.MustCompile(`(x-anthropic-billing-header:[^"]*?\bcch=)(00000)(;)`)
-
-const cchSeed uint64 = 0x6E52736AC806831E
+var billingHeaderCCHSegmentRe = regexp.MustCompile(`(x-anthropic-billing-header:[^"]*?);\s*cch=[^;"]*;`)
 
 // syncBillingHeaderVersion rewrites cc_version in x-anthropic-billing-header
 // system text blocks to match the version extracted from userAgent.
@@ -54,20 +49,11 @@ func syncBillingHeaderVersion(body []byte, userAgent string) []byte {
 	return body
 }
 
-// signBillingHeaderCCH computes the xxHash64-based CCH signature for the request
-// body and replaces the cch=00000 placeholder with the computed 5-hex-char hash.
-// The body must contain the placeholder when this function is called.
+// signBillingHeaderCCH is kept for old call sites. New Claude Code CLI requests
+// no longer carry cch, so stale cch segments are stripped rather than signed.
 func signBillingHeaderCCH(body []byte) []byte {
-	if !cchPlaceholderRe.Match(body) {
+	if !billingHeaderCCHSegmentRe.Match(body) {
 		return body
 	}
-	cch := fmt.Sprintf("%05x", xxHash64Seeded(body, cchSeed)&0xFFFFF)
-	return cchPlaceholderRe.ReplaceAll(body, []byte("${1}"+cch+"${3}"))
-}
-
-// xxHash64Seeded computes xxHash64 of data with a custom seed.
-func xxHash64Seeded(data []byte, seed uint64) uint64 {
-	d := xxhash.NewWithSeed(seed)
-	_, _ = d.Write(data)
-	return d.Sum64()
+	return billingHeaderCCHSegmentRe.ReplaceAll(body, []byte("${1};"))
 }

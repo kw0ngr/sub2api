@@ -1319,7 +1319,7 @@ func generateClaudeCodeBillingHeader(body []byte, cliVersion, entrypoint, worklo
 	if strings.TrimSpace(workload) != "" {
 		workloadPair = " cc_workload=" + strings.TrimSpace(workload) + ";"
 	}
-	text := "x-anthropic-billing-header: cc_version=" + cliVersion + "." + fp + "; cc_entrypoint=" + entrypoint + "; cch=00000;"
+	text := "x-anthropic-billing-header: cc_version=" + cliVersion + "." + fp + "; cc_entrypoint=" + entrypoint + ";"
 	if workloadPair != "" {
 		text += workloadPair
 	}
@@ -6637,7 +6637,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		}
 	}
 
-	// CCH 签名：将 cch=00000 占位符替换为 xxHash64 签名（需在所有 body 修改之后）
+	// CCH 兼容处理：新版 Claude Code CLI 不再发送 cch 段，旧占位符在所有 body 修改之后移除。
 	if enableCCH || mimicClaudeCode {
 		body = signBillingHeaderCCH(body)
 	}

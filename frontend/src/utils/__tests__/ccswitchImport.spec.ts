@@ -7,6 +7,10 @@ import {
 } from "../ccswitchImport";
 
 describe("ccswitch import deeplink", () => {
+  it("defaults OpenAI imports to the current Codex model", () => {
+    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe("gpt-5.5");
+  });
+
   it("adds codex app and model for OpenAI imports", () => {
     const config = resolveCcSwitchImportConfig("openai", "claude", "https://api.example.test");
 

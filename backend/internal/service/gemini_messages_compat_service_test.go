@@ -193,6 +193,34 @@ func TestConvertClaudeToolsToGeminiTools_PreservesWebSearchAlongsideFunctions(t 
 	require.Empty(t, googleSearch)
 }
 
+func TestCleanToolSchema_RemovesUnsupportedDefinitionsAndNormalizesNullableType(t *testing.T) {
+	schema := map[string]any{
+		"type":        []any{"null", "object"},
+		"$defs":       map[string]any{"unused": map[string]any{"type": "string"}},
+		"definitions": map[string]any{"legacy": map[string]any{"type": "string"}},
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        []any{"string", "null"},
+				"minLength":   1,
+				"description": "display name",
+			},
+		},
+	}
+
+	cleaned, ok := cleanToolSchema(schema).(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "OBJECT", cleaned["type"])
+	require.NotContains(t, cleaned, "$defs")
+	require.NotContains(t, cleaned, "definitions")
+	props, ok := cleaned["properties"].(map[string]any)
+	require.True(t, ok)
+	name, ok := props["name"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "STRING", name["type"])
+	require.NotContains(t, name, "minLength")
+	require.Equal(t, "display name", name["description"])
+}
+
 func TestGeminiHandleNativeNonStreamingResponse_DebugDisabledDoesNotEmitHeaderLogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)

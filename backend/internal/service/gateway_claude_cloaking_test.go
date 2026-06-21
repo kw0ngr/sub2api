@@ -152,7 +152,7 @@ func TestGatewayService_ShouldInjectAnthropicCacheTTL1h(t *testing.T) {
 func TestGenerateClaudeCodeBillingHeader(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"01234567890123456789012345"}]}]}`)
 	got := generateClaudeCodeBillingHeader(body, "2.1.92", "cli", "")
-	require.Equal(t, "x-anthropic-billing-header: cc_version=2.1.92.f34; cc_entrypoint=cli; cch=00000;", got)
+	require.Equal(t, "x-anthropic-billing-header: cc_version=2.1.92.f34; cc_entrypoint=cli;", got)
 }
 
 func TestIsClaudeCodeCredentialScopeError_CurrentRestrictionMessage(t *testing.T) {
@@ -174,6 +174,7 @@ func TestEnsureClaudeOAuthSystemCloaking_InsertsBillingAndPrefix(t *testing.T) {
 	require.Contains(t, first, "x-anthropic-billing-header:")
 	require.Contains(t, first, "cc_version=2.1.92.f34")
 	require.Contains(t, first, "cc_entrypoint=cli")
+	require.NotContains(t, first, "cch=")
 
 	second := system.Array()[1].Get("text").String()
 	require.Equal(t, claudeCodeSystemPrompt, strings.TrimSpace(second))

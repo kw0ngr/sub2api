@@ -1,4 +1,4 @@
-export const OPENAI_CC_SWITCH_CODEX_MODEL = "gpt-5.4";
+export const OPENAI_CC_SWITCH_CODEX_MODEL = "gpt-5.5";
 
 export type CcSwitchClientType = "claude" | "gemini";
 

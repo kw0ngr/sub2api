@@ -178,6 +178,40 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *te
 	require.ErrorContains(t, err, `images endpoint requires an image model, got "gpt-5.4"`)
 }
 
+func TestOpenAIImagesUpstreamErrorFromSSEPayload_ResponseIncompleteIsRetryable(t *testing.T) {
+	payload := []byte(`{"type":"response.incomplete","response":{"id":"resp_img_1","incomplete_details":{"reason":"max_output_tokens"}}}`)
+
+	upErr := openAIImagesUpstreamErrorFromSSEPayload(payload)
+
+	require.NotNil(t, upErr)
+	require.Equal(t, http.StatusBadGateway, upErr.StatusCode)
+	require.Equal(t, "response_incomplete", upErr.Code)
+	require.Equal(t, "resp_img_1", upErr.UpstreamRequestID)
+	require.True(t, IsOpenAIImagesRetryableUpstreamError(upErr))
+}
+
+func TestOpenAIImagesUpstreamErrorFromSSEPayload_ResponseIncompleteContentFilterIsClientError(t *testing.T) {
+	payload := []byte(`{"type":"response.incomplete","response":{"id":"resp_img_2","incomplete_details":{"reason":"content_filter"}}}`)
+
+	upErr := openAIImagesUpstreamErrorFromSSEPayload(payload)
+
+	require.NotNil(t, upErr)
+	require.Equal(t, http.StatusBadRequest, upErr.StatusCode)
+	require.Equal(t, "image_generation_user_error", upErr.ErrorType)
+	require.False(t, IsOpenAIImagesRetryableUpstreamError(upErr))
+}
+
+func TestSummarizeOpenAIImagesNoOutputBody_IncludesIncompleteReason(t *testing.T) {
+	body := []byte("data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n")
+
+	summary := summarizeOpenAIImagesNoOutputBody(body)
+
+	require.Contains(t, summary, "no_image_output")
+	require.Contains(t, summary, "last_event=response.incomplete")
+	require.Contains(t, summary, "status=incomplete")
+	require.Contains(t, summary, "incomplete_reason=max_output_tokens")
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{

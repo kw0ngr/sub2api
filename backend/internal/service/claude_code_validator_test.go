@@ -100,7 +100,7 @@ func TestClaudeCodeValidator_BillingBlockRecognizedWithoutIdentityPrompt(t *test
 	require.True(t, ok)
 }
 
-func TestClaudeCodeValidator_BillingBlockNonCLIEntrypointFallsThrough(t *testing.T) {
+func TestClaudeCodeValidator_BillingBlockAnyEntrypointIsRecognized(t *testing.T) {
 	validator := NewClaudeCodeValidator()
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
 	req.Header.Set("User-Agent", "claude-cli/2.1.162 (external, cli)")
@@ -124,7 +124,7 @@ func TestClaudeCodeValidator_BillingBlockNonCLIEntrypointFallsThrough(t *testing
 			"user_id": claudeCodeMetadataUserIDJSON,
 		},
 	})
-	require.False(t, ok)
+	require.True(t, ok)
 }
 
 func TestClaudeCodeValidator_BillingBlockStillRequiresClaudeCodeUA(t *testing.T) {

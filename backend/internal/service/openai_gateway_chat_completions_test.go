@@ -130,6 +130,41 @@ func TestNormalizeResponsesBodyServiceTier(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "service_tier").Exists())
 }
 
+func TestForwardAsChatCompletions_GLMOpenAINormalizesReasoningEffort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"reasoning":{"effort":"xhigh"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after forwarding"}}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{
+		ID:       51,
+		Name:     "glm-openai",
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":     "glm-key",
+			"compat_mode": GLMCompatModeOpenAI,
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "glm-5.2")
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+}
+
 func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
