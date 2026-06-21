@@ -223,9 +223,10 @@
                   `account-map-group-row-${poolStatusTone(pool)}`,
                   selectedPoolForDetail?.key === pool.key ? 'active' : ''
                 ]"
+                :title="poolDisplayName(pool)"
                 @click="selectPool(pool)"
               >
-                <span class="account-map-group-name">{{ platformLabel(pool.platform) }} {{ accountTypeLabel(pool.type) }}</span>
+                <span class="account-map-group-name">{{ poolDisplayName(pool) }}</span>
                 <span class="account-map-group-platform">
                   <span class="account-map-platform-mark">{{ platformInitial(pool.platform) }}</span>
                 </span>
@@ -233,7 +234,7 @@
                 <span class="account-map-risk-chip" :class="`account-map-risk-${poolStatusTone(pool)}`">
                   {{ poolRiskLabel(pool) }}
                 </span>
-                <span class="account-map-health-cell">
+                <span class="account-map-health-cell" :title="`${poolHealthPercent(pool)}%`">
                   <span class="account-map-health-track">
                     <span :style="{ width: `${poolHealthPercent(pool)}%` }"></span>
                   </span>
@@ -287,12 +288,12 @@
                       @keydown.space.prevent="selectPool(pool)"
                     >
                       <td>
-                        <button type="button" class="account-map-table-primary" @click.stop="selectPool(pool)">
+                        <button type="button" class="account-map-table-primary" :title="poolDisplayName(pool)" @click.stop="selectPool(pool)">
                           {{ platformLabel(pool.platform) }} {{ accountTypeLabel(pool.type) }}
                         </button>
                       </td>
                       <td>
-                        <span class="account-map-platform-pill">{{ platformLabel(pool.platform) }}</span>
+                        <span class="account-map-platform-pill" :title="platformLabel(pool.platform)">{{ platformLabel(pool.platform) }}</span>
                       </td>
                       <td>{{ poolHealthyCount(pool) }} / {{ pool.accounts.length }}</td>
                       <td class="account-map-number-warn">{{ poolCooldownAccounts(pool).length }}</td>
@@ -333,7 +334,7 @@
 
             <div v-else class="account-map-table-card">
               <div class="account-map-table-title">
-                <h2>{{ poolDisplayName(activeDetailPool) }} · 账号明细</h2>
+                <h2 :title="`${poolDisplayName(activeDetailPool)} · 账号明细`">{{ poolDisplayName(activeDetailPool) }} · 账号明细</h2>
                 <span>{{ poolHealthyCount(activeDetailPool) }} / {{ activeDetailPool.accounts.length }} usable</span>
               </div>
               <div class="account-map-table-scroll">
@@ -362,7 +363,7 @@
                       @keydown.space.prevent="selectAccount(account)"
                     >
                       <td>
-                        <button type="button" class="account-map-table-primary" @click.stop="selectAccount(account)">
+                        <button type="button" class="account-map-table-primary" :title="account.name" @click.stop="selectAccount(account)">
                           {{ account.name }}
                         </button>
                       </td>
@@ -373,7 +374,7 @@
                       </td>
                       <td>{{ accountModelNames(account).length || '-' }}</td>
                       <td>{{ account.current_rpm ?? 0 }}</td>
-                      <td>{{ accountTokenMeta(account) || '-' }}</td>
+                      <td :title="accountTokenMeta(account) || '-'">{{ accountTokenMeta(account) || '-' }}</td>
                       <td>
                         <span class="account-map-quota-cell">
                           <span>{{ quotaPercentText(accountQuotaPercent(account)) }}</span>
@@ -382,10 +383,10 @@
                           </span>
                         </span>
                       </td>
-                      <td :class="statusKind(account) === 'error' ? 'account-map-number-danger' : ''">
+                      <td :class="statusKind(account) === 'error' ? 'account-map-number-danger' : ''" :title="accountLastError(account)">
                         {{ accountLastError(account) }}
                       </td>
-                      <td>{{ accountCooldownUntilText(account) }}</td>
+                      <td :title="accountCooldownUntilText(account)">{{ accountCooldownUntilText(account) }}</td>
                       <td>
                         <button type="button" class="account-map-row-action" @click.stop="selectAccount(account)">
                           查看
@@ -3382,7 +3383,7 @@ onUnmounted(() => {
   --account-map-shadow: 0 22px 60px rgb(0 0 0 / 0.28);
   display: grid;
   width: 100%;
-  max-width: min(1500px, calc(100vw - 2rem));
+  max-width: min(1760px, calc(100vw - 2rem));
   gap: 0.7rem;
   border-radius: 0;
   color: var(--account-map-ink);
@@ -3760,7 +3761,7 @@ onUnmounted(() => {
 
 .account-map-console .account-map-workspace {
   display: grid;
-  grid-template-columns: minmax(230px, 250px) minmax(0, 1fr) minmax(285px, 300px);
+  grid-template-columns: minmax(300px, 310px) minmax(0, 1fr) minmax(315px, 340px);
   gap: 0.7rem;
   align-items: stretch;
   height: clamp(34rem, calc(100dvh - 13.8rem), 54rem);
@@ -3932,8 +3933,8 @@ onUnmounted(() => {
 .account-map-group-table-head,
 .account-map-group-row {
   display: grid;
-  grid-template-columns: minmax(6.2rem, 1fr) 2.3rem 3.9rem 2.6rem 4rem;
-  gap: 0.35rem;
+  grid-template-columns: minmax(5.6rem, 1fr) 1.8rem 3.1rem 3.2rem 2.7rem;
+  gap: 0.28rem;
   align-items: center;
 }
 
@@ -4009,7 +4010,7 @@ onUnmounted(() => {
 .account-map-health-cell {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 0.35rem;
 }
@@ -4029,8 +4030,7 @@ onUnmounted(() => {
 }
 
 .account-map-health-cell small {
-  color: rgb(170 184 197);
-  font-size: 0.66rem;
+  display: none;
 }
 
 .account-map-line-swatch {
@@ -4117,8 +4117,42 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
+.account-map-pool-table {
+  min-width: 54rem;
+}
+
 .account-map-account-table {
   min-width: 100%;
+}
+
+.account-map-pool-table :is(th, td):nth-child(1) { width: 10rem; }
+.account-map-pool-table :is(th, td):nth-child(2) { width: 6.1rem; }
+.account-map-pool-table :is(th, td):nth-child(3) { width: 5.3rem; }
+.account-map-pool-table :is(th, td):nth-child(4) { width: 4.7rem; }
+.account-map-pool-table :is(th, td):nth-child(5) { width: 4.1rem; }
+.account-map-pool-table :is(th, td):nth-child(6) { width: 6.2rem; }
+.account-map-pool-table :is(th, td):nth-child(7) { width: 5.2rem; }
+.account-map-pool-table :is(th, td):nth-child(8) { width: 4.5rem; }
+.account-map-pool-table :is(th, td):nth-child(9) { width: 5.6rem; }
+
+.account-map-account-table :is(th, td):nth-child(1) { width: 8.6rem; }
+.account-map-account-table :is(th, td):nth-child(2) { width: 5.6rem; }
+.account-map-account-table :is(th, td):nth-child(3) { width: 4.5rem; }
+.account-map-account-table :is(th, td):nth-child(4) { width: 4rem; }
+.account-map-account-table :is(th, td):nth-child(5) { width: 6.2rem; }
+.account-map-account-table :is(th, td):nth-child(6) { width: 6rem; }
+.account-map-account-table :is(th, td):nth-child(7) { width: 9rem; }
+.account-map-account-table :is(th, td):nth-child(8) { width: 7.4rem; }
+.account-map-account-table :is(th, td):nth-child(9) { width: 4.4rem; }
+
+.account-map-account-table :is(th, td):nth-child(7),
+.account-map-account-table :is(th, td):nth-child(8) {
+  white-space: normal;
+}
+
+.account-map-account-table td:nth-child(7),
+.account-map-account-table td:nth-child(8) {
+  line-height: 1.35;
 }
 
 .account-map-data-table th,
