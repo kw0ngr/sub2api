@@ -148,6 +148,77 @@ func BuildAPIKeyProbeBalanceSnapshot(platform string, statusCode int, balance, c
 	return snapshot
 }
 
+func BuildGLMAPIKeyProbeQuotaSnapshot(statusCode int, body []byte, now time.Time) *APIKeyProbeQuotaSnapshot {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	snapshot := &APIKeyProbeQuotaSnapshot{
+		Provider:   PlatformGLM,
+		Supported:  false,
+		Source:     "missing_glm_quota",
+		Scope:      "account",
+		UpdatedAt:  now.Format(time.RFC3339),
+		StatusCode: statusCode,
+	}
+	if statusCode != http.StatusOK {
+		snapshot.Note = strings.TrimSpace(string(body))
+		return snapshot
+	}
+
+	var payload struct {
+		Data struct {
+			Level  string `json:"level"`
+			Limits []struct {
+				Type          string `json:"type"`
+				Unit          int    `json:"unit"`
+				Number        int    `json:"number"`
+				Usage         any    `json:"usage"`
+				CurrentValue  any    `json:"currentValue"`
+				Remaining     any    `json:"remaining"`
+				Percentage    any    `json:"percentage"`
+				NextResetTime any    `json:"nextResetTime"`
+			} `json:"limits"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		snapshot.Note = "GLM quota endpoint returned non-JSON response."
+		return snapshot
+	}
+
+	selected := -1
+	for i, limit := range payload.Data.Limits {
+		if limit.Type == "TOKENS_LIMIT" && limit.Unit == 3 && limit.Number == 5 {
+			selected = i
+			break
+		}
+		if selected < 0 && limit.Type == "TOKENS_LIMIT" {
+			selected = i
+		}
+	}
+	if selected < 0 {
+		snapshot.Note = "GLM quota endpoint did not return token limit details."
+		return snapshot
+	}
+
+	limit := payload.Data.Limits[selected]
+	snapshot.Supported = true
+	snapshot.Source = "glm_quota_api"
+	snapshot.TokensLimit = apiKeyProbeNumberString(limit.Usage)
+	snapshot.TokensRemaining = apiKeyProbeNumberString(limit.Remaining)
+	snapshot.TokensReset = glmQuotaEpochMillisTime(limit.NextResetTime)
+	snapshot.RateLimitPolicy = glmQuotaLimitPolicy(limit.Type, limit.Unit, limit.Number)
+	snapshot.HasRateLimitHeaderSignal = snapshot.hasHeaderSignal()
+	snapshot.Note = glmQuotaLimitNote(payload.Data.Level, limit.CurrentValue, limit.Percentage)
+	if !snapshot.HasRateLimitHeaderSignal {
+		snapshot.Supported = false
+		snapshot.Source = "missing_glm_quota"
+		if snapshot.Note == "" {
+			snapshot.Note = "GLM quota endpoint response had no readable token usage fields."
+		}
+	}
+	return snapshot
+}
+
 func BuildAPIKeyProbeQuotaExtraUpdates(snapshot *APIKeyProbeQuotaSnapshot) map[string]any {
 	if snapshot == nil {
 		return nil
@@ -337,6 +408,41 @@ func firstHeaderValue(headers http.Header, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func glmQuotaEpochMillisTime(value any) string {
+	millis, ok := apiKeyProbeFloat(value)
+	if !ok || millis <= 0 {
+		return ""
+	}
+	return time.UnixMilli(int64(millis)).UTC().Format(time.RFC3339)
+}
+
+func glmQuotaLimitPolicy(limitType string, unit, number int) string {
+	if strings.TrimSpace(limitType) != "TOKENS_LIMIT" {
+		return strings.TrimSpace(limitType)
+	}
+	if unit == 3 && number > 0 {
+		return "Token usage(" + strconv.Itoa(number) + " Hour)"
+	}
+	if unit == 6 && number > 0 {
+		return "Token usage(" + strconv.Itoa(number) + " Day)"
+	}
+	return "Token usage"
+}
+
+func glmQuotaLimitNote(level string, currentValue, percentage any) string {
+	parts := make([]string, 0, 3)
+	if trimmed := strings.TrimSpace(level); trimmed != "" {
+		parts = append(parts, "level="+trimmed)
+	}
+	if used := apiKeyProbeNumberString(currentValue); used != "" {
+		parts = append(parts, "used="+used)
+	}
+	if pct := apiKeyProbeNumberString(percentage); pct != "" {
+		parts = append(parts, "percentage="+pct+"%")
+	}
+	return strings.Join(parts, "; ")
 }
 
 func setMapValue(payload map[string]any, key string, value any) {

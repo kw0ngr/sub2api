@@ -1487,9 +1487,17 @@ function quotaHasAnySignal(snapshot: APIKeyProbeQuotaSnapshot | null): boolean {
   return quotaHasHeaderSignal(snapshot) || quotaHasBalanceSignal(snapshot)
 }
 
+function quotaIsGLMFiveHour(snapshot: APIKeyProbeQuotaSnapshot | null): boolean {
+  if (!snapshot) return false
+  return snapshot.provider === 'glm' && snapshot.source === 'glm_quota_api'
+}
+
 function quotaBrief(account: Account | AccountPoolMapAccount | null | undefined): string {
   const snapshot = quotaSnapshot(account)
   if (!snapshot) return ''
+  if (quotaIsGLMFiveHour(snapshot)) {
+    return `5h ${formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit)}`
+  }
   if (snapshot.balance) return `余额 ${snapshot.balance}`
   if (snapshot.credits_remaining) return `余额 $${snapshot.credits_remaining}`
   if (snapshot.tokens_remaining || snapshot.tokens_limit) {
@@ -1607,6 +1615,8 @@ function quotaSourceLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (snapshot.source === 'missing_balance') return '余额未返回'
   if (snapshot.source === 'missing_headers') return '响应头未返回'
   if (snapshot.source === 'project_quota') return '项目级额度'
+  if (snapshot.source === 'glm_quota_api') return 'GLM 用量接口'
+  if (snapshot.source === 'missing_glm_quota') return 'GLM 用量未返回'
   return snapshot.source || '探测记录'
 }
 
@@ -1620,6 +1630,7 @@ function quotaScopeLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
 
 function quotaCapabilityLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '尚未探测'
+  if (quotaIsGLMFiveHour(snapshot)) return '已查询 5h 窗口'
   if (quotaHasBalanceSignal(snapshot)) return '已查询余额'
   if (quotaHasHeaderSignal(snapshot)) return '已捕获响应头'
   if (snapshot.provider === 'gemini') return '项目级限额'
@@ -1628,6 +1639,7 @@ function quotaCapabilityLabel(snapshot: APIKeyProbeQuotaSnapshot | null): string
 
 function quotaEmptyTitle(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '等待健康检查'
+  if (snapshot.provider === 'glm') return 'GLM 未返回可读 5h 用量'
   if (snapshot.provider === 'gemini') return 'Gemini 未返回每 Key 剩余额度'
   if (snapshot.source === 'missing_balance') return '余额接口未返回明细'
   return '上游未返回可读额度'
@@ -1635,6 +1647,12 @@ function quotaEmptyTitle(snapshot: APIKeyProbeQuotaSnapshot | null): string {
 
 function quotaGuidance(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '运行一次 API Key 健康检查后，这里会显示最近一次真实上游探测结果。'
+  if (quotaIsGLMFiveHour(snapshot)) {
+    return '已通过官方 GLM quota/limit 接口读取 5 小时 Token 窗口，可用于判断哪个 Key 接近上游重置窗口。'
+  }
+  if (snapshot.provider === 'glm') {
+    return 'GLM 官方直连账号会尝试读取 quota/limit；中转站或未返回明细时仍保留健康检查结果。'
+  }
   if (quotaHasBalanceSignal(snapshot)) return '已通过上游余额接口获取可读余额，可用于账号池地图判断剩余额度。'
   if (snapshot.provider === 'gemini' && !quotaHasHeaderSignal(snapshot)) {
     return 'Gemini API 的限额主要按 Google Cloud Project 与模型维度管控。当前探测请求已记录，但本次响应没有可读的剩余请求或剩余 Token 响应头。'
@@ -1649,6 +1667,10 @@ function quotaSummaryText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return '运行健康检查后显示上游返回的额度信号。'
   const source = quotaSourceLabel(snapshot)
   const scope = quotaScopeLabel(snapshot)
+  if (quotaIsGLMFiveHour(snapshot)) {
+    const reset = quotaResetText(snapshot)
+    return `${source} · 5 小时 Token 窗口${reset !== '-' ? ` · 重置 ${reset}` : ''}`
+  }
   if (quotaHasBalanceSignal(snapshot)) return `${source} · ${scope}`
   if (quotaHasHeaderSignal(snapshot)) return `${source} · ${scope} · ${snapshot.model || '未记录模型'}`
   if (snapshot.provider === 'gemini') return `Gemini ${scope} 级探测 · 无每 Key 剩余量`
@@ -1657,6 +1679,7 @@ function quotaSummaryText(snapshot: APIKeyProbeQuotaSnapshot | null): string {
 
 function quotaPanelClass(snapshot: APIKeyProbeQuotaSnapshot | null): string {
   if (!snapshot) return 'quota-panel-missing'
+  if (quotaIsGLMFiveHour(snapshot)) return 'quota-panel-glm'
   if (quotaHasBalanceSignal(snapshot)) return 'quota-panel-balance'
   if (quotaHasHeaderSignal(snapshot)) return 'quota-panel-live'
   if (snapshot.provider === 'gemini') return 'quota-panel-project'
@@ -1698,10 +1721,11 @@ function quotaStatItems(snapshot: APIKeyProbeQuotaSnapshot | null): QuotaStatIte
     })
   }
   if (snapshot.tokens_remaining || snapshot.tokens_limit) {
+    const reset = snapshot.tokens_reset ? `重置 ${snapshot.tokens_reset}` : '等待上游重置'
     items.push({
-      label: 'Token',
+      label: quotaIsGLMFiveHour(snapshot) ? '5h Token' : 'Token',
       value: formatQuotaPair(snapshot.tokens_remaining, snapshot.tokens_limit),
-      hint: snapshot.tokens_reset ? `重置 ${snapshot.tokens_reset}` : '总 Token 窗口'
+      hint: quotaIsGLMFiveHour(snapshot) ? `${snapshot.rate_limit_policy || 'GLM 5h 窗口'} · ${reset}` : reset
     })
   }
   if (snapshot.requests_remaining || snapshot.requests_limit) {
@@ -1745,6 +1769,7 @@ function quotaDetailRows(snapshot: APIKeyProbeQuotaSnapshot | null): DetailRow[]
   if (snapshot.rate_limit_policy) rows.push({ label: '策略', value: snapshot.rate_limit_policy })
   const reset = quotaResetText(snapshot)
   if (reset !== '-') rows.push({ label: '重置/重试', value: reset })
+  if (snapshot.note) rows.push({ label: '说明', value: snapshot.note })
   return rows
 }
 
@@ -2668,6 +2693,11 @@ onUnmounted(() => {
   background: linear-gradient(135deg, rgb(236 253 245), rgb(255 255 255));
 }
 
+.quota-panel-glm {
+  border-color: rgb(52 211 153 / 0.34);
+  background: linear-gradient(135deg, rgb(236 253 245), rgb(239 246 255));
+}
+
 .quota-panel-project {
   border-color: rgb(251 191 36 / 0.32);
   background: linear-gradient(135deg, rgb(255 251 235), rgb(255 255 255));
@@ -2792,6 +2822,11 @@ onUnmounted(() => {
 :global(.dark) .quota-panel-balance {
   border-color: rgb(52 211 153 / 0.4);
   background: rgb(6 78 59 / 0.22);
+}
+
+:global(.dark) .quota-panel-glm {
+  border-color: rgb(52 211 153 / 0.42);
+  background: rgb(6 78 59 / 0.24);
 }
 
 :global(.dark) .quota-panel-project {

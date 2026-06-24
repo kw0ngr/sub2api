@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -609,20 +610,67 @@ func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Accoun
 		if baseURL == "" {
 			baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
 		}
+		quota := s.fetchGLMQuotaLimitSnapshot(ctx, account, baseURL)
 		health, err := s.checkAPIKeyModelsEndpoint(ctx, account, PlatformGLM, buildGLMOpenAIModelsURL(baseURL))
 		if err != nil {
 			return nil, err
 		}
+		attachProbeQuota(health, quota)
 		if health.Valid || health.Invalid || health.StatusCode == http.StatusTooManyRequests {
 			return health, nil
 		}
-		return s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
+		health, err = s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
+		attachProbeQuota(health, quota)
+		return health, err
 	}
-	return s.checkGLMAnthropicMessagesProbe(ctx, account)
+	baseURL := anthropicCompatibleBaseURLForAccount(account)
+	quota := s.fetchGLMQuotaLimitSnapshot(ctx, account, baseURL)
+	health, err := s.checkGLMAnthropicMessagesProbe(ctx, account, baseURL)
+	attachProbeQuota(health, quota)
+	return health, err
 }
 
-func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
-	endpoint := buildGLMAnthropicMessagesURL(anthropicCompatibleBaseURLForAccount(account))
+func (s *AccountTestService) fetchGLMQuotaLimitSnapshot(ctx context.Context, account *Account, baseURL string) *APIKeyProbeQuotaSnapshot {
+	endpoint, ok := buildGLMMonitorQuotaLimitURL(baseURL)
+	if !ok {
+		return nil
+	}
+	statusCode, body, err := s.doAPIKeyProbe(ctx, account, http.MethodGet, endpoint, map[string]string{
+		"Authorization":   strings.TrimSpace(account.GetCredential("api_key")),
+		"Accept":          "application/json",
+		"Accept-Language": "en-US,en",
+		"Content-Type":    "application/json",
+	}, nil)
+	if err != nil {
+		return nil
+	}
+	snapshot := BuildGLMAPIKeyProbeQuotaSnapshot(statusCode, body, time.Now())
+	s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
+	return snapshot
+}
+
+func attachProbeQuota(health *APIKeyHealthCheckResult, snapshot *APIKeyProbeQuotaSnapshot) {
+	if health != nil && snapshot != nil {
+		health.ProbeQuota = snapshot
+	}
+}
+
+func buildGLMMonitorQuotaLimitURL(baseURL string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "api.z.ai", "open.bigmodel.cn", "dev.bigmodel.cn":
+		return parsed.Scheme + "://" + parsed.Host + "/api/monitor/usage/quota/limit", true
+	default:
+		return "", false
+	}
+}
+
+func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context, account *Account, baseURL string) (*APIKeyHealthCheckResult, error) {
+	endpoint := buildGLMAnthropicMessagesURL(baseURL)
 	body, _ := json.Marshal(map[string]any{
 		"model":      "glm-5.2",
 		"max_tokens": 1,

@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -95,6 +98,47 @@ func TestBuildGLMOpenAIModelsURLHandlesCompleteChatURL(t *testing.T) {
 		"https://relay.example.test/v1/models",
 		buildGLMOpenAIModelsURL("https://relay.example.test/v1/chat/completions"),
 	)
+}
+
+func TestBuildGLMMonitorQuotaLimitURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+		ok   bool
+	}{
+		{
+			name: "official anthropic base",
+			base: "https://open.bigmodel.cn/api/anthropic",
+			want: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+			ok:   true,
+		},
+		{
+			name: "official coding base",
+			base: "https://open.bigmodel.cn/api/coding/paas/v4",
+			want: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+			ok:   true,
+		},
+		{
+			name: "zai official base",
+			base: "https://api.z.ai/api/anthropic",
+			want: "https://api.z.ai/api/monitor/usage/quota/limit",
+			ok:   true,
+		},
+		{
+			name: "custom relay",
+			base: "https://relay.example.test/v1",
+			ok:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := buildGLMMonitorQuotaLimitURL(tt.base)
+			require.Equal(t, tt.ok, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestClampGLMMaxTokens(t *testing.T) {
@@ -322,10 +366,17 @@ func TestFetchUpstreamSupportedModelsGLMAnthropicFallbackBuiltIns(t *testing.T) 
 }
 
 func TestCheckGLMAPIKeyAnthropicModeUsesMessagesProbe(t *testing.T) {
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"content":[{"type":"text","text":"ok"}]}`)),
+	upstream := &glmProbeHTTPUpstream{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"usage":40000000,"currentValue":10261098,"remaining":29738902,"percentage":25,"nextResetTime":1767373239187}]}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"content":[{"type":"text","text":"ok"}]}`)),
+		},
 	}}
 	svc := &AccountTestService{httpUpstream: upstream}
 	account := &Account{
@@ -344,18 +395,30 @@ func TestCheckGLMAPIKeyAnthropicModeUsesMessagesProbe(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, health.Valid)
 	require.False(t, health.Invalid)
-	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, http.MethodPost, upstream.lastReq.Method)
-	require.Equal(t, "https://open.bigmodel.cn/api/anthropic/v1/messages", upstream.lastReq.URL.String())
-	require.Equal(t, "sk-glm-test", upstream.lastReq.Header.Get("x-api-key"))
-	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.NotNil(t, health.ProbeQuota)
+	require.Equal(t, "glm_quota_api", health.ProbeQuota.Source)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, http.MethodGet, upstream.requests[0].Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/monitor/usage/quota/limit", upstream.requests[0].URL.String())
+	require.Equal(t, "sk-glm-test", upstream.requests[0].Header.Get("Authorization"))
+	require.Equal(t, http.MethodPost, upstream.requests[1].Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/anthropic/v1/messages", upstream.requests[1].URL.String())
+	require.Equal(t, "sk-glm-test", upstream.requests[1].Header.Get("x-api-key"))
+	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.bodies[1], "model").String())
 }
 
 func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"}]}`)),
+	upstream := &glmProbeHTTPUpstream{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"usage":40000000,"currentValue":10261098,"remaining":29738902,"percentage":25,"nextResetTime":1767373239187}]}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"}]}`)),
+		},
 	}}
 	svc := &AccountTestService{httpUpstream: upstream}
 	account := &Account{
@@ -375,8 +438,41 @@ func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, health.Valid)
 	require.False(t, health.Invalid)
-	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, http.MethodGet, upstream.lastReq.Method)
-	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", upstream.lastReq.URL.String())
-	require.Equal(t, "Bearer sk-glm-test", upstream.lastReq.Header.Get("Authorization"))
+	require.NotNil(t, health.ProbeQuota)
+	require.Equal(t, "glm_quota_api", health.ProbeQuota.Source)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, http.MethodGet, upstream.requests[0].Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/monitor/usage/quota/limit", upstream.requests[0].URL.String())
+	require.Equal(t, "sk-glm-test", upstream.requests[0].Header.Get("Authorization"))
+	require.Equal(t, http.MethodGet, upstream.requests[1].Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", upstream.requests[1].URL.String())
+	require.Equal(t, "Bearer sk-glm-test", upstream.requests[1].Header.Get("Authorization"))
+}
+
+type glmProbeHTTPUpstream struct {
+	responses []*http.Response
+	requests  []*http.Request
+	bodies    [][]byte
+}
+
+func (u *glmProbeHTTPUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	u.requests = append(u.requests, req)
+	if req != nil && req.Body != nil {
+		body, _ := io.ReadAll(req.Body)
+		u.bodies = append(u.bodies, body)
+		_ = req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	} else {
+		u.bodies = append(u.bodies, nil)
+	}
+	if len(u.responses) == 0 {
+		return nil, fmt.Errorf("no mocked response")
+	}
+	resp := u.responses[0]
+	u.responses = u.responses[1:]
+	return resp, nil
+}
+
+func (u *glmProbeHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }

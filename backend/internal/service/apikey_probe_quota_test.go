@@ -86,6 +86,50 @@ func TestBuildAPIKeyProbeQuotaSnapshot_GeminiHeadersAreRealSignal(t *testing.T) 
 	require.Equal(t, "team-project", snapshot.QuotaProject)
 }
 
+func TestBuildGLMAPIKeyProbeQuotaSnapshot_QuotaLimitFiveHourWindow(t *testing.T) {
+	body := []byte(`{
+		"code": 200,
+		"data": {
+			"level": "team",
+			"limits": [
+				{
+					"type": "TOKENS_LIMIT",
+					"unit": 3,
+					"number": 5,
+					"usage": 40000000,
+					"currentValue": 10261098,
+					"remaining": 29738902,
+					"percentage": 25,
+					"nextResetTime": 1767373239187
+				}
+			]
+		}
+	}`)
+	now := time.Date(2026, 6, 24, 10, 30, 0, 0, time.UTC)
+
+	snapshot := BuildGLMAPIKeyProbeQuotaSnapshot(http.StatusOK, body, now)
+
+	require.NotNil(t, snapshot)
+	require.Equal(t, PlatformGLM, snapshot.Provider)
+	require.True(t, snapshot.Supported)
+	require.Equal(t, "glm_quota_api", snapshot.Source)
+	require.Equal(t, "account", snapshot.Scope)
+	require.Equal(t, http.StatusOK, snapshot.StatusCode)
+	require.Equal(t, "40000000", snapshot.TokensLimit)
+	require.Equal(t, "29738902", snapshot.TokensRemaining)
+	require.Equal(t, "2026-01-02T17:00:39Z", snapshot.TokensReset)
+	require.Equal(t, "Token usage(5 Hour)", snapshot.RateLimitPolicy)
+	require.True(t, snapshot.HasRateLimitHeaderSignal)
+	require.Contains(t, snapshot.Note, "used=10261098")
+	require.Contains(t, snapshot.Note, "25%")
+
+	roundTrip := APIKeyProbeQuotaSnapshotFromExtra(BuildAPIKeyProbeQuotaExtraUpdates(snapshot))
+	require.NotNil(t, roundTrip)
+	require.Equal(t, "glm_quota_api", roundTrip.Source)
+	require.Equal(t, "29738902", roundTrip.TokensRemaining)
+	require.Equal(t, "Token usage(5 Hour)", roundTrip.RateLimitPolicy)
+}
+
 func TestAPIKeyProbeQuotaExtraRoundTrip(t *testing.T) {
 	snapshot := &APIKeyProbeQuotaSnapshot{
 		Provider:          PlatformAnthropic,
