@@ -23,8 +23,15 @@
       </button>
       </template>
     </div>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap justify-end gap-2">
       <template v-if="selectedIds.length > 0">
+        <button
+          @click="$emit('check-health')"
+          class="btn btn-secondary btn-sm"
+          :disabled="healthChecking"
+        >
+          {{ healthChecking ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.bulkActions.checkHealth') }}
+        </button>
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
@@ -41,5 +48,25 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-defineProps(['selectedIds']); defineEmits(['delete', 'edit-selected', 'edit-filtered', 'clear', 'select-page', 'toggle-schedulable', 'reset-status', 'refresh-token']); const { t } = useI18n()
+
+withDefaults(defineProps<{
+  selectedIds: readonly number[]
+  healthChecking?: boolean
+}>(), {
+  healthChecking: false
+})
+
+defineEmits<{
+  delete: []
+  'edit-selected': []
+  'edit-filtered': []
+  clear: []
+  'select-page': []
+  'toggle-schedulable': [schedulable: boolean]
+  'reset-status': []
+  'refresh-token': []
+  'check-health': []
+}>()
+
+const { t } = useI18n()
 </script>

@@ -124,8 +124,8 @@
               <button @click="showRawKeyImport = true" class="btn btn-secondary">
                 {{ t('admin.accounts.rawKeyImport') }}
               </button>
-              <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAllAPIKeys">
-                {{ checkingAllAPIKeys ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
+              <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAPIKeyHealth">
+                {{ checkingAPIKeyHealth ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
               </button>
               <button @click="openExportDataDialog" class="btn btn-secondary">
                 {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
@@ -149,9 +149,11 @@
       <template #table>
         <AccountBulkActionsBar
           :selected-ids="selIds"
+          :health-checking="checkingAPIKeyHealth"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
+          @check-health="handleCheckSelectedAPIKeys"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @clear="clearSelection"
@@ -312,7 +314,7 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" :health-checking="checkingAPIKeyHealth" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @check-health="handleCheckAccountAPIKey" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <RawKeyImportModal :show="showRawKeyImport" @close="showRawKeyImport = false" @imported="handleRawKeyImported" />
@@ -444,7 +446,7 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
-const checkingAllAPIKeys = ref(false)
+const checkingAPIKeyHealth = ref(false)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -520,6 +522,14 @@ const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
 const usageManualRefreshToken = ref(0)
+const API_KEY_HEALTH_PLATFORMS = new Set<AccountPlatform>([
+  'anthropic',
+  'openai',
+  'gemini',
+  'openrouter',
+  'deepseek',
+  'glm'
+])
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -1304,6 +1314,19 @@ const API_KEY_HEALTH_POLL_INTERVAL_MS = 1500
 const API_KEY_HEALTH_MAX_POLLS = 240
 const sleep = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms))
 
+const isSupportedAPIKeyHealthAccount = (account: Account) => {
+  return account.type === 'apikey' && API_KEY_HEALTH_PLATFORMS.has(account.platform)
+}
+
+const selectedAPIKeyHealthAccounts = computed(() =>
+  accounts.value.filter(account => isSelected(account.id) && isSupportedAPIKeyHealthAccount(account))
+)
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 const showAPIKeyHealthSummary = (result: APIKeyHealthCheckResult) => {
   if (result.invalid_disabled > 0 || result.failed > 0) {
     appStore.showWarning(t('admin.accounts.apiKeyHealthCheckAllResultWithIssues', {
@@ -1321,12 +1344,15 @@ const showAPIKeyHealthSummary = (result: APIKeyHealthCheckResult) => {
   }))
 }
 
-const pollAPIKeyHealthStatus = async () => {
+const pollAPIKeyHealthStatus = async (jobID: string) => {
   for (let i = 0; i < API_KEY_HEALTH_MAX_POLLS; i++) {
     await sleep(API_KEY_HEALTH_POLL_INTERVAL_MS)
     if (accountsViewUnmounted) return null
 
     const status = await adminAPI.accounts.getAPIKeysHealthStatus()
+    if (status.job_id && status.job_id !== jobID) {
+      continue
+    }
     const result = status.result
     if (status.status === 'failed') {
       throw new Error(status.error || t('admin.accounts.apiKeyHealthCheckFailed'))
@@ -1338,26 +1364,48 @@ const pollAPIKeyHealthStatus = async () => {
   throw new Error(t('admin.accounts.apiKeyHealthCheckTimeout'))
 }
 
-const handleCheckAllAPIKeys = async () => {
-  if (checkingAllAPIKeys.value) return
-  if (!confirm(t('admin.accounts.apiKeyHealthCheckAllConfirm'))) return
-
-  checkingAllAPIKeys.value = true
+const runAPIKeyHealthCheck = async (accountIds?: number[]) => {
+  if (checkingAPIKeyHealth.value) return
+  checkingAPIKeyHealth.value = true
   try {
-    const start = await adminAPI.accounts.startAPIKeysHealthCheck()
+    const start = await adminAPI.accounts.startAPIKeysHealthCheck(accountIds)
     appStore.showInfo(t('admin.accounts.apiKeyHealthCheckStarted', { total: start.total }), 3000)
 
-    const result = await pollAPIKeyHealthStatus()
+    const result = await pollAPIKeyHealthStatus(start.job_id)
     if (!result) return
 
     showAPIKeyHealthSummary(result)
     await reload()
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to check API keys health:', error)
-    appStore.showError(error?.message || t('admin.accounts.apiKeyHealthCheckFailed'))
+    appStore.showError(getErrorMessage(error, t('admin.accounts.apiKeyHealthCheckFailed')))
   } finally {
-    checkingAllAPIKeys.value = false
+    checkingAPIKeyHealth.value = false
   }
+}
+
+const handleCheckAllAPIKeys = async () => {
+  if (!confirm(t('admin.accounts.apiKeyHealthCheckAllConfirm'))) return
+  await runAPIKeyHealthCheck()
+}
+
+const handleCheckSelectedAPIKeys = async () => {
+  const accountsToCheck = selectedAPIKeyHealthAccounts.value
+  if (accountsToCheck.length === 0) {
+    appStore.showWarning(t('admin.accounts.apiKeyHealthCheckNoSupportedSelected'))
+    return
+  }
+  if (!confirm(t('admin.accounts.apiKeyHealthCheckSelectedConfirm', { count: accountsToCheck.length }))) return
+  await runAPIKeyHealthCheck(accountsToCheck.map(account => account.id))
+}
+
+const handleCheckAccountAPIKey = async (account: Account) => {
+  if (!isSupportedAPIKeyHealthAccount(account)) {
+    appStore.showWarning(t('admin.accounts.apiKeyHealthCheckUnsupported'))
+    return
+  }
+  if (!confirm(t('admin.accounts.apiKeyHealthCheckOneConfirm', { name: account.name }))) return
+  await runAPIKeyHealthCheck([account.id])
 }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'

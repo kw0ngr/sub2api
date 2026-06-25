@@ -235,6 +235,49 @@ func TestCheckAPIKeysHealth_StartAndStatusIncludeJobIDAndCompletion(t *testing.T
 	}, time.Second, 10*time.Millisecond)
 }
 
+func TestResolveAPIKeyHealthCheckAccounts_FiltersSelectedAPIKeys(t *testing.T) {
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{
+			ID:       201,
+			Name:     "openai-api-key",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+		},
+		{
+			ID:       202,
+			Name:     "openai-oauth",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+		{
+			ID:       203,
+			Name:     "glm-api-key",
+			Platform: service.PlatformGLM,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+		},
+		{
+			ID:       204,
+			Name:     "unsupported-api-key",
+			Platform: "unsupported",
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+		},
+	}
+	handler := &AccountHandler{adminService: adminSvc}
+
+	accounts, err := handler.resolveAPIKeyHealthCheckAccounts(context.Background(), []int64{201, 202, 203, 204})
+
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	require.Equal(t, int64(201), accounts[0].ID)
+	require.Equal(t, int64(203), accounts[1].ID)
+	require.Zero(t, adminSvc.lastListAccounts.calls)
+}
+
 func TestRunHealthCheckBackground_RecoversWorkerPanic(t *testing.T) {
 	handler := &AccountHandler{}
 	jobID := "job-panic"

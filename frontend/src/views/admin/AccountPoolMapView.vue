@@ -519,6 +519,15 @@
               <button type="button" class="inspector-action-primary" @click="goAccountDetail(selectedAccount)">
                 打开账号管理
               </button>
+              <button
+                v-if="isAPIKeyHealthSupportedAccount(selectedAccount)"
+                type="button"
+                class="inspector-action"
+                :disabled="checkingHealth"
+                @click="runHealthCheck([selectedAccount.id])"
+              >
+                {{ checkingHealth ? '检测中' : '检测此 Key' }}
+              </button>
               <button type="button" class="inspector-action" @click="goFingerprints">
                 查看指纹策略
               </button>
@@ -560,7 +569,7 @@
             </div>
 
             <div class="inspector-action-grid">
-              <button type="button" class="inspector-action" @click="runHealthCheck">
+              <button type="button" class="inspector-action" @click="runHealthCheck()">
                 {{ checkingHealth ? '重试健康检查中' : '重试健康检查' }}
               </button>
               <button type="button" class="inspector-action" @click="goAccounts">
@@ -775,7 +784,7 @@ import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAccountPoolMapData } from '@/composables/useAccountPoolMapData'
-import type { Account } from '@/types'
+import type { Account, AccountPlatform } from '@/types'
 import type {
   AccountPoolMapAccount,
   AccountPoolMapPool,
@@ -844,6 +853,14 @@ let healthPollTimer: ReturnType<typeof setTimeout> | null = null
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 const POOL_PREVIEW_LIMIT = 12
 const AUTO_REFRESH_INTERVAL_MS = 60_000
+const API_KEY_HEALTH_PLATFORMS = new Set<AccountPlatform>([
+  'anthropic',
+  'openai',
+  'gemini',
+  'openrouter',
+  'deepseek',
+  'glm'
+])
 
 const filters = reactive<{
   search: string
@@ -1868,29 +1885,40 @@ function syncAutoRefreshTimer() {
   }, AUTO_REFRESH_INTERVAL_MS)
 }
 
-async function runHealthCheck() {
+function isAPIKeyHealthSupportedAccount(account: Account) {
+  return account.type === 'apikey' && API_KEY_HEALTH_PLATFORMS.has(account.platform)
+}
+
+async function runHealthCheck(accountIds?: number[]) {
   if (checkingHealth.value) return
   checkingHealth.value = true
   clearHealthPollTimer()
   try {
-    const started = await adminAPI.accounts.startAPIKeysHealthCheck()
-    errorMessage.value = `健康检测已启动：${started.total} 个原始 Key 账号`
-    await pollHealthCheckStatus()
+    const started = await adminAPI.accounts.startAPIKeysHealthCheck(accountIds)
+    const scope = accountIds && accountIds.length > 0 ? '选中 Key 账号' : '原始 Key 账号'
+    errorMessage.value = `健康检测已启动：${started.total} 个${scope}`
+    await pollHealthCheckStatus(started.job_id)
   } catch (error) {
     checkingHealth.value = false
     errorMessage.value = normalizeError(error) || '健康检测启动失败。'
   }
 }
 
-async function pollHealthCheckStatus() {
+async function pollHealthCheckStatus(jobID?: string) {
   try {
     const status = await adminAPI.accounts.getAPIKeysHealthStatus()
+    if (jobID && status.job_id && status.job_id !== jobID) {
+      healthPollTimer = setTimeout(() => {
+        void pollHealthCheckStatus(jobID)
+      }, 1500)
+      return
+    }
     if (status.status === 'running') {
       const checked = status.result?.checked ?? 0
       const total = status.result?.total ?? 0
       errorMessage.value = total > 0 ? `健康检测中：${checked}/${total}` : '健康检测中...'
       healthPollTimer = setTimeout(() => {
-        void pollHealthCheckStatus()
+        void pollHealthCheckStatus(jobID)
       }, 1500)
       return
     }

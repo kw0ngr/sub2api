@@ -14,6 +14,15 @@
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
             </button>
+            <button
+              v-if="supportsAPIKeyHealth"
+              @click="$emit('check-health', account); $emit('close')"
+              :disabled="healthChecking"
+              class="flex w-full items-center gap-2 px-4 py-2 text-sm text-sky-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-sky-400 dark:hover:bg-dark-700"
+            >
+              <Icon name="checkCircle" size="sm" />
+              {{ healthChecking ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckOne') }}
+            </button>
             <button @click="$emit('stats', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="chart" size="sm" class="text-indigo-500" />
               {{ t('admin.accounts.viewStats') }}
@@ -56,11 +65,37 @@
 import { computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
-import type { Account } from '@/types'
+import type { Account, AccountPlatform } from '@/types'
 
-const props = defineProps<{ show: boolean; account: Account | null; position: { top: number; left: number } | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy'])
+const props = withDefaults(defineProps<{
+  show: boolean
+  account: Account | null
+  position: { top: number; left: number } | null
+  healthChecking?: boolean
+}>(), {
+  healthChecking: false
+})
+const emit = defineEmits<{
+  close: []
+  test: [account: Account]
+  stats: [account: Account]
+  schedule: [account: Account]
+  reauth: [account: Account]
+  'refresh-token': [account: Account]
+  'recover-state': [account: Account]
+  'reset-quota': [account: Account]
+  'set-privacy': [account: Account]
+  'check-health': [account: Account]
+}>()
 const { t } = useI18n()
+const API_KEY_HEALTH_PLATFORMS = new Set<AccountPlatform>([
+  'anthropic',
+  'openai',
+  'gemini',
+  'openrouter',
+  'deepseek',
+  'glm'
+])
 const isRateLimited = computed(() => {
   if (props.account?.rate_limit_reset_at && new Date(props.account.rate_limit_reset_at) > new Date()) {
     return true
@@ -76,6 +111,9 @@ const isRateLimited = computed(() => {
 })
 const isOverloaded = computed(() => props.account?.overload_until && new Date(props.account.overload_until) > new Date())
 const isTempUnschedulable = computed(() => props.account?.temp_unschedulable_until && new Date(props.account.temp_unschedulable_until) > new Date())
+const supportsAPIKeyHealth = computed(() => {
+  return props.account?.type === 'apikey' && API_KEY_HEALTH_PLATFORMS.has(props.account.platform)
+})
 const hasRecoverableState = computed(() => {
   return props.account?.status === 'error' || Boolean(isRateLimited.value) || Boolean(isOverloaded.value) || Boolean(isTempUnschedulable.value)
 })

@@ -248,8 +248,20 @@ func (s *stubAdminService) GetAccount(ctx context.Context, id int64) (*service.A
 func (s *stubAdminService) GetAccountsByIDs(ctx context.Context, ids []int64) ([]*service.Account, error) {
 	out := make([]*service.Account, 0, len(ids))
 	for _, id := range ids {
-		account := service.Account{ID: id, Name: "account", Status: service.StatusActive}
-		out = append(out, &account)
+		found := false
+		for i := range s.accounts {
+			if s.accounts[i].ID != id {
+				continue
+			}
+			account := s.accounts[i]
+			out = append(out, &account)
+			found = true
+			break
+		}
+		if !found {
+			account := service.Account{ID: id, Name: "account", Status: service.StatusActive}
+			out = append(out, &account)
+		}
 	}
 	return out, nil
 }
