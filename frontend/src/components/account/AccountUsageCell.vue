@@ -376,9 +376,37 @@
     <AccountQuotaInfo v-if="account.platform === 'gemini'" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
     <div v-else class="space-y-1">
+      <div
+        v-if="glmQuotaWindow"
+        class="space-y-1.5"
+        :title="glmQuotaWindow.title"
+      >
+        <div class="flex flex-wrap items-center gap-1.5 text-[9px]">
+          <span class="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-600 dark:text-emerald-300">
+            GLM 真实额度
+          </span>
+          <span class="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-300">
+            {{ glmQuotaWindow.policy }}
+          </span>
+        </div>
+        <UsageProgressBar
+          label="5h"
+          :utilization="glmQuotaWindow.utilization"
+          :resets-at="glmQuotaWindow.resetsAt"
+          color="amber"
+        />
+        <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 tabular-nums dark:bg-gray-800">
+            {{ glmQuotaWindow.usedText }} / {{ glmQuotaWindow.limitText }} tok
+          </span>
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 tabular-nums dark:bg-gray-800">
+            剩 {{ glmQuotaWindow.remainingText }}
+          </span>
+        </div>
+      </div>
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
-        v-if="todayStats"
+        v-else-if="todayStats"
         class="mb-0.5 flex items-center"
       >
         <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
@@ -433,7 +461,7 @@
       />
 
       <!-- No data at all -->
-      <div v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota" class="text-xs text-gray-400">-</div>
+      <div v-if="!glmQuotaWindow && !todayStats && !todayStatsLoading && !hasApiKeyQuota" class="text-xs text-gray-400">-</div>
     </div>
   </div>
 </template>
@@ -1118,6 +1146,73 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
   const limit = props.account.quota_limit ?? 0
   if (limit <= 0) return null
   return makeQuotaBar(props.account.quota_used ?? 0, limit)
+})
+
+// ===== GLM API key quota window =====
+
+interface GLMQuotaWindowInfo {
+  utilization: number
+  resetsAt: string | null
+  usedText: string
+  limitText: string
+  remainingText: string
+  policy: string
+  title: string
+}
+
+function extraValue(key: string): unknown {
+  const extra = props.account.extra
+  if (!extra || typeof extra !== 'object') return undefined
+  return Object.entries(extra).find(([entryKey]) => entryKey === key)?.[1]
+}
+
+function objectValue(raw: unknown, key: string): unknown {
+  if (!raw || typeof raw !== 'object') return undefined
+  return Object.entries(raw).find(([entryKey]) => entryKey === key)?.[1]
+}
+
+function quotaString(raw: unknown, key: string): string {
+  const value = objectValue(raw, key)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function parseQuotaQuantity(raw: string): number | null {
+  const value = raw.trim().replace(/,/g, '').toUpperCase()
+  if (!value) return null
+  const suffix = value.at(-1)
+  const multiplier = suffix === 'K' ? 1_000 : suffix === 'M' ? 1_000_000 : suffix === 'B' ? 1_000_000_000 : 1
+  const numericPart = multiplier === 1 ? value : value.slice(0, -1)
+  const parsed = Number(numericPart)
+  if (!Number.isFinite(parsed)) return null
+  return parsed * multiplier
+}
+
+const glmQuotaWindow = computed((): GLMQuotaWindowInfo | null => {
+  if (props.account.platform !== 'glm' || props.account.type !== 'apikey') return null
+  const snapshot = extraValue('apikey_probe_quota')
+  if (!snapshot || typeof snapshot !== 'object') return null
+  if (quotaString(snapshot, 'provider') !== 'glm') return null
+  if (quotaString(snapshot, 'source') !== 'glm_quota_api') return null
+
+  const limit = parseQuotaQuantity(quotaString(snapshot, 'tokens_limit'))
+  const remaining = parseQuotaQuantity(quotaString(snapshot, 'tokens_remaining'))
+  if (limit === null || limit <= 0 || remaining === null) return null
+
+  const boundedRemaining = Math.max(0, remaining)
+  const used = Math.max(0, limit - boundedRemaining)
+  const utilization = (used / limit) * 100
+  const resetsAt = quotaString(snapshot, 'tokens_reset') || null
+  const policy = quotaString(snapshot, 'rate_limit_policy') || '5h Token'
+  const updated = quotaString(snapshot, 'updated_at') || '-'
+  return {
+    utilization,
+    resetsAt,
+    usedText: formatCompactNumber(used),
+    limitText: formatCompactNumber(limit),
+    remainingText: formatCompactNumber(boundedRemaining),
+    policy,
+    title: `GLM quota · ${policy} · updated ${updated}`
+  }
 })
 
 // ===== Key account today stats formatters =====

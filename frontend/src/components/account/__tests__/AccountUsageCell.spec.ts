@@ -553,6 +553,56 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
+  it('GLM Key 账号优先展示真实 5h token 窗口', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3101,
+          platform: 'glm',
+          type: 'apikey',
+          extra: {
+            apikey_probe_quota: {
+              provider: 'glm',
+              supported: true,
+              source: 'glm_quota_api',
+              scope: 'account',
+              updated_at: '2026-06-25T03:00:00Z',
+              tokens_limit: '10000000',
+              tokens_remaining: '5200000',
+              tokens_reset: '2099-06-25T08:00:00Z',
+              rate_limit_policy: 'TOKENS_LIMIT / 5h',
+              has_rate_limit_header_signal: true
+            }
+          }
+        }),
+        todayStats: {
+          requests: 59,
+          tokens: 4_800_000,
+          cost: 3.52,
+          standard_cost: 3.52,
+          user_cost: 3.52
+        }
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ Math.round(utilization) }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5h|48|2099-06-25T08:00:00Z')
+    expect(wrapper.text()).toContain('GLM 真实额度')
+    expect(wrapper.text()).toContain('4.8M / 10.0M tok')
+    expect(wrapper.text()).toContain('剩 5.2M')
+    expect(wrapper.text()).not.toContain('A $3.52')
+  })
+
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {

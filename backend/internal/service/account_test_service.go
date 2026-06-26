@@ -215,6 +215,24 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	return s.testClaudeAccountConnection(c, account, modelID)
 }
 
+func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx context.Context, account *Account) {
+	if s == nil || s.accountRepo == nil || account == nil || account.Type != AccountTypeAPIKey {
+		return
+	}
+	if err := s.accountRepo.ClearError(ctx, account.ID); err != nil {
+		log.Printf("[WARN] failed to clear account error after successful test: account=%d err=%v", account.ID, err)
+	}
+	if err := s.accountRepo.ClearRateLimit(ctx, account.ID); err != nil {
+		log.Printf("[WARN] failed to clear account rate limit after successful test: account=%d err=%v", account.ID, err)
+	}
+	if err := s.accountRepo.ClearModelRateLimits(ctx, account.ID); err != nil {
+		log.Printf("[WARN] failed to clear account model rate limits after successful test: account=%d err=%v", account.ID, err)
+	}
+	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
+		log.Printf("[WARN] failed to clear account temporary cooldown after successful test: account=%d err=%v", account.ID, err)
+	}
+}
+
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
 func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
@@ -422,8 +440,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, errMsg)
 	}
 
-	// Process SSE stream
-	return s.processClaudeStream(c, ctx, account, resp.Body)
+	if err := s.processClaudeStream(c, ctx, account, resp.Body); err != nil {
+		return err
+	}
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	return nil
 }
 
 // testBedrockAccountConnection tests a Bedrock (SigV4 or API Key) account using non-streaming invoke
@@ -538,6 +559,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	}
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
 	return nil
 }
 
@@ -686,8 +708,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	// Process SSE stream
-	return s.processOpenAIStream(c, ctx, account, resp.Body)
+	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
+		return err
+	}
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	return nil
 }
 
 // testGeminiAccountConnection tests a Gemini account's connection
@@ -763,8 +788,11 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	// Process SSE stream
-	return s.processGeminiStream(c, ctx, account, resp.Body)
+	if err := s.processGeminiStream(c, ctx, account, resp.Body); err != nil {
+		return err
+	}
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	return nil
 }
 
 // routeAntigravityTest 路由 Antigravity 账号的测试请求。
