@@ -158,7 +158,22 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
-				spec.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error())
+				platform := service.PlatformAnthropic
+				if apiKey.Group != nil && apiKey.Group.Platform != "" {
+					platform = apiKey.Group.Platform
+				}
+				cls := classifyNoAccountErrorFromGin(c, noAccountDiagnosisRequest{
+					Diagnoser:    h.gatewayService,
+					APIKey:       apiKey,
+					RoutingModel: reqModel,
+					DisplayModel: reqModel,
+					Platform:     platform,
+				})
+				message := cls.Message
+				if !cls.ModelNotFound {
+					message = "No available accounts: " + err.Error()
+				}
+				spec.errorResponse(c, cls.Status, cls.ErrType, message)
 				return
 			}
 			action := fs.HandleSelectionExhausted(requestCtx)

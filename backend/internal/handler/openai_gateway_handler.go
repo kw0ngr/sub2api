@@ -282,7 +282,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
-				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+				cls := classifyNoAccountErrorFromGin(c, noAccountDiagnosisRequest{
+					Diagnoser:    h.gatewayService,
+					APIKey:       apiKey,
+					RoutingModel: reqModel,
+					DisplayModel: reqModel,
+					Platform:     gatewayPlatform,
+				})
+				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 				return
 			}
 			if lastFailoverErr != nil {
@@ -293,7 +300,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+			cls := classifyNoAccountErrorFromGin(c, noAccountDiagnosisRequest{
+				Diagnoser:    h.gatewayService,
+				APIKey:       apiKey,
+				RoutingModel: reqModel,
+				DisplayModel: reqModel,
+				Platform:     gatewayPlatform,
+			})
+			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 			return
 		}
 		if previousResponseID != "" && selection != nil && selection.Account != nil {
@@ -686,7 +700,14 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			)
 			if len(failedAccountIDs) == 0 {
 				if err != nil {
-					h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+					cls := classifyNoAccountErrorFromGin(c, noAccountDiagnosisRequest{
+						Diagnoser:    h.gatewayService,
+						APIKey:       apiKey,
+						RoutingModel: currentRoutingModel,
+						DisplayModel: reqModel,
+						Platform:     gatewayPlatform,
+					})
+					h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 					return
 				}
 			} else {
@@ -699,7 +720,14 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if selection == nil || selection.Account == nil {
-			h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+			cls := classifyNoAccountErrorFromGin(c, noAccountDiagnosisRequest{
+				Diagnoser:    h.gatewayService,
+				APIKey:       apiKey,
+				RoutingModel: currentRoutingModel,
+				DisplayModel: reqModel,
+				Platform:     gatewayPlatform,
+			})
+			h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 			return
 		}
 		account := selection.Account

@@ -378,29 +378,36 @@
     <div v-else class="space-y-1">
       <div
         v-if="glmQuotaWindow"
-        class="space-y-1.5"
+        class="max-w-[220px] rounded-md border border-amber-400/20 bg-amber-500/[0.07] px-2 py-1.5"
         :title="glmQuotaWindow.title"
       >
-        <div class="flex flex-wrap items-center gap-1.5 text-[9px]">
-          <span class="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-600 dark:text-emerald-300">
-            GLM 真实额度
+        <div class="mb-1 flex items-center justify-between gap-2 text-[10px]">
+          <span class="truncate font-medium text-amber-700 dark:text-amber-300">
+            GLM 5h额度
           </span>
-          <span class="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-300">
-            {{ glmQuotaWindow.policy }}
+          <span class="shrink-0 font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+            {{ glmQuotaWindow.percentText }}
           </span>
         </div>
-        <UsageProgressBar
-          label="5h"
-          :utilization="glmQuotaWindow.utilization"
-          :resets-at="glmQuotaWindow.resetsAt"
-          color="amber"
-        />
-        <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 tabular-nums dark:bg-gray-800">
-            {{ glmQuotaWindow.usedText }} / {{ glmQuotaWindow.limitText }} tok
+        <div class="mb-1 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+          <div
+            class="h-full rounded-full transition-all duration-150"
+            :class="glmQuotaWindow.utilization >= 90 ? 'bg-red-500' : glmQuotaWindow.utilization >= 80 ? 'bg-amber-500' : 'bg-emerald-500'"
+            :style="{ width: glmQuotaWindow.barWidth }"
+          />
+        </div>
+        <div class="flex items-center justify-between gap-2 text-[9px] text-gray-500 dark:text-gray-400">
+          <span class="truncate tabular-nums">
+            已用 {{ glmQuotaWindow.usedText }} / {{ glmQuotaWindow.limitText }}
           </span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 tabular-nums dark:bg-gray-800">
-            剩 {{ glmQuotaWindow.remainingText }}
+          <span class="shrink-0 tabular-nums">
+            剩余 {{ glmQuotaWindow.remainingText }}
+          </span>
+        </div>
+        <div class="mt-0.5 flex items-center justify-between gap-2 text-[9px] text-gray-500 dark:text-gray-400">
+          <span class="truncate">{{ glmQuotaWindow.policy }}</span>
+          <span class="shrink-0 tabular-nums">
+            {{ glmQuotaWindow.resetText }}
           </span>
         </div>
       </div>
@@ -1152,7 +1159,10 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
 
 interface GLMQuotaWindowInfo {
   utilization: number
+  barWidth: string
+  percentText: string
   resetsAt: string | null
+  resetText: string
   usedText: string
   limitText: string
   remainingText: string
@@ -1187,6 +1197,18 @@ function parseQuotaQuantity(raw: string): number | null {
   return parsed * multiplier
 }
 
+function formatGLMResetText(resetsAt: string | null): string {
+  if (!resetsAt) return '待刷新'
+  const diffMs = new Date(resetsAt).getTime() - Date.now()
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return '待刷新'
+
+  const mins = Math.floor(diffMs / 60_000)
+  const hours = Math.floor(mins / 60)
+  if (hours >= 24) return `重置 ${Math.floor(hours / 24)}d ${hours % 24}h`
+  if (hours > 0) return `重置 ${hours}h ${mins % 60}m`
+  return `重置 ${mins}m`
+}
+
 const glmQuotaWindow = computed((): GLMQuotaWindowInfo | null => {
   if (props.account.platform !== 'glm' || props.account.type !== 'apikey') return null
   const snapshot = extraValue('apikey_probe_quota')
@@ -1206,7 +1228,10 @@ const glmQuotaWindow = computed((): GLMQuotaWindowInfo | null => {
   const updated = quotaString(snapshot, 'updated_at') || '-'
   return {
     utilization,
+    barWidth: `${Math.min(Math.max(utilization, 0), 100)}%`,
+    percentText: `${Math.round(utilization)}%`,
     resetsAt,
+    resetText: formatGLMResetText(resetsAt),
     usedText: formatCompactNumber(used),
     limitText: formatCompactNumber(limit),
     remainingText: formatCompactNumber(boundedRemaining),

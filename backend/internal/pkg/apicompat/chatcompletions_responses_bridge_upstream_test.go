@@ -142,6 +142,47 @@ func TestChatCompletionsChunkToResponsesEvents_StrictLifecycle(t *testing.T) {
 	require.Equal(t, "function_call", terminal.Response.Output[2].Type)
 }
 
+func TestChatCompletionsChunkToResponsesEvents_FirstToolCallArgumentsNotDoubled(t *testing.T) {
+	state := NewChatCompletionsToResponsesStreamState("glm-5.2")
+	index := 0
+	finishReason := "tool_calls"
+	chunk := &ChatCompletionsChunk{
+		ID:    "chatcmpl-glm",
+		Model: "glm-5.2",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{
+				ToolCalls: []ChatToolCall{{
+					Index: &index,
+					ID:    "call_a",
+					Type:  "function",
+					Function: ChatFunctionCall{
+						Name:      "exec",
+						Arguments: `{"cmd":"ls"}`,
+					},
+				}},
+			},
+			FinishReason: &finishReason,
+		}},
+	}
+
+	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
+	argsDelta := ""
+	var sawArgsDone bool
+	for _, evt := range events {
+		if evt.Type == "response.function_call_arguments.delta" {
+			argsDelta += evt.Delta
+		}
+		if evt.Type == "response.function_call_arguments.done" {
+			sawArgsDone = true
+			require.Equal(t, `{"cmd":"ls"}`, evt.Arguments)
+		}
+	}
+
+	require.True(t, sawArgsDone)
+	require.Equal(t, `{"cmd":"ls"}`, argsDelta)
+}
+
 func TestChatCompletionsChunkToResponsesEvents_ReasoningOnlyFallbackMessage(t *testing.T) {
 	state := NewChatCompletionsToResponsesStreamState("deepseek-reasoner")
 	reasoning := "visible fallback"

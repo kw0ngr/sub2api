@@ -596,10 +596,10 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('5h|48|2099-06-25T08:00:00Z')
-    expect(wrapper.text()).toContain('GLM 真实额度')
-    expect(wrapper.text()).toContain('4.8M / 10.0M tok')
-    expect(wrapper.text()).toContain('剩 5.2M')
+    expect(wrapper.text()).toContain('GLM 5h额度')
+    expect(wrapper.text()).toContain('48%')
+    expect(wrapper.text()).toContain('已用 4.8M / 10.0M')
+    expect(wrapper.text()).toContain('剩余 5.2M')
     expect(wrapper.text()).not.toContain('A $3.52')
   })
 
