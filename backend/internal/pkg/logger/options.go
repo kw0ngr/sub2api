@@ -13,6 +13,8 @@ const (
 	defaultLogFilename      = "sub2api.log"
 )
 
+var defaultContainerDataDir = "/app/data"
+
 type InitOptions struct {
 	Level           string
 	Format          string
@@ -100,7 +102,16 @@ func resolveLogFilePath(explicit string) string {
 	if dataDir != "" {
 		return filepath.Join(dataDir, "logs", defaultLogFilename)
 	}
-	return DefaultContainerLogPath
+	if info, err := os.Stat(defaultContainerDataDir); err == nil && info.IsDir() {
+		f, err := os.CreateTemp(defaultContainerDataDir, ".sub2api-log-write-test-*")
+		if err == nil {
+			name := f.Name()
+			_ = f.Close()
+			_ = os.Remove(name)
+			return filepath.Join(defaultContainerDataDir, "logs", defaultLogFilename)
+		}
+	}
+	return filepath.Join("logs", defaultLogFilename)
 }
 
 func bootstrapOptions() InitOptions {

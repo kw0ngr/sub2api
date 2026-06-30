@@ -59,9 +59,10 @@ type geminiUsageTotalsBatchProvider interface {
 const geminiPrecheckCacheTTL = time.Minute
 
 const (
-	apiKey429Cooldown         = 60 * time.Minute
-	apiKey529Cooldown         = 120 * time.Minute
-	apiKeyServerErrorCooldown = 60 * time.Minute
+	apiKey429Cooldown              = 60 * time.Minute
+	apiKey529Cooldown              = 120 * time.Minute
+	apiKeyServerErrorCooldown      = 60 * time.Minute
+	apiKeyGLMModelOverloadCooldown = 5 * time.Minute
 )
 
 const (
@@ -780,9 +781,13 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		// 执行临时封禁，冷却后自动恢复调度。
 		now := time.Now()
 		until := now.Add(apiKeyServerErrorCooldown)
-		if account.Platform == PlatformGLM && isGLMResettableQuotaError(responseBody) {
-			if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
-				until = *parsed
+		if account.Platform == PlatformGLM {
+			if isGLMModelOverloadedError(responseBody) {
+				until = now.Add(apiKeyGLMModelOverloadCooldown)
+			} else if isGLMResettableQuotaError(responseBody) {
+				if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
+					until = *parsed
+				}
 			}
 		}
 		reason := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "API key temporary cooldown")

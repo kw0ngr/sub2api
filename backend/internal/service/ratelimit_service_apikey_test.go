@@ -73,6 +73,31 @@ func TestRateLimitService_HandleUpstreamError_GLMResettableQuotaUsesRetryAfter(t
 	require.WithinDuration(t, before.Add(2*time.Hour), *repo.lastTempUntil, after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_GLMModelOverloadedUsesShortCooldown(t *testing.T) {
+	// Given
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       115,
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"error":{"code":"1305","message":"[1305][该模型当前访问量过大，请您稍后再试][2026062911184039ca0c837ae84059]","type":"overloaded_error"},"type":"error"}`)
+
+	// When
+	before := time.Now()
+	shouldDisable := service.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{}, body)
+	after := time.Now()
+
+	// Then
+	require.True(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.NotNil(t, repo.lastTempUntil)
+	require.WithinDuration(t, before.Add(apiKeyGLMModelOverloadCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
+	require.Contains(t, repo.lastTempReason, "1305")
+}
+
 func TestRateLimitService_HandleUpstreamError_GeminiAPIKey400InvalidDisables(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

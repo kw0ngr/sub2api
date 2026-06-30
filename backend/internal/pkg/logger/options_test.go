@@ -11,9 +11,24 @@ import (
 
 func TestResolveLogFilePath_Default(t *testing.T) {
 	t.Setenv("DATA_DIR", "")
+	useDefaultContainerDataDir(t, filepath.Join(t.TempDir(), "missing"))
+
 	got := resolveLogFilePath("")
-	if got != DefaultContainerLogPath {
-		t.Fatalf("resolveLogFilePath() = %q, want %q", got, DefaultContainerLogPath)
+	want := filepath.Join("logs", "sub2api.log")
+	if got != want {
+		t.Fatalf("resolveLogFilePath() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveLogFilePath_WithWritableContainerDataDir(t *testing.T) {
+	t.Setenv("DATA_DIR", "")
+	dataDir := t.TempDir()
+	useDefaultContainerDataDir(t, dataDir)
+
+	got := resolveLogFilePath("")
+	want := filepath.Join(dataDir, "logs", "sub2api.log")
+	if got != want {
+		t.Fatalf("resolveLogFilePath() = %q, want %q", got, want)
 	}
 }
 
@@ -36,6 +51,8 @@ func TestResolveLogFilePath_ExplicitPath(t *testing.T) {
 
 func TestNormalizedOptions_InvalidFallback(t *testing.T) {
 	t.Setenv("DATA_DIR", "")
+	useDefaultContainerDataDir(t, filepath.Join(t.TempDir(), "missing"))
+
 	opts := InitOptions{
 		Level:           "TRACE",
 		Format:          "TEXT",
@@ -65,7 +82,7 @@ func TestNormalizedOptions_InvalidFallback(t *testing.T) {
 	if !out.Output.ToStdout {
 		t.Fatalf("normalized output should fallback to stdout")
 	}
-	if out.Output.FilePath != DefaultContainerLogPath {
+	if out.Output.FilePath != filepath.Join("logs", "sub2api.log") {
 		t.Fatalf("normalized file path = %q", out.Output.FilePath)
 	}
 	if out.Rotation.MaxSizeMB != 100 {
@@ -80,6 +97,16 @@ func TestNormalizedOptions_InvalidFallback(t *testing.T) {
 	if out.Sampling.Initial != 100 || out.Sampling.Thereafter != 100 {
 		t.Fatalf("normalized sampling defaults invalid: %+v", out.Sampling)
 	}
+}
+
+func useDefaultContainerDataDir(t *testing.T, dir string) {
+	t.Helper()
+
+	previous := defaultContainerDataDir
+	defaultContainerDataDir = dir
+	t.Cleanup(func() {
+		defaultContainerDataDir = previous
+	})
 }
 
 func TestBuildFileCore_InvalidPathFallback(t *testing.T) {

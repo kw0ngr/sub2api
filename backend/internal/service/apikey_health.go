@@ -434,6 +434,15 @@ func isGLMResettableQuotaError(responseBody []byte) bool {
 		containsAny(msg, "reset", "重置")
 }
 
+func isGLMModelOverloadedError(responseBody []byte) bool {
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	errType := strings.ToLower(strings.TrimSpace(extractUpstreamErrorType(responseBody)))
+	return code == "1305" ||
+		errType == "overloaded_error" ||
+		containsAny(msg, "模型当前访问量过大", "请您稍后再试")
+}
+
 func isClientRequestParameterValidationError(msg string) bool {
 	msg = strings.ToLower(strings.TrimSpace(msg))
 	if msg == "" {
