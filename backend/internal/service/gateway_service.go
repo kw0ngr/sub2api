@@ -5670,7 +5670,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	if mimicClaudeCode {
 		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
-		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+		setAnthropicCompatibleAPIKeyAuthHeaderForAccount(req.Header, account, token)
 	}
 
 	if getHeaderRaw(req.Header, "content-type") == "" {
@@ -6653,7 +6653,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	} else if isAnthropicAPIKeyMimic {
 		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
-		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+		setAnthropicCompatibleAPIKeyAuthHeaderForAccount(req.Header, account, token)
 	}
 
 	// 白名单透传 headers（恢复真实 wire casing）。
@@ -9836,7 +9836,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	if mimicClaudeCode {
 		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
-		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+		setAnthropicCompatibleAPIKeyAuthHeaderForAccount(req.Header, account, token)
 	}
 
 	if req.Header.Get("content-type") == "" {
@@ -9986,7 +9986,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	} else if ctAnthropicAPIKeyMimic {
 		setAnthropicAPIKeyMimicAuthHeader(req.Header, account, token)
 	} else {
-		setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, token)
+		setAnthropicCompatibleAPIKeyAuthHeaderForAccount(req.Header, account, token)
 	}
 
 	// 白名单透传 headers（恢复真实 wire casing）。

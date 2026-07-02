@@ -391,7 +391,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		if mimicClaudeCode {
 			setAnthropicAPIKeyMimicAuthHeader(req.Header, account, authToken)
 		} else {
-			setAnthropicCompatibleAPIKeyAuthHeader(req.Header, account.Platform, authToken)
+			setAnthropicCompatibleAPIKeyAuthHeaderForAccount(req.Header, account, authToken)
 		}
 	}
 

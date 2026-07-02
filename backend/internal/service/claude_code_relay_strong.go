@@ -16,7 +16,7 @@ func setAnthropicAPIKeyMimicAuthHeader(header http.Header, account *Account, tok
 		setHeaderRaw(header, "authorization", "Bearer "+token)
 		return
 	}
-	setAnthropicCompatibleAPIKeyAuthHeader(header, accountPlatform(account), token)
+	setAnthropicCompatibleAPIKeyAuthHeaderForAccount(header, account, token)
 }
 
 func accountPlatform(account *Account) string {

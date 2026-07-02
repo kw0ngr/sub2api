@@ -163,6 +163,63 @@ func TestGLMPlatformHelpers(t *testing.T) {
 	require.Equal(t, "glm", platform)
 }
 
+func TestAnthropicCompatibleAPIKeyAuthHeaderForGLMOllama(t *testing.T) {
+	tests := []struct {
+		name              string
+		account           *Account
+		wantAuthorization string
+		wantAPIKey        string
+	}{
+		{
+			name: "ollama hosted glm anthropic mode uses bearer",
+			account: &Account{
+				Platform: PlatformGLM,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"base_url":    "https://ollama.com",
+					"compat_mode": GLMCompatModeAnthropic,
+				},
+			},
+			wantAuthorization: "Bearer sk-test",
+		},
+		{
+			name: "official glm anthropic mode keeps x api key",
+			account: &Account{
+				Platform: PlatformGLM,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"base_url":    "https://open.bigmodel.cn/api/anthropic",
+					"compat_mode": GLMCompatModeAnthropic,
+				},
+			},
+			wantAPIKey: "sk-test",
+		},
+		{
+			name: "openrouter still uses bearer",
+			account: &Account{
+				Platform: PlatformOpenRouter,
+				Type:     AccountTypeAPIKey,
+			},
+			wantAuthorization: "Bearer sk-test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header := http.Header{}
+			header.Set("Authorization", "Bearer stale")
+			header.Set("x-api-key", "stale")
+			header.Set("x-goog-api-key", "stale")
+
+			setAnthropicCompatibleAPIKeyAuthHeaderForAccount(header, tt.account, "sk-test")
+
+			require.Equal(t, tt.wantAuthorization, getHeaderRaw(header, "authorization"))
+			require.Equal(t, tt.wantAPIKey, getHeaderRaw(header, "x-api-key"))
+			require.Empty(t, getHeaderRaw(header, "x-goog-api-key"))
+		})
+	}
+}
+
 func TestGatewayServiceSelectGLMAnthropicModeOnly(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(41001)

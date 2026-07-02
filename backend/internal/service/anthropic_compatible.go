@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -80,6 +81,49 @@ func setAnthropicCompatibleAPIKeyAuthHeader(header http.Header, platform string,
 		return
 	}
 	setHeaderRaw(header, "x-api-key", token)
+}
+
+func setAnthropicCompatibleAPIKeyAuthHeaderForAccount(header http.Header, account *Account, token string) {
+	if usesBearerForAnthropicCompatibleAPIKey(account) {
+		header.Del("authorization")
+		header.Del("x-api-key")
+		header.Del("x-goog-api-key")
+		setHeaderRaw(header, "authorization", "Bearer "+token)
+		return
+	}
+	setAnthropicCompatibleAPIKeyAuthHeader(header, accountPlatform(account), token)
+}
+
+func usesBearerForAnthropicCompatibleAPIKey(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if strings.TrimSpace(account.Platform) == PlatformOpenRouter {
+		return true
+	}
+	if strings.TrimSpace(account.Platform) != PlatformGLM {
+		return false
+	}
+	if !account.IsGLMAnthropicCompatible() {
+		return false
+	}
+	return isOllamaHostedBaseURL(account.GetCredential("base_url"))
+}
+
+func isOllamaHostedBaseURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "ollama.com" || strings.HasSuffix(host, ".ollama.com")
 }
 
 func mixedSchedulingPlatformsForGateway(platform string) []string {
