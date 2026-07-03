@@ -62,6 +62,7 @@ const (
 	apiKey429Cooldown              = 60 * time.Minute
 	apiKey529Cooldown              = 120 * time.Minute
 	apiKeyServerErrorCooldown      = 60 * time.Minute
+	apiKeyGLMGeneric429Cooldown    = 15 * time.Minute
 	apiKeyGLMModelOverloadCooldown = 5 * time.Minute
 )
 
@@ -750,11 +751,17 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		cooldown := apiKey429Cooldown
 		if account.Platform == PlatformGemini {
 			cooldown = s.GeminiCooldown(ctx, account)
+		} else if account.Platform == PlatformGLM {
+			cooldown = apiKeyGLMGeneric429Cooldown
 		}
 		now := time.Now()
 		resetAt := now.Add(cooldown)
 		if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
-			resetAt = *parsed
+			if account.Platform == PlatformGLM && !isGLMResettableQuotaError(responseBody) && parsed.Sub(now) > apiKeyGLMGeneric429Cooldown {
+				resetAt = now.Add(apiKeyGLMGeneric429Cooldown)
+			} else {
+				resetAt = *parsed
+			}
 		}
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
 			slog.Warn("apikey_rate_limit_set_failed", "account_id", account.ID, "status_code", statusCode, "error", err)
