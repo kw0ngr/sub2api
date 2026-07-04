@@ -4741,6 +4741,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type enabled->adaptive for %s", account.ID, reqModel)
 	}
 	if account.Platform == PlatformGLM {
+		body = DisableGLMAnthropicThinkingByDefault(body)
 		body = FilterGLMAnthropicUnsupportedBlocks(body)
 		if clampedBody, clamped := ClampGLMMaxTokens(body); clamped {
 			body = clampedBody

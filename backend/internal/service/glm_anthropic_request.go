@@ -78,3 +78,14 @@ func FilterGLMAnthropicUnsupportedBlocks(body []byte) []byte {
 	}
 	return out
 }
+
+func DisableGLMAnthropicThinkingByDefault(body []byte) []byte {
+	if gjson.GetBytes(body, "thinking").Exists() {
+		return body
+	}
+	out, err := sjson.SetBytes(body, "thinking.type", "disabled")
+	if err != nil {
+		return body
+	}
+	return out
+}
