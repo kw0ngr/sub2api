@@ -108,6 +108,15 @@
         </div>
       </div>
 
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class="btn btn-primary btn-sm" @click="openFacts">
+          查看完整链路
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" :disabled="!primaryResponseBody" @click="copyResponseBody">
+          复制响应内容
+        </button>
+      </div>
+
       <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
@@ -192,6 +201,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
@@ -205,6 +215,7 @@ interface Props {
 
 interface Emits {
   (e: 'update:show', value: boolean): void
+  (e: 'openFacts', payload: { request_id?: string; client_request_id?: string; error_id?: number | null }): void
 }
 
 const props = defineProps<Props>()
@@ -212,6 +223,7 @@ const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 const loading = ref(false)
 const detail = ref<OpsErrorDetail | null>(null)
@@ -307,6 +319,16 @@ function close() {
   emit('update:show', false)
 }
 
+function openFacts() {
+  const d = detail.value
+  if (!d) return
+  emit('openFacts', {
+    request_id: d.request_id,
+    client_request_id: d.client_request_id,
+    error_id: d.id
+  })
+}
+
 function prettyJSON(raw?: string): string {
   if (!raw) return 'N/A'
   try {
@@ -314,6 +336,12 @@ function prettyJSON(raw?: string): string {
   } catch {
     return raw
   }
+}
+
+async function copyResponseBody() {
+  const body = primaryResponseBody.value
+  if (!body) return
+  await copyToClipboard(prettyJSON(body), '响应内容已复制')
 }
 
 async function fetchDetail(id: number) {

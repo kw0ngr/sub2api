@@ -121,7 +121,12 @@
           @openErrorDetail="openError"
         />
 
-        <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="errorDetailsType" />
+        <OpsErrorDetailModal
+          v-model:show="showErrorModal"
+          :error-id="selectedErrorId"
+          :error-type="errorDetailsType"
+          @open-facts="openFacts"
+        />
 
         <OpsRequestDetailsModal
           v-model="showRequestDetails"
@@ -130,6 +135,15 @@
           :platform="platform"
           :group-id="groupId"
           @openErrorDetail="openError"
+          @open-facts="openFacts"
+        />
+
+        <OpsRequestFactDrawer
+          :show="showFactDrawer"
+          :request-id="factRequestId"
+          :client-request-id="factClientRequestId"
+          :error-id="factErrorId"
+          @close="showFactDrawer = false"
         />
       </template>
     </div>
@@ -167,6 +181,7 @@ import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
 import OpsOpenAITokenStatsCard from './components/OpsOpenAITokenStatsCard.vue'
 import OpsSystemLogTable from './components/OpsSystemLogTable.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
+import OpsRequestFactDrawer from './components/OpsRequestFactDrawer.vue'
 import OpsSettingsDialog from './components/OpsSettingsDialog.vue'
 import OpsAlertRulesCard from './components/OpsAlertRulesCard.vue'
 
@@ -183,6 +198,12 @@ const allowedTimeRanges = new Set<TimeRange>(['5m', '30m', '1h', '6h', '24h', 'c
 
 type QueryMode = 'auto' | 'raw' | 'preagg'
 const allowedQueryModes = new Set<QueryMode>(['auto', 'raw', 'preagg'])
+
+interface OpsFactPayload {
+  readonly request_id?: string
+  readonly client_request_id?: string
+  readonly error_id?: number | null
+}
 
 const loading = ref(true)
 const hasLoadedOnce = ref(false)
@@ -377,6 +398,11 @@ const requestDetailsPreset = ref<OpsRequestDetailsPreset>({
   sort: 'created_at_desc'
 })
 
+const showFactDrawer = ref(false)
+const factRequestId = ref('')
+const factClientRequestId = ref('')
+const factErrorId = ref<number | null>(null)
+
 const showSettingsDialog = ref(false)
 const showAlertRulesCard = ref(false)
 
@@ -510,6 +536,13 @@ function openError(id: number) {
   showErrorDetails.value = false
   showRequestDetails.value = false
   showErrorModal.value = true
+}
+
+function openFacts(payload: OpsFactPayload) {
+  factRequestId.value = payload.request_id || ''
+  factClientRequestId.value = payload.client_request_id || ''
+  factErrorId.value = payload.error_id ?? null
+  showFactDrawer.value = true
 }
 
 function buildApiParams() {

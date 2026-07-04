@@ -20,6 +20,7 @@ const logs = ref<OpsSystemLog[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
+const expandedLogIds = ref(new Set<number>())
 
 const health = ref<OpsSystemLogSinkHealth>({
   queue_depth: 0,
@@ -150,6 +151,22 @@ const formatSystemLogDetail = (row: OpsSystemLog) => {
 
   // 用空格拼接，交给 CSS 自动换行，尽量“填满再换行”。
   return parts.join('  ')
+}
+
+function hasExtra(row: OpsSystemLog): boolean {
+  return Object.keys(row.extra || {}).length > 0
+}
+
+function toggleLogExtra(id: number) {
+  const next = new Set(expandedLogIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedLogIds.value = next
+}
+
+function prettyExtra(value: unknown): string {
+  const rendered = JSON.stringify(value, null, 2)
+  return rendered || 'N/A'
 }
 
 const toRFC3339 = (value: string) => {
@@ -502,7 +519,19 @@ onMounted(async () => {
                 </span>
               </td>
               <td class="px-3 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-normal break-all">
-                {{ formatSystemLogDetail(row) }}
+                <div>{{ formatSystemLogDetail(row) }}</div>
+                <button
+                  v-if="hasExtra(row)"
+                  type="button"
+                  class="mt-2 rounded-md border border-gray-200 px-2 py-1 text-[10px] font-bold text-primary-700 hover:bg-primary-50 dark:border-dark-700 dark:text-primary-300 dark:hover:bg-dark-700"
+                  @click="toggleLogExtra(row.id)"
+                >
+                  {{ expandedLogIds.has(row.id) ? '收起 raw extra' : '展开 raw extra' }}
+                </button>
+                <pre
+                  v-if="expandedLogIds.has(row.id)"
+                  class="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-[11px] text-gray-800 dark:border-dark-700 dark:bg-dark-950 dark:text-gray-100"
+                ><code>{{ prettyExtra(row.extra) }}</code></pre>
               </td>
             </tr>
           </tbody>

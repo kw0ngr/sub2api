@@ -934,6 +934,66 @@ export interface OpsSystemLogSinkHealth {
   last_error?: string
 }
 
+export interface OpsDebugTrace {
+  id: string
+  created_at: string
+  request_id?: string
+  client_request_id?: string
+  method?: string
+  path?: string
+  inbound_endpoint?: string
+  upstream_endpoint?: string
+  user_id?: number | null
+  api_key_id?: number | null
+  account_id?: number | null
+  group_id?: number | null
+  platform?: string
+  model?: string
+  upstream_model?: string
+  stream: boolean
+  user_agent?: string
+  status_code: number
+  upstream_status_code?: number | null
+  error_type?: string
+  error_code?: string
+  error_message?: string
+  reason_code?: string
+  reason_hint?: string
+  request_body_bytes?: number | null
+  request_body_preview_json?: string | null
+  request_body_preview_strategy?: string
+  request_body_preview_truncated?: boolean
+  request_body_truncated_paths?: string[]
+  response_body_preview?: string | null
+  response_body_truncated?: boolean
+  request_headers_json?: string | null
+  fallback_triggered: boolean
+  account_switch_count?: number | null
+  scheduler_layer?: string
+  auth_latency_ms?: number | null
+  routing_latency_ms?: number | null
+  upstream_latency_ms?: number | null
+  response_latency_ms?: number | null
+  time_to_first_token_ms?: number | null
+  upstream_errors?: OpsUpstreamErrorEvent[]
+}
+
+export interface OpsDebugTraceQuery {
+  limit?: number
+  request_id?: string
+  path?: string
+  platform?: string
+  reason?: string
+  only_errors?: boolean
+  only_fallback?: boolean
+  account_id?: number
+}
+
+export interface OpsDebugTraceListResponse {
+  items: OpsDebugTrace[]
+  count: number
+}
+
 export interface OpsErrorLog {
   id: number
   created_at: string
@@ -1344,6 +1404,11 @@ export async function getSystemLogSinkHealth(): Promise<OpsSystemLogSinkHealth> 
   return data
 }
 
+export async function listDebugTraces(params: OpsDebugTraceQuery): Promise<OpsDebugTraceListResponse> {
+  const { data } = await apiClient.get<OpsDebugTraceListResponse>('/admin/ops/debug-traces', { params })
+  return data
+}
+
 // Advanced settings (DB-backed)
 export async function getAdvancedSettings(): Promise<OpsAdvancedSettings> {
   const { data } = await apiClient.get<OpsAdvancedSettings>('/admin/ops/advanced-settings')
@@ -1421,5 +1486,6 @@ export const opsAPI = {
   updateMetricThresholds,
   listSystemLogs,
   cleanupSystemLogs,
-  getSystemLogSinkHealth
+  getSystemLogSinkHealth,
+  listDebugTraces
 }
