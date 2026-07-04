@@ -12,6 +12,7 @@ const (
 	modelRateLimitsKey                 = "model_rate_limits"
 	antigravityGeminiModelRateLimitKey = "antigravity:gemini"
 	openAIImageGenerationRateLimitKey  = "openai:image_generation"
+	anthropicFableRateLimitKey         = "claude-fable-5"
 )
 
 // isRateLimitActiveForKey 检查指定 key 的限流是否生效
@@ -82,8 +83,16 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		if openAIImageGenerationRateLimitApplies(ctx, requestedModel, modelKey) && modelKey != openAIImageGenerationRateLimitKey {
 			keys = append(keys, openAIImageGenerationRateLimitKey)
 		}
+	case PlatformAnthropic:
+		if isAnthropicFableModel(modelKey) && modelKey != anthropicFableRateLimitKey {
+			keys = append(keys, anthropicFableRateLimitKey)
+		}
 	}
 	return keys
+}
+
+func isAnthropicFableModel(model string) bool {
+	return strings.Contains(strings.TrimSpace(model), "claude-fable-5")
 }
 
 func openAIImageGenerationRateLimitApplies(ctx context.Context, requestedModel, modelKey string) bool {

@@ -534,6 +534,7 @@ func TestIsNonRetryableRefreshError(t *testing.T) {
 		{name: "invalid_client", err: errors.New("invalid_client"), expected: true},
 		{name: "unauthorized_client", err: errors.New("unauthorized_client"), expected: true},
 		{name: "access_denied", err: errors.New("access_denied"), expected: true},
+		{name: "token_expired", err: errors.New("token_expired"), expected: true},
 		{name: "no_refresh_token", err: errors.New("no refresh token available"), expected: true},
 		{name: "invalid_grant_with_desc", err: errors.New("Error: invalid_grant - token revoked"), expected: true},
 		{name: "case_insensitive", err: errors.New("INVALID_GRANT"), expected: true},

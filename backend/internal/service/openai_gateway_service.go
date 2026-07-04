@@ -2496,6 +2496,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsAttempts,
 			)
 			wsResult.UpstreamModel = upstreamModel
+			if wsResult.BillingModel == "" {
+				wsResult.BillingModel = billingModel
+			}
 			return wsResult, nil
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
@@ -2614,6 +2617,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			RequestID:       resp.Header.Get("x-request-id"),
 			Usage:           *usage,
 			Model:           originalModel,
+			BillingModel:    billingModel,
 			UpstreamModel:   upstreamModel,
 			ServiceTier:     serviceTier,
 			ReasoningEffort: reasoningEffort,
@@ -4980,6 +4984,18 @@ func buildOpenAICompatibleChatCompletionsURL(platform, base string) string {
 	}
 	if strings.HasSuffix(normalized, "/v1") {
 		return normalized + "/chat/completions"
+	}
+	if strings.TrimSpace(platform) == PlatformGemini {
+		if strings.HasSuffix(normalized, "/v1beta/openai") {
+			return normalized + "/chat/completions"
+		}
+		if strings.HasSuffix(normalized, "/v1beta") {
+			return normalized + "/openai/chat/completions"
+		}
+		if strings.Contains(normalized, "generativelanguage.googleapis.com") {
+			return normalized + "/v1beta/openai/chat/completions"
+		}
+		return normalized + "/v1/chat/completions"
 	}
 	if strings.TrimSpace(platform) == PlatformGLM {
 		return normalized + "/chat/completions"

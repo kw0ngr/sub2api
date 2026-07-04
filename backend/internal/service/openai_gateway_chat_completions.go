@@ -307,7 +307,7 @@ func isThirdPartyOpenAICompatibleAccount(account *Account) bool {
 		return false
 	}
 	switch account.Platform {
-	case PlatformOpenRouter, PlatformDeepSeek:
+	case PlatformOpenRouter, PlatformDeepSeek, PlatformGemini:
 		return true
 	case PlatformGLM:
 		return account.IsGLMOpenAICompatible()

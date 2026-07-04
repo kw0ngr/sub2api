@@ -8904,10 +8904,13 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	if writer, ok := repo.(usageLogBestEffortWriter); ok {
 		if err := writer.CreateBestEffort(usageCtx, usageLog); err != nil {
 			logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
-			if IsUsageLogCreateDropped(err) {
-				return
+			fallbackCtx := usageCtx
+			fallbackCancel := func() {}
+			if IsUsageLogCreateDropped(err) && usageCtx.Err() != nil {
+				fallbackCtx, fallbackCancel = detachedBillingContext(context.Background())
 			}
-			if _, syncErr := repo.Create(usageCtx, usageLog); syncErr != nil {
+			defer fallbackCancel()
+			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
 			}
 		}

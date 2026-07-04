@@ -165,6 +165,36 @@ func TestIsModelRateLimited(t *testing.T) {
 			requestedModel: "claude-3-5-sonnet-20241022",
 			expected:       false,
 		},
+		{
+			name: "anthropic platform - fable family limit blocks anthropic-prefixed fable alias",
+			account: &Account{
+				Platform: PlatformAnthropic,
+				Extra: map[string]any{
+					modelRateLimitsKey: map[string]any{
+						"claude-fable-5": map[string]any{
+							"rate_limit_reset_at": future,
+						},
+					},
+				},
+			},
+			requestedModel: "anthropic.claude-fable-5",
+			expected:       true,
+		},
+		{
+			name: "anthropic platform - fable family limit does not block sonnet",
+			account: &Account{
+				Platform: PlatformAnthropic,
+				Extra: map[string]any{
+					modelRateLimitsKey: map[string]any{
+						"claude-fable-5": map[string]any{
+							"rate_limit_reset_at": future,
+						},
+					},
+				},
+			},
+			requestedModel: "claude-sonnet-4-5",
+			expected:       false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -429,6 +429,7 @@ func isNonRetryableRefreshError(err error) bool {
 		"invalid_client",      // 客户端配置错误
 		"unauthorized_client", // 客户端未授权
 		"access_denied",       // 访问被拒绝
+		"token_expired",       // refresh/access token 已过期且刷新不可恢复
 		"missing_project_id",  // 缺少 project_id
 		"no refresh token available",
 	}

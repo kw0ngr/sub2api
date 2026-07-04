@@ -185,6 +185,46 @@ func TestRateLimitService_HandleUpstreamError_AnthropicWindow429BeatsTempUnsched
 	require.True(t, repo.lastRateLimitResetAt.Equal(resetAt))
 }
 
+func TestRateLimitService_HandleUpstreamError_AnthropicFableWindow429UsesModelLimit(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	resetAt := time.Now().Add(7 * 24 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-7d_oi-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-7d_oi-reset", strconv.FormatInt(resetAt.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-7d_oi-utilization", "1.0")
+	account := &Account{
+		ID:       112,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusTooManyRequests),
+					"keywords":         []any{"rate limit"},
+					"duration_minutes": float64(10),
+				},
+			},
+		},
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		headers,
+		[]byte(`{"error":{"message":"rate limit exceeded"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 0, repo.rateLimitedCalls)
+	require.Equal(t, 0, repo.tempCalls)
+	require.Equal(t, []string{anthropicFableRateLimitKey}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+	require.True(t, repo.modelRateLimitResets[0].Equal(resetAt))
+}
+
 func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey429InsufficientQuotaPermanentDisable(t *testing.T) {
 	repo := &rateLimitAccountRepoStubWithSchedulable{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

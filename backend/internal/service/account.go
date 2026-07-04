@@ -855,7 +855,7 @@ func IsOpenAICompatiblePlatform(platform string) bool {
 
 func IsOpenAIChatCompletionsCompatiblePlatform(platform string) bool {
 	switch strings.TrimSpace(platform) {
-	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
+	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM, PlatformGemini:
 		return true
 	default:
 		return false
@@ -952,6 +952,9 @@ func (a *Account) GetOpenAIIDToken() string {
 func (a *Account) GetOpenAIApiKey() string {
 	if a == nil || a.Type != AccountTypeAPIKey {
 		return ""
+	}
+	if a.Platform == PlatformGemini {
+		return a.GetCredential("api_key")
 	}
 	if a.Platform == PlatformGLM {
 		if a.IsGLMOpenAICompatible() {

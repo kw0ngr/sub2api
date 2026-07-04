@@ -152,6 +152,12 @@ func TestIsAnthropicWindowExceeded(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "surpassed-threshold numeric one",
+			headers:  makeHeader("anthropic-ratelimit-unified-7d_oi-surpassed-threshold", "1.0"),
+			window:   "7d_oi",
+			expected: true,
+		},
+		{
 			name:     "surpassed-threshold True (case insensitive)",
 			headers:  makeHeader("anthropic-ratelimit-unified-7d-surpassed-threshold", "True"),
 			window:   "7d",

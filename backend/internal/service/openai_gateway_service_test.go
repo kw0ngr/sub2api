@@ -423,6 +423,14 @@ func TestBuildOpenAICompatibleChatCompletionsURL(t *testing.T) {
 		"https://api.deepseek.com/v1/chat/completions",
 		buildOpenAICompatibleChatCompletionsURL(PlatformDeepSeek, "https://api.deepseek.com/v1"),
 	)
+	require.Equal(t,
+		"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformGemini, "https://generativelanguage.googleapis.com"),
+	)
+	require.Equal(t,
+		"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformGemini, "https://generativelanguage.googleapis.com/v1beta/openai"),
+	)
 }
 
 func TestOpenAIGatewayService_SelectAccountWithSchedulerForPlatform_OpenRouter(t *testing.T) {
@@ -508,6 +516,61 @@ func TestOpenAIGatewayService_ForwardAsChatCompletions_OpenRouterUsesNativeChatE
 	require.Equal(t, 4, result.Usage.OutputTokens)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"chat.completion"`)
+}
+
+func TestOpenAIGatewayService_ForwardAsChatCompletions_GeminiUsesOpenAICompatibleEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"gemini-req"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl_gemini",
+				"object":"chat.completion",
+				"created":1,
+				"model":"gemini-3.1-flash-lite",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          100,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "AIza-test",
+			"base_url": "https://generativelanguage.googleapis.com",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"gemini-3.1-flash-lite","messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer AIza-test", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "gemini-3.1-flash-lite", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, 3, result.Usage.InputTokens)
+	require.Equal(t, 2, result.Usage.OutputTokens)
+	require.Equal(t, http.StatusOK, rec.Code)
 }
 
 func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error) {
