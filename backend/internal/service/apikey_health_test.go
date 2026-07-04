@@ -68,6 +68,13 @@ func TestClassifyAPIKeyStatusAction_AnthropicToolUseInputValidationIgnored(t *te
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_AnthropicUnsupportedEffortValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	body := []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"This model does not support effort level 'xhigh'. Supported levels: high, low, max, medium."}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
 	// Given
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}

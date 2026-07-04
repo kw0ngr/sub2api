@@ -461,6 +461,10 @@ func isClientRequestParameterValidationError(msg string) bool {
 		containsAny(msg, "input should be an object", "expected an object") {
 		return true
 	}
+	if strings.Contains(msg, "effort level") &&
+		strings.Contains(msg, "supported levels") {
+		return true
+	}
 	return false
 }
 
