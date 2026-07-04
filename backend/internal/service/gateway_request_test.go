@@ -1276,8 +1276,8 @@ func TestNormalizeClaudeOutputEffort(t *testing.T) {
 		{"LOW", strPtr("low")},
 		{"Max", strPtr("max")},
 		{" medium ", strPtr("medium")},
-		{"xhigh", strPtr("xhigh")},
-		{"XHIGH", strPtr("xhigh")},
+		{"xhigh", strPtr("max")},
+		{"XHIGH", strPtr("max")},
 		{"", nil},
 		{"unknown", nil},
 	}
@@ -1292,6 +1292,17 @@ func TestNormalizeClaudeOutputEffort(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNormalizeClaudeOutputEffortInBody_maps_xhigh_to_max(t *testing.T) {
+	// Given
+	body := []byte(`{"model":"claude-sonnet-4-6","output_config":{"effort":"xhigh"},"messages":[]}`)
+
+	// When
+	got := NormalizeClaudeOutputEffortInBody(body)
+
+	// Then
+	require.Equal(t, "max", gjson.GetBytes(got, "output_config.effort").String())
 }
 
 func BenchmarkParseGatewayRequest_New_Large(b *testing.B) {

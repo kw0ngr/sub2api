@@ -4595,6 +4595,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				passthroughModel = mappedModel
 			}
 		}
+		passthroughBody = NormalizeClaudeOutputEffortInBody(passthroughBody)
 		return s.forwardAnthropicAPIKeyPassthroughWithInput(ctx, c, account, anthropicPassthroughForwardInput{
 			Body:          passthroughBody,
 			RequestModel:  passthroughModel,
@@ -4732,6 +4733,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
 	body = FilterThinkingBlocksForModel(body, reqModel)
+	if account.Platform == PlatformAnthropic {
+		body = NormalizeClaudeOutputEffortInBody(body)
+	}
 	if normalizedBody, applied := NormalizeChineseLLMThinkingForModel(body, reqModel); applied {
 		body = normalizedBody
 		logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type enabled->adaptive for %s", account.ID, reqModel)

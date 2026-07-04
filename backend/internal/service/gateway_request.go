@@ -1018,11 +1018,30 @@ func NormalizeClaudeOutputEffort(raw string) *string {
 		return nil
 	}
 	switch value {
-	case "low", "medium", "high", "xhigh", "max":
+	case "low", "medium", "high", "max":
 		return &value
+	case "xhigh":
+		maxValue := "max"
+		return &maxValue
 	default:
 		return nil
 	}
+}
+
+func NormalizeClaudeOutputEffortInBody(body []byte) []byte {
+	raw := gjson.GetBytes(body, "output_config.effort")
+	if !raw.Exists() || raw.Type != gjson.String {
+		return body
+	}
+	normalized := NormalizeClaudeOutputEffort(raw.String())
+	if normalized == nil || *normalized == raw.String() {
+		return body
+	}
+	out, err := sjson.SetBytes(body, "output_config.effort", *normalized)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // =========================
