@@ -755,9 +755,10 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 			s.persistOpenAICodexSnapshot(ctx, account, headers)
 		}
 		cooldown := apiKey429Cooldown
-		if account.Platform == PlatformGemini {
+		switch account.Platform {
+		case PlatformGemini:
 			cooldown = s.GeminiCooldown(ctx, account)
-		} else if account.Platform == PlatformGLM {
+		case PlatformGLM:
 			cooldown = apiKeyGLMGeneric429Cooldown
 		}
 		now := time.Now()

@@ -516,7 +516,7 @@ func summarizeOpenAIImagesNoOutputBody(body []byte) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("no_image_output")
+	fmt.Fprint(&b, "no_image_output")
 	if lastType != "" {
 		fmt.Fprintf(&b, " last_event=%s", lastType)
 	}
