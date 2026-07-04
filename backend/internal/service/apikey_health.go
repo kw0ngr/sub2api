@@ -457,6 +457,10 @@ func isClientRequestParameterValidationError(msg string) bool {
 		containsAny(msg, "invalid value", "not valid", "supported values") {
 		return true
 	}
+	if strings.Contains(msg, "tool_use.input") &&
+		containsAny(msg, "input should be an object", "expected an object") {
+		return true
+	}
 	return false
 }
 

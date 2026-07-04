@@ -61,6 +61,13 @@ func TestClassifyAPIKeyStatusAction_GLMRedactedThinkingValidationIgnored(t *test
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_AnthropicToolUseInputValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	body := []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"messages.863.content.1.tool_use.input: Input should be an object"}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
 	// Given
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
