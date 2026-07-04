@@ -4748,6 +4748,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			logger.LegacyPrintf("service.gateway", "Account %d: clamped GLM max_tokens to %d", account.ID, glmAnthropicMaxTokens)
 		}
 	}
+	if account.Platform == PlatformDeepSeek {
+		body = disableDeepSeekAnthropicThinkingForForcedToolChoice(body)
+	}
 
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
 	setOpsUpstreamRequestBody(c, body)

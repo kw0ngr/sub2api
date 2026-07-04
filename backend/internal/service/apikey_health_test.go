@@ -75,6 +75,13 @@ func TestClassifyAPIKeyStatusAction_AnthropicUnsupportedEffortValidationIgnored(
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_DeepSeekThinkingToolChoiceValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"message":"Thinking mode does not support this tool_choice","type":"invalid_request_error"}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
 	// Given
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}

@@ -465,6 +465,11 @@ func isClientRequestParameterValidationError(msg string) bool {
 		strings.Contains(msg, "supported levels") {
 		return true
 	}
+	if strings.Contains(msg, "thinking mode") &&
+		strings.Contains(msg, "does not support") &&
+		strings.Contains(msg, "tool_choice") {
+		return true
+	}
 	return false
 }
 
