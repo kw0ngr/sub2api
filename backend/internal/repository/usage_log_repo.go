@@ -298,6 +298,9 @@ func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.
 	case r.bestEffortBatchCh <- req:
 	case <-ctx.Done():
 		return service.MarkUsageLogCreateDropped(ctx.Err())
+	default:
+		_, err := r.createSingle(ctx, r.sql, log)
+		return err
 	}
 
 	select {
@@ -415,6 +418,8 @@ func (r *usageLogRepository) createBatched(ctx context.Context, log *service.Usa
 	case r.createBatchCh <- req:
 	case <-ctx.Done():
 		return false, service.MarkUsageLogCreateNotPersisted(ctx.Err())
+	default:
+		return r.createSingle(ctx, r.sql, log)
 	}
 
 	select {

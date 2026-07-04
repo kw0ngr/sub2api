@@ -288,9 +288,8 @@ func TestUsageLogRepositoryCreateBestEffort_BatchPathDuplicateRequestID(t *testi
 	}, 3*time.Second, 20*time.Millisecond)
 }
 
-func TestUsageLogRepositoryCreateBestEffort_QueueFullWaitsUntilContextDone(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
+func TestUsageLogRepositoryCreateBestEffort_QueueFullUsesSyncFallback(t *testing.T) {
+	ctx := context.Background()
 	client := testEntClient(t)
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
 	repo.bestEffortBatchCh = make(chan usageLogBestEffortRequest, 1)
@@ -299,12 +298,13 @@ func TestUsageLogRepositoryCreateBestEffort_QueueFullWaitsUntilContextDone(t *te
 	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-best-effort-full-%d@example.com", time.Now().UnixNano())})
 	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-best-effort-full-" + uuid.NewString(), Name: "k"})
 	account := mustCreateAccount(t, client, &service.Account{Name: "acc-usage-best-effort-full-" + uuid.NewString()})
+	requestID := uuid.NewString()
 
 	err := repo.CreateBestEffort(ctx, &service.UsageLog{
 		UserID:       user.ID,
 		APIKeyID:     apiKey.ID,
 		AccountID:    account.ID,
-		RequestID:    uuid.NewString(),
+		RequestID:    requestID,
 		Model:        "claude-3",
 		InputTokens:  10,
 		OutputTokens: 20,
@@ -313,8 +313,10 @@ func TestUsageLogRepositoryCreateBestEffort_QueueFullWaitsUntilContextDone(t *te
 		CreatedAt:    time.Now().UTC(),
 	})
 
-	require.Error(t, err)
-	require.True(t, service.IsUsageLogCreateDropped(err))
+	require.NoError(t, err)
+	var count int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_logs WHERE request_id = $1 AND api_key_id = $2", requestID, apiKey.ID).Scan(&count))
+	require.Equal(t, 1, count)
 }
 
 func TestUsageLogRepositoryCreate_BatchPathCanceledContextMarksNotPersisted(t *testing.T) {
@@ -346,7 +348,7 @@ func TestUsageLogRepositoryCreate_BatchPathCanceledContextMarksNotPersisted(t *t
 	require.True(t, service.IsUsageLogCreateNotPersisted(err))
 }
 
-func TestUsageLogRepositoryCreate_BatchPathQueueFullMarksNotPersisted(t *testing.T) {
+func TestUsageLogRepositoryCreate_BatchPathQueueFullUsesSyncFallback(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
@@ -356,12 +358,13 @@ func TestUsageLogRepositoryCreate_BatchPathQueueFullMarksNotPersisted(t *testing
 	user := mustCreateUser(t, client, &service.User{Email: fmt.Sprintf("usage-create-full-%d@example.com", time.Now().UnixNano())})
 	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-usage-create-full-" + uuid.NewString(), Name: "k"})
 	account := mustCreateAccount(t, client, &service.Account{Name: "acc-usage-create-full-" + uuid.NewString()})
+	requestID := uuid.NewString()
 
 	inserted, err := repo.Create(ctx, &service.UsageLog{
 		UserID:       user.ID,
 		APIKeyID:     apiKey.ID,
 		AccountID:    account.ID,
-		RequestID:    uuid.NewString(),
+		RequestID:    requestID,
 		Model:        "claude-3",
 		InputTokens:  10,
 		OutputTokens: 20,
@@ -370,9 +373,11 @@ func TestUsageLogRepositoryCreate_BatchPathQueueFullMarksNotPersisted(t *testing
 		CreatedAt:    time.Now().UTC(),
 	})
 
-	require.False(t, inserted)
-	require.Error(t, err)
-	require.True(t, service.IsUsageLogCreateNotPersisted(err))
+	require.True(t, inserted)
+	require.NoError(t, err)
+	var count int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_logs WHERE request_id = $1 AND api_key_id = $2", requestID, apiKey.ID).Scan(&count))
+	require.Equal(t, 1, count)
 }
 
 func TestUsageLogRepositoryCreate_BatchPathCanceledAfterQueueMarksNotPersisted(t *testing.T) {
