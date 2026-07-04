@@ -470,6 +470,12 @@ func isClientRequestParameterValidationError(msg string) bool {
 		strings.Contains(msg, "tool_choice") {
 		return true
 	}
+	if strings.Contains(msg, "image generation items") &&
+		strings.Contains(msg, "without") &&
+		strings.Contains(msg, "id") &&
+		strings.Contains(msg, "not supported") {
+		return true
+	}
 	return false
 }
 

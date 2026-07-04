@@ -82,6 +82,13 @@ func TestClassifyAPIKeyStatusAction_DeepSeekThinkingToolChoiceValidationIgnored(
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_OpenAIImageGenerationItemIDValidationIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"message":"Image generation items without ` + "`id`" + ` are not supported for this request.","type":"invalid_request_error"}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
 	// Given
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
