@@ -71,6 +71,7 @@ func TestDefaultModelMappings_NewClaudeModels(t *testing.T) {
 	bedrockCases := map[string]string{
 		"claude-fable-5":  "anthropic.claude-fable-5",
 		"claude-opus-4-8": "us.anthropic.claude-opus-4-8-v1",
+		"claude-sonnet-5": "us.anthropic.claude-sonnet-5-v1",
 	}
 	for from, want := range bedrockCases {
 		if got := DefaultBedrockModelMapping[from]; got != want {

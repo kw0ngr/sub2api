@@ -67,10 +67,15 @@ describe('useModelWhitelist', () => {
     expect(getModelsByPlatform('anthropic')).toContain('claude-fable-5')
     expect(getModelsByPlatform('antigravity')).toContain('claude-fable-5')
     expect(getModelsByPlatform('anthropic')).toContain('claude-opus-4-8')
+    expect(getModelsByPlatform('anthropic')).toContain('claude-sonnet-5')
     expect(getModelsByPlatform('antigravity')).toContain('claude-opus-4-8')
   })
 
   it('antigravity 和 bedrock 预设映射包含新发布的 Claude 模型', () => {
+    expect(getPresetMappingsByPlatform('anthropic')).toContainEqual(expect.objectContaining({
+      from: 'claude-sonnet-5',
+      to: 'claude-sonnet-5'
+    }))
     expect(getPresetMappingsByPlatform('antigravity')).toContainEqual(expect.objectContaining({
       from: 'claude-fable-5',
       to: 'claude-fable-5'
@@ -86,6 +91,10 @@ describe('useModelWhitelist', () => {
     expect(getPresetMappingsByPlatform('bedrock')).toContainEqual(expect.objectContaining({
       from: 'claude-opus-4-8',
       to: 'us.anthropic.claude-opus-4-8-v1'
+    }))
+    expect(getPresetMappingsByPlatform('bedrock')).toContainEqual(expect.objectContaining({
+      from: 'claude-sonnet-5',
+      to: 'us.anthropic.claude-sonnet-5-v1'
     }))
   })
 
