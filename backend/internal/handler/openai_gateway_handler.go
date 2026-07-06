@@ -25,6 +25,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const openAICyberSafetyRetryMaxSwitches = 3
+
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
 	gatewayService          *service.OpenAIGatewayService
@@ -354,7 +356,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				cyberSafetyRetry := openAIFailoverIsCyberSafetyRetry(failoverErr)
+				effectiveMaxSwitches := maxAccountSwitches
+				if cyberSafetyRetry && effectiveMaxSwitches > openAICyberSafetyRetryMaxSwitches {
+					effectiveMaxSwitches = openAICyberSafetyRetryMaxSwitches
+				}
+				if !cyberSafetyRetry {
+					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				}
 				// 池模式：同账号重试
 				if failoverErr.RetryableOnSameAccount {
 					retryLimit := account.GetPoolModeRetryCount()
@@ -377,7 +386,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
-				if switchCount >= maxAccountSwitches {
+				if switchCount >= effectiveMaxSwitches {
 					h.handleFailoverExhausted(c, failoverErr, streamStarted)
 					return
 				}
@@ -388,7 +397,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("switch_count", switchCount),
-						zap.Int("max_switches", maxAccountSwitches),
+						zap.Int("max_switches", effectiveMaxSwitches),
 					)
 					h.handleFailoverExhausted(c, failoverErr, streamStarted)
 					return
@@ -397,7 +406,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
 					zap.Int("switch_count", switchCount),
-					zap.Int("max_switches", maxAccountSwitches),
+					zap.Int("max_switches", effectiveMaxSwitches),
 				)
 				continue
 			}
@@ -1756,6 +1765,10 @@ func openAIForwardErrorIsContentPolicyPassthrough(err error) bool {
 		}
 	}
 	return false
+}
+
+func openAIFailoverIsCyberSafetyRetry(failoverErr *service.UpstreamFailoverError) bool {
+	return failoverErr != nil && service.OpenAIResponseBodyLooksCyberSafetyBlocked(failoverErr.ResponseBody)
 }
 
 // errorResponse returns OpenAI API format error response

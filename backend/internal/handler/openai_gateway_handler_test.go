@@ -813,6 +813,15 @@ func TestOpenAIForwardErrorIsContentPolicyPassthrough(t *testing.T) {
 	require.False(t, openAIForwardErrorIsContentPolicyPassthrough(nil))
 }
 
+func TestOpenAIFailoverIsCyberSafetyRetry(t *testing.T) {
+	err := &service.UpstreamFailoverError{
+		ResponseBody: []byte(`{"error":{"type":"content_policy","code":"cyber_policy","message":"This content was flagged for possible cybersecurity risk. To get authorized for security work, join the Trusted Access for Cyber program."}}`),
+	}
+	require.True(t, openAIFailoverIsCyberSafetyRetry(err))
+	require.False(t, openAIFailoverIsCyberSafetyRetry(&service.UpstreamFailoverError{ResponseBody: []byte(`{"error":{"message":"rate limit"}}`)}))
+	require.False(t, openAIFailoverIsCyberSafetyRetry(nil))
+}
+
 func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject middleware.AuthSubject) *httptest.Server {
 	t.Helper()
 	groupID := int64(2)

@@ -365,6 +365,7 @@ const baseSettingsResponse = {
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   enable_glm_zcode_strong_mimic: false,
+  openai_cyber_safety_retry_enabled: false,
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,

@@ -438,6 +438,7 @@ export interface SystemSettings {
   enable_anthropic_cache_ttl_1h_injection: boolean;
   rewrite_message_cache_control: boolean;
   enable_glm_zcode_strong_mimic: boolean;
+  openai_cyber_safety_retry_enabled: boolean;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -604,6 +605,7 @@ export interface UpdateSettingsRequest {
   enable_anthropic_cache_ttl_1h_injection?: boolean;
   rewrite_message_cache_control?: boolean;
   enable_glm_zcode_strong_mimic?: boolean;
+  openai_cyber_safety_retry_enabled?: boolean;
   // Payment configuration
   payment_enabled?: boolean;
   payment_min_amount?: number;

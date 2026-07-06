@@ -2486,6 +2486,52 @@ func TestOpenAIStreamingResponseFailedInsufficientQuotaReturns429Failover(t *tes
 	require.NotContains(t, rec.Body.String(), "response.failed")
 }
 
+func TestOpenAIStreamingCyberSafetyResponseRetriesWhenEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+		fingerprintUnification: true,
+		cchSigning:             true,
+		openAICyberSafetyRetry: true,
+		expiresAt:              time.Now().Add(time.Minute).UnixNano(),
+	})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+			fingerprintUnification: true,
+			cchSigning:             true,
+			expiresAt:              time.Now().Add(time.Minute).UnixNano(),
+		})
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, settingService: &SettingService{}}
+	account := &Account{ID: 77, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	require.True(t, svc.settingService.IsOpenAICyberSafetyRetryEnabled(context.Background()))
+	require.True(t, OpenAIErrorLooksCyberSafetyBlocked("This content was flagged for possible cybersecurity risk"))
+	body := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_cyber"}}`,
+		`data: {"type":"response.in_progress","response":{"id":"resp_cyber"}}`,
+		`data: {"type":"response.failed","response":{"error":{"type":"content_policy","code":"cyber_policy","message":"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber"}}}`,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_cyber"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	usage, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
+
+	require.NotNil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusConflict, failoverErr.StatusCode)
+	require.True(t, OpenAIResponseBodyLooksCyberSafetyBlocked(failoverErr.ResponseBody))
+	require.NotContains(t, rec.Body.String(), "response.failed")
+	require.Empty(t, rec.Body.String())
+}
+
 func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

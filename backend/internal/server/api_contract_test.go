@@ -598,6 +598,7 @@ func TestAPIContracts(t *testing.T) {
 					"enable_fingerprint_unification": true,
 					"enable_glm_zcode_strong_mimic": false,
 					"enable_metadata_passthrough": false,
+					"openai_cyber_safety_retry_enabled": false,
 					"web_search_emulation_enabled": false,
 					"openai_fast_policy_settings": {
 						"rules": [

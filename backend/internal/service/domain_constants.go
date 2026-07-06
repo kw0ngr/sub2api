@@ -272,6 +272,8 @@ const (
 	SettingKeyRewriteMessageCacheControl = "rewrite_message_cache_control"
 	// SettingKeyEnableGLMZCodeStrongMimic 是否为官方 GLM Anthropic 直连启用 ZCode 重度伪装（默认 false）
 	SettingKeyEnableGLMZCodeStrongMimic = "enable_glm_zcode_strong_mimic"
+	// SettingKeyOpenAICyberSafetyRetry 是否屏蔽 OpenAI 网络安全策略响应并换账号重试（默认 false）
+	SettingKeyOpenAICyberSafetyRetry = "openai_cyber_safety_retry_enabled"
 	// SettingKeyClaudeCodeFingerprintProfiles 自动捕获的 Claude Code HTTP 指纹样本库
 	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
 	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习

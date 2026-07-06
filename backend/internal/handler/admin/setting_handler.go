@@ -179,6 +179,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableAnthropicCacheTTL1hInjection:   settings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:           settings.RewriteMessageCacheControl,
 		EnableGLMZCodeStrongMimic:            settings.EnableGLMZCodeStrongMimic,
+		OpenAICyberSafetyRetryEnabled:        settings.OpenAICyberSafetyRetryEnabled,
 		WebSearchEmulationEnabled:            settings.WebSearchEmulationEnabled,
 		BalanceLowNotifyEnabled:              settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:            settings.BalanceLowNotifyThreshold,
@@ -955,6 +956,7 @@ type UpdateSettingsRequest struct {
 	EnableAnthropicCacheTTL1hInjection *bool `json:"enable_anthropic_cache_ttl_1h_injection"`
 	RewriteMessageCacheControl         *bool `json:"rewrite_message_cache_control"`
 	EnableGLMZCodeStrongMimic          *bool `json:"enable_glm_zcode_strong_mimic"`
+	OpenAICyberSafetyRetryEnabled      *bool `json:"openai_cyber_safety_retry_enabled"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled              *bool                   `json:"balance_low_notify_enabled"`
@@ -1566,6 +1568,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableGLMZCodeStrongMimic
 		}(),
+		OpenAICyberSafetyRetryEnabled: func() bool {
+			if req.OpenAICyberSafetyRetryEnabled != nil {
+				return *req.OpenAICyberSafetyRetryEnabled
+			}
+			return previousSettings.OpenAICyberSafetyRetryEnabled
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2091,6 +2099,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableGLMZCodeStrongMimic != after.EnableGLMZCodeStrongMimic {
 		changed = append(changed, "enable_glm_zcode_strong_mimic")
+	}
+	if before.OpenAICyberSafetyRetryEnabled != after.OpenAICyberSafetyRetryEnabled {
+		changed = append(changed, "openai_cyber_safety_retry_enabled")
 	}
 	// Balance & quota notification
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

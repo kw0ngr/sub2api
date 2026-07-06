@@ -109,6 +109,7 @@ type SystemSettings struct {
 	EnableAnthropicCacheTTL1hInjection bool // 是否对 Anthropic OAuth/SetupToken 已有 ephemeral cache_control 注入 ttl=1h（默认 false）
 	RewriteMessageCacheControl         bool // 是否主动改写 messages cache_control 断点（默认 false）
 	EnableGLMZCodeStrongMimic          bool // 是否为官方 GLM Anthropic 直连启用 ZCode 重度伪装（默认 false）
+	OpenAICyberSafetyRetryEnabled      bool // 是否屏蔽 OpenAI 网络安全策略响应并换账号重试（默认 false）
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool // 是否启用 web search 模拟

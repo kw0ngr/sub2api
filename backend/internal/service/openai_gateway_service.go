@@ -3188,6 +3188,34 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	return true
 }
 
+func OpenAIErrorLooksCyberSafetyBlocked(text string) bool {
+	combined := strings.ToLower(strings.TrimSpace(text))
+	if combined == "" {
+		return false
+	}
+	return containsAny(combined,
+		"possible cybersecurity risk",
+		"trusted access for cyber",
+		"high-risk cyber",
+		"cyber_policy",
+	)
+}
+
+func OpenAIResponseBodyLooksCyberSafetyBlocked(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	code, errType, message := openAIStreamFailedEventFields(body, "")
+	return OpenAIErrorLooksCyberSafetyBlocked(message + " " + code + " " + errType + " " + string(body))
+}
+
+func (s *OpenAIGatewayService) shouldRetryOpenAICyberSafety(ctx context.Context, payload []byte, message string) bool {
+	if s == nil || s.settingService == nil || !s.settingService.IsOpenAICyberSafetyRetryEnabled(ctx) {
+		return false
+	}
+	return OpenAIErrorLooksCyberSafetyBlocked(message) || OpenAIResponseBodyLooksCyberSafetyBlocked(payload)
+}
+
 func openAIStreamFailedEventFields(payload []byte, fallbackMessage string) (code string, errType string, message string) {
 	if len(payload) > 0 {
 		for _, path := range []string{"response.error.code", "error.code", "code"} {
@@ -3310,6 +3338,34 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	}
 }
 
+func (s *OpenAIGatewayService) newOpenAICyberSafetyRetryError(c *gin.Context, account *Account, upstreamRequestID string, payload []byte, message string) *UpstreamFailoverError {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "OpenAI response was blocked by cybersecurity policy"
+	}
+	body := openAIStreamFailedEventErrorBody(payload, message)
+	if c != nil {
+		setOpsUpstreamError(c, http.StatusConflict, message, "")
+		event := OpsUpstreamErrorEvent{
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: http.StatusConflict,
+			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
+			Kind:               "cyber_safety_retry",
+			Message:            message,
+		}
+		if account != nil {
+			event.Platform = account.Platform
+			event.AccountID = account.ID
+			event.AccountName = account.Name
+		}
+		appendOpsUpstreamError(c, event)
+	}
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusConflict,
+		ResponseBody: body,
+	}
+}
+
 func (s *OpenAIGatewayService) recordOpenAIStreamFailedSideEffects(
 	ctx context.Context,
 	account *Account,
@@ -3394,9 +3450,15 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if s.shouldRetryOpenAICyberSafety(ctx, dataBytes, failedMessage) {
+						return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+							s.newOpenAICyberSafetyRetryError(c, account, upstreamRequestID, dataBytes, failedMessage)
+					}
+					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+						return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+					}
 				}
 				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
 				forceFlushFailedEvent = true
@@ -4182,10 +4244,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					sawFailedEvent = true
-					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
-					return
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if s.shouldRetryOpenAICyberSafety(ctx, dataBytes, failedMessage) {
+						sawFailedEvent = true
+						streamFailoverErr = s.newOpenAICyberSafetyRetryError(c, account, upstreamRequestID, dataBytes, failedMessage)
+						return
+					}
+					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+						sawFailedEvent = true
+						streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
+						return
+					}
 				}
 				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
 				forceFlushFailedEvent = true
