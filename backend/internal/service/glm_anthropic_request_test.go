@@ -31,3 +31,15 @@ func TestDisableGLMAnthropicThinkingByDefault_preserves_explicit_thinking(t *tes
 	require.Equal(t, "enabled", gjson.GetBytes(got, "thinking.type").String())
 	require.Equal(t, int64(1024), gjson.GetBytes(got, "thinking.budget_tokens").Int())
 }
+
+func TestFilterRedactedThinkingBlocks_removes_unsupported_blocks(t *testing.T) {
+	// Given
+	body := []byte(`{"messages":[{"role":"assistant","content":[{"type":"redacted_thinking","data":"sealed"},{"type":"text","text":"ok"}]}]}`)
+
+	// When
+	got := FilterRedactedThinkingBlocks(body)
+
+	// Then
+	require.False(t, gjson.GetBytes(got, "messages.0.content.#(type==\"redacted_thinking\")").Exists())
+	require.Equal(t, "ok", gjson.GetBytes(got, "messages.0.content.0.text").String())
+}

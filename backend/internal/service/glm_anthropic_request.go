@@ -9,6 +9,10 @@ import (
 )
 
 func FilterGLMAnthropicUnsupportedBlocks(body []byte) []byte {
+	return FilterRedactedThinkingBlocks(body)
+}
+
+func FilterRedactedThinkingBlocks(body []byte) []byte {
 	if !bytes.Contains(body, []byte("redacted_thinking")) {
 		return body
 	}

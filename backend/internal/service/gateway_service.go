@@ -4749,6 +4749,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 	}
 	if account.Platform == PlatformDeepSeek {
+		body = FilterRedactedThinkingBlocks(body)
 		body = disableDeepSeekAnthropicThinkingForForcedToolChoice(body)
 	}
 
