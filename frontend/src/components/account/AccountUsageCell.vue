@@ -285,6 +285,60 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
+
+    <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+      <div v-else-if="error" class="text-xs text-red-500">{{ error }}</div>
+      <div v-else-if="usageInfo" class="max-w-[240px] space-y-1">
+        <div class="flex flex-wrap items-center gap-1">
+          <span
+            v-if="usageInfo.grok_entitlement_status"
+            class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            {{ usageInfo.grok_entitlement_status }}
+          </span>
+          <span
+            v-if="usageInfo.grok_quota_snapshot_state"
+            class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+          >
+            {{ usageInfo.grok_quota_snapshot_state }}
+          </span>
+        </div>
+        <div v-if="grokQuotaSummary" class="rounded-md border border-slate-400/20 bg-slate-500/[0.06] px-2 py-1.5 text-[10px] text-gray-600 dark:text-gray-300">
+          <div v-for="row in grokQuotaSummary" :key="row.label" class="flex items-center justify-between gap-2">
+            <span>{{ row.label }}</span>
+            <span class="tabular-nums">{{ row.value }}</span>
+          </div>
+        </div>
+        <div v-if="usageInfo.grok_retry_after_seconds" class="text-[10px] text-amber-600 dark:text-amber-400">
+          Retry-After {{ formatDurationSeconds(usageInfo.grok_retry_after_seconds) }}
+        </div>
+        <div v-if="usageInfo.grok_local_usage" class="flex flex-wrap gap-1 text-[9px] text-gray-500 dark:text-gray-400">
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ usageInfo.grok_local_usage.requests }} req</span>
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ formatCompactNumber(usageInfo.grok_local_usage.tokens) }}</span>
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">${{ usageInfo.grok_local_usage.cost.toFixed(2) }}</span>
+        </div>
+        <div v-if="usageInfo.error" class="truncate text-[10px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
+          {{ usageInfo.error }}
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-900/30"
+          :disabled="activeQueryLoading"
+          @click="loadActiveUsage"
+        >
+          {{ activeQueryLoading ? 'Querying...' : 'Probe xAI quota' }}
+        </button>
+      </div>
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
       <!-- Auth Type + Tier Badge (first line) -->
@@ -551,6 +605,9 @@ const shouldFetchUsage = computed(() => {
     return props.account.type === 'oauth'
   }
   if (props.account.platform === 'openai') {
+    return props.account.type === 'oauth'
+  }
+  if (props.account.platform === 'grok') {
     return props.account.type === 'oauth'
   }
   return false
@@ -1081,6 +1138,11 @@ const attachVisibilityObserver = () => {
 const loadActiveUsage = async () => {
   activeQueryLoading.value = true
   try {
+    if (props.account.platform === 'grok') {
+      await adminAPI.grok.queryQuota(props.account.id)
+      await loadUsage({ bypassCache: true })
+      return
+    }
     usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
     _usageCache.set(props.account.id, { data: usageInfo.value, ts: Date.now() })
   } catch (e: any) {
@@ -1089,6 +1151,33 @@ const loadActiveUsage = async () => {
     activeQueryLoading.value = false
   }
 }
+
+
+function formatDurationSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const mins = Math.ceil(seconds / 60)
+  if (mins < 60) return `${mins}m`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+function formatGrokQuotaWindow(label: string, window?: { limit?: number | null; remaining?: number | null; reset_at?: string | null } | null) {
+  if (!window || window.limit == null || window.remaining == null) return null
+  const used = Math.max(0, window.limit - window.remaining)
+  const reset = window.reset_at ? ` · ${formatGLMResetText(window.reset_at)}` : ''
+  return {
+    label,
+    value: `${formatCompactNumber(used)} / ${formatCompactNumber(window.limit)}${reset}`
+  }
+}
+
+const grokQuotaSummary = computed(() => {
+  const rows = [
+    formatGrokQuotaWindow('Requests', usageInfo.value?.grok_request_quota),
+    formatGrokQuotaWindow('Tokens', usageInfo.value?.grok_token_quota)
+  ].filter((row): row is { label: string; value: string } => row !== null)
+  return rows.length > 0 ? rows : null
+})
 
 // ===== API Key quota progress bars =====
 

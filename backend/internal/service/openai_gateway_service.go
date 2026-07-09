@@ -239,8 +239,14 @@ type OpenAIForwardResult struct {
 	ClientDisconnect bool
 
 	// Image generation billing fields.
-	ImageCount int
-	ImageSize  string
+	ImageCount       int
+	ImageSize        string
+	ImageInputSize   string
+	ImageOutputSizes []string
+
+	VideoCount           int
+	VideoResolution      string
+	VideoDurationSeconds int
 
 	// WS HTTP bridge replay state for multi-turn oversized requests.
 	wsReplayInput       []json.RawMessage
@@ -335,6 +341,7 @@ type OpenAIGatewayService struct {
 	httpUpstream          HTTPUpstream
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
+	grokTokenProvider     *GrokTokenProvider
 	toolCorrector         *CodexToolCorrector
 	openaiWSResolver      OpenAIWSProtocolResolver
 	upstreamFaultMapper   *UpstreamFaultMapper
@@ -423,6 +430,13 @@ func NewOpenAIGatewayService(
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
+}
+
+func (s *OpenAIGatewayService) SetGrokTokenProvider(provider *GrokTokenProvider) {
+	if s == nil {
+		return
+	}
+	s.grokTokenProvider = provider
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）
@@ -1846,7 +1860,15 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 	switch account.Type {
 	case AccountTypeOAuth:
 		if account.Platform == PlatformGrok {
-			accessToken, err := s.getGrokOAuthAccessToken(ctx, account)
+			var (
+				accessToken string
+				err         error
+			)
+			if s != nil && s.grokTokenProvider != nil {
+				accessToken, err = s.grokTokenProvider.GetAccessToken(ctx, account)
+			} else {
+				accessToken, err = s.getGrokOAuthAccessToken(ctx, account)
+			}
 			if err != nil {
 				return "", "", err
 			}
@@ -5449,7 +5471,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
 	billingModels := openAIRecordUsageBillingModelCandidates(result, input, billingModel)
-	cost, err = s.calculateOpenAIRecordUsageCost(ctx, apiKey, billingModels, tokens, multiplier, serviceTier)
+	mediaCount, mediaSize := openAIMediaBillingUnits(result)
+	if mediaCount > 0 {
+		cost = s.calculateOpenAIRecordUsageMediaCost(apiKey, billingModels, mediaSize, mediaCount, multiplier)
+	} else {
+		cost, err = s.calculateOpenAIRecordUsageCost(ctx, apiKey, billingModels, tokens, multiplier, serviceTier)
+	}
 	if err != nil {
 		if !isUsagePricingUnavailableError(err) {
 			return err
@@ -5509,6 +5536,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		CacheCreationTokens: result.Usage.CacheCreationInputTokens,
 		CacheReadTokens:     result.Usage.CacheReadInputTokens,
 		ImageOutputTokens:   result.Usage.ImageOutputTokens,
+		ImageCount:          mediaCount,
+		ImageSize:           optionalTrimmedStringPtr(mediaSize),
 	}
 	if cost != nil {
 		usageLog.InputCost = cost.InputCost
@@ -5657,6 +5686,39 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(ctx context.Contex
 		lastErr = err
 	}
 	return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing models %s: %w", strings.Join(billingModels, ","), lastErr)
+}
+
+func openAIMediaBillingUnits(result *OpenAIForwardResult) (int, string) {
+	if result == nil {
+		return 0, ""
+	}
+	if result.VideoCount > 0 {
+		seconds := result.VideoDurationSeconds
+		if seconds <= 0 {
+			seconds = result.VideoCount
+		}
+		return seconds, result.VideoResolution
+	}
+	return result.ImageCount, result.ImageSize
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIRecordUsageMediaCost(apiKey *APIKey, billingModels []string, mediaSize string, mediaCount int, multiplier float64) *CostBreakdown {
+	if s == nil || s.billingService == nil || mediaCount <= 0 {
+		return &CostBreakdown{BillingMode: string(BillingModeImage)}
+	}
+	model := ""
+	if len(billingModels) > 0 {
+		model = billingModels[0]
+	}
+	var groupConfig *ImagePriceConfig
+	if apiKey != nil && apiKey.Group != nil {
+		groupConfig = &ImagePriceConfig{
+			Price1K: apiKey.Group.ImagePrice1K,
+			Price2K: apiKey.Group.ImagePrice2K,
+			Price4K: apiKey.Group.ImagePrice4K,
+		}
+	}
+	return s.billingService.CalculateImageCost(model, mediaSize, mediaCount, groupConfig, multiplier)
 }
 
 func isUsagePricingUnavailableError(err error) bool {

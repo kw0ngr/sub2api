@@ -104,29 +104,37 @@ func RegisterGatewayRoutes(
 			h.Gateway.ChatCompletions(c)
 		})
 		gateway.POST("/images/generations", func(c *gin.Context) {
-			if getGroupPlatform(c) != service.PlatformOpenAI {
+			switch getGroupPlatform(c) {
+			case service.PlatformOpenAI:
+				h.OpenAIGateway.Images(c)
+			case service.PlatformGrok:
+				h.OpenAIGateway.GrokImages(c)
+			default:
 				c.JSON(http.StatusNotFound, gin.H{
 					"error": gin.H{
 						"type":    "not_found_error",
 						"message": "Images API is not supported for this platform",
 					},
 				})
-				return
 			}
-			h.OpenAIGateway.Images(c)
 		})
 		gateway.POST("/images/edits", func(c *gin.Context) {
-			if getGroupPlatform(c) != service.PlatformOpenAI {
+			switch getGroupPlatform(c) {
+			case service.PlatformOpenAI:
+				h.OpenAIGateway.Images(c)
+			case service.PlatformGrok:
+				h.OpenAIGateway.GrokImages(c)
+			default:
 				c.JSON(http.StatusNotFound, gin.H{
 					"error": gin.H{
 						"type":    "not_found_error",
 						"message": "Images API is not supported for this platform",
 					},
 				})
-				return
 			}
-			h.OpenAIGateway.Images(c)
 		})
+		gateway.POST("/videos/generations", requireGrokMedia(h.OpenAIGateway.GrokVideoGeneration))
+		gateway.GET("/videos/:request_id", requireGrokMedia(h.OpenAIGateway.GrokVideoStatus))
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -171,29 +179,37 @@ func RegisterGatewayRoutes(
 		h.Gateway.ChatCompletions(c)
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) != service.PlatformOpenAI {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.Images(c)
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokImages(c)
+		default:
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": gin.H{
 					"type":    "not_found_error",
 					"message": "Images API is not supported for this platform",
 				},
 			})
-			return
 		}
-		h.OpenAIGateway.Images(c)
 	})
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) != service.PlatformOpenAI {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.Images(c)
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokImages(c)
+		default:
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": gin.H{
 					"type":    "not_found_error",
 					"message": "Images API is not supported for this platform",
 				},
 			})
-			return
 		}
-		h.OpenAIGateway.Images(c)
 	})
+	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, requireGrokMedia(h.OpenAIGateway.GrokVideoGeneration))
+	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, requireGrokMedia(h.OpenAIGateway.GrokVideoStatus))
 
 	// Antigravity 模型列表
 	r.GET("/antigravity/models", gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.AntigravityModels)
@@ -237,4 +253,19 @@ func getGroupPlatform(c *gin.Context) string {
 		return ""
 	}
 	return apiKey.Group.Platform
+}
+
+func requireGrokMedia(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": gin.H{
+					"type":    "not_found_error",
+					"message": "Grok media API is not supported for this platform",
+				},
+			})
+			return
+		}
+		next(c)
+	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 type Account struct {
@@ -943,6 +944,31 @@ func (a *Account) GetOpenAIBaseURL() string {
 		}
 	}
 	return DefaultAPIKeyBaseURL(a.Platform)
+}
+
+func (a *Account) GetGrokBaseURL() string {
+	if a == nil || !a.IsGrok() {
+		return ""
+	}
+	baseURL := strings.TrimSpace(a.GetCredential("base_url"))
+	if baseURL != "" {
+		return baseURL
+	}
+	return xai.DefaultBaseURL
+}
+
+func (a *Account) GetGrokAccessToken() string {
+	if a == nil || !a.IsGrok() {
+		return ""
+	}
+	return a.GetCredential("access_token")
+}
+
+func (a *Account) GetGrokRefreshToken() string {
+	if a == nil || !a.IsGrokOAuth() {
+		return ""
+	}
+	return a.GetCredential("refresh_token")
 }
 
 func (a *Account) GetOpenAIAccessToken() string {

@@ -1080,10 +1080,17 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 		return "", errors.New("account is nil")
 	}
 	var targetURL string
-	switch account.Type {
-	case AccountTypeOAuth:
+	switch {
+	case account.Platform == PlatformGrok:
+		baseURL := account.GetGrokBaseURL()
+		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+		if err != nil {
+			return "", err
+		}
+		targetURL = buildOpenAIResponsesURL(validatedURL)
+	case account.Type == AccountTypeOAuth:
 		targetURL = chatgptCodexURL
-	case AccountTypeAPIKey:
+	case account.Type == AccountTypeAPIKey:
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
 			targetURL = openaiPlatformAPIURL
@@ -2857,7 +2864,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return payload, nil
 	}
 
-	if s.shouldBridgeOpenAIWSHTTP(firstPayload.payloadBytes, firstPayload.previousResponseID) {
+	if account.Platform == PlatformGrok || s.shouldBridgeOpenAIWSHTTP(firstPayload.payloadBytes, firstPayload.previousResponseID) {
 		logOpenAIWSModeInfo(
 			"ingress_ws_http_bridge_start account_id=%d account_type=%s payload_bytes=%d threshold_bytes=%d has_session_hash=%v store_disabled=%v",
 			account.ID,

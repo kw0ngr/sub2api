@@ -3209,6 +3209,14 @@ export default {
                     validateAndCreate: 'Validate & Create',
                     pleaseEnterRefreshToken: 'Please enter Refresh Token',
                     failedToValidateRT: 'Failed to validate Refresh Token'
+                  },
+                  grok: {
+                    title: 'Grok / xAI Account Authorization',
+                    failedToGenerateUrl: 'Failed to generate Grok auth URL',
+                    missingExchangeParams: 'Missing code, session ID, or state',
+                    failedToExchangeCode: 'Failed to exchange Grok auth code',
+                    pleaseEnterRefreshToken: 'Please enter Refresh Token',
+                    failedToValidateRT: 'Failed to validate Refresh Token'
                   }
                 },      // Gemini specific (platform-wide)
       gemini: {

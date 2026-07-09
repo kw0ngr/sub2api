@@ -1,20 +1,10 @@
 package xai
 
-import (
-	"net/url"
-	"os"
-	"strings"
-)
-
-const (
-	DefaultBaseURL  = "https://api.x.ai/v1"
-	DefaultTokenURL = "https://auth.x.ai/oauth2/token"
-	DefaultClientID = "b1a00492-073a-47ea-816f-4c329264a828"
-)
-
+// Model describes an xAI model in OpenAI-compatible /models shape.
 type Model struct {
 	ID          string `json:"id"`
 	Object      string `json:"object"`
+	Created     int64  `json:"created,omitempty"`
 	OwnedBy     string `json:"owned_by"`
 	DisplayName string `json:"display_name,omitempty"`
 }
@@ -27,6 +17,12 @@ var defaultModels = []Model{
 	{ID: "grok-4.20-0309-reasoning", Object: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Reasoning"},
 	{ID: "grok-4.20-0309-non-reasoning", Object: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Non Reasoning"},
 	{ID: "grok-4.20-multi-agent-0309", Object: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Multi Agent"},
+	{ID: "grok-imagine", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine"},
+	{ID: "grok-imagine-image", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Image"},
+	{ID: "grok-imagine-image-quality", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Image Quality"},
+	{ID: "grok-imagine-edit", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Edit"},
+	{ID: "grok-imagine-video", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video"},
+	{ID: "grok-imagine-video-1.5", Object: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video 1.5"},
 }
 
 func DefaultModels() []Model {
@@ -44,27 +40,18 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
-func EffectiveTokenURL() string {
-	if value := strings.TrimSpace(os.Getenv("XAI_OAUTH_TOKEN_URL")); value != "" {
-		return value
+func DefaultModelMapping() map[string]string {
+	mapping := make(map[string]string, len(defaultModels)+5)
+	for _, model := range defaultModels {
+		mapping[model.ID] = model.ID
 	}
-	return DefaultTokenURL
-}
-
-func EffectiveClientID(override string) string {
-	if value := strings.TrimSpace(override); value != "" {
-		return value
-	}
-	if value := strings.TrimSpace(os.Getenv("XAI_OAUTH_CLIENT_ID")); value != "" {
-		return value
-	}
-	return DefaultClientID
-}
-
-func BuildRefreshForm(refreshToken string, clientID string) url.Values {
-	form := url.Values{}
-	form.Set("grant_type", "refresh_token")
-	form.Set("client_id", EffectiveClientID(clientID))
-	form.Set("refresh_token", strings.TrimSpace(refreshToken))
-	return form
+	mapping["grok"] = "grok-4.5"
+	mapping["grok-latest"] = "grok-4.5"
+	mapping["grok-4.5-latest"] = "grok-4.5"
+	mapping["grok-build"] = "grok-build-0.1"
+	mapping["grok-build-latest"] = "grok-4.5"
+	mapping["grok-composer"] = "grok-composer-2.5-fast"
+	mapping["grok-4.20-reasoning"] = "grok-4.20-0309-reasoning"
+	mapping["grok-4.20-non-reasoning"] = "grok-4.20-0309-non-reasoning"
+	return mapping
 }
