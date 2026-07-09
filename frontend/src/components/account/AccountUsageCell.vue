@@ -542,6 +542,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
+import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
@@ -1086,7 +1087,7 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
       usageInfo.value = result
       _usageCache.set(props.account.id, { data: result, ts: Date.now() })
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (!unmounted.value) {
       error.value = t('common.error')
       console.error('Failed to load usage:', e)
@@ -1150,16 +1151,59 @@ const loadActiveUsage = async () => {
   activeQueryLoading.value = true
   try {
     if (props.account.platform === 'grok') {
-      await adminAPI.grok.queryQuota(props.account.id)
+      const probe = await adminAPI.grok.queryQuota(props.account.id)
+      applyGrokQuotaProbe(probe)
       await loadUsage({ bypassCache: true })
       return
     }
     usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
     _usageCache.set(props.account.id, { data: usageInfo.value, ts: Date.now() })
   } catch (e: any) {
+    error.value = props.account.platform === 'grok' ? `主动探测失败：${extractProbeErrorMessage(e)}` : error.value
     console.error('Failed to load active usage:', e)
   } finally {
     activeQueryLoading.value = false
+  }
+}
+
+function extractProbeErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    const message = record.message
+    if (typeof message === 'string' && message.trim()) return message.trim()
+    const response = record.response
+    if (response && typeof response === 'object') {
+      const data = (response as Record<string, unknown>).data
+      if (data && typeof data === 'object') {
+        const responseMessage = (data as Record<string, unknown>).message
+        if (typeof responseMessage === 'string' && responseMessage.trim()) return responseMessage.trim()
+      }
+    }
+  }
+  return t('common.error')
+}
+
+function applyGrokQuotaProbe(probe: GrokQuotaProbeResult): void {
+  const snapshot = probe.snapshot
+  const current = usageInfo.value ?? {
+    updated_at: null,
+    five_hour: null,
+    seven_day: null,
+    seven_day_sonnet: null
+  }
+  usageInfo.value = {
+    ...current,
+    source: 'active',
+    updated_at: snapshot?.updated_at ?? new Date(probe.fetched_at * 1000).toISOString(),
+    grok_request_quota: snapshot?.requests ?? null,
+    grok_token_quota: snapshot?.tokens ?? null,
+    grok_retry_after_seconds: snapshot?.retry_after_seconds ?? null,
+    grok_entitlement_status: snapshot?.entitlement_status ?? '',
+    grok_quota_snapshot_state: snapshot?.headers_observed ? 'observed' : 'no_headers',
+    grok_last_quota_probe_at: snapshot?.last_probe_at ?? '',
+    grok_last_headers_seen_at: snapshot?.last_headers_seen_at ?? '',
+    grok_last_status_code: snapshot?.status_code ?? probe.status_code ?? 0,
+    error: snapshot?.headers_observed ? '' : '上游本次未返回额度头，可稍后再探测。'
   }
 }
 
