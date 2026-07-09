@@ -105,6 +105,18 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "https://openai.example.com/v1/models", openAIReq.URL.String())
 	require.Equal(t, "Bearer openai-key", openAIReq.Header.Get("Authorization"))
 
+	grokOAuthReq, err := svc.buildOpenAIUpstreamModelsRequest(ctx, &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "xai-token",
+			"base_url":     "https://api.x.ai/v1",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://api.x.ai/v1/models", grokOAuthReq.URL.String())
+	require.Equal(t, "Bearer xai-token", grokOAuthReq.Header.Get("Authorization"))
+
 	geminiReq, err := svc.buildGeminiUpstreamModelsRequest(ctx, &Account{
 		Platform: PlatformGemini,
 		Type:     AccountTypeAPIKey,

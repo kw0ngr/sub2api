@@ -13,6 +13,7 @@ func TestSupportedPlatformsIncludesAllGatewayPlatforms(t *testing.T) {
 		PlatformOpenRouter,
 		PlatformDeepSeek,
 		PlatformGLM,
+		PlatformGrok,
 	}
 
 	got := SupportedPlatforms()
@@ -52,6 +53,20 @@ func TestDefaultAntigravityModelMapping_ImageCompatibilityAliases(t *testing.T) 
 		if got != want {
 			t.Fatalf("unexpected mapping for %q: got %q want %q", from, got, want)
 		}
+	}
+}
+
+func TestDefaultGrokModelMappingAliases(t *testing.T) {
+	t.Parallel()
+
+	if got := DefaultGrokModelMapping["grok"]; got != "grok-4.5" {
+		t.Fatalf("DefaultGrokModelMapping[grok] = %q, want grok-4.5", got)
+	}
+	if got := DefaultGrokModelMapping["grok-4.20-reasoning"]; got != "grok-4.20-0309-reasoning" {
+		t.Fatalf("DefaultGrokModelMapping[grok-4.20-reasoning] = %q", got)
+	}
+	if got := DefaultGrokModelMapping["grok-composer"]; got != "grok-composer-2.5-fast" {
+		t.Fatalf("DefaultGrokModelMapping[grok-composer] = %q", got)
 	}
 }
 

@@ -157,10 +157,16 @@ func TestClampGLMMaxTokens(t *testing.T) {
 func TestGLMPlatformHelpers(t *testing.T) {
 	require.False(t, IsOpenAICompatiblePlatform("glm"), "GLM should not enable /v1/responses passthrough")
 	require.True(t, IsOpenAIChatCompletionsCompatiblePlatform("glm"))
+	require.True(t, IsOpenAICompatiblePlatform("grok"))
+	require.True(t, IsOpenAIChatCompletionsCompatiblePlatform("grok"))
 	require.True(t, SupportedAPIKeyProbePlatform("glm"))
+	require.True(t, SupportedAPIKeyProbePlatform("grok"))
 	platform, ok := NormalizeAPIKeyPlatform("glm")
 	require.True(t, ok)
 	require.Equal(t, "glm", platform)
+	platform, ok = NormalizeAPIKeyPlatform("x.ai")
+	require.True(t, ok)
+	require.Equal(t, "grok", platform)
 }
 
 func TestAnthropicCompatibleAPIKeyAuthHeaderForGLMOllama(t *testing.T) {

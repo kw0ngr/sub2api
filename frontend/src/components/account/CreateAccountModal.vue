@@ -149,6 +149,19 @@
           </button>
           <button
             type="button"
+            @click="form.platform = 'grok'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'grok'
+                ? 'bg-white text-slate-700 shadow-sm dark:bg-dark-600 dark:text-slate-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="bolt" size="sm" />
+            Grok
+          </button>
+          <button
+            type="button"
             @click="form.platform = 'antigravity'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -260,8 +273,8 @@
         </div>
       </div>
 
-      <!-- Account Type Selection (OpenAI) -->
-      <div v-if="form.platform === 'openai'">
+      <!-- Account Type Selection (OpenAI / Grok) -->
+      <div v-if="form.platform === 'openai' || form.platform === 'grok'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
         <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
           <button
@@ -315,6 +328,32 @@
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.responsesApi') }}</span>
             </div>
           </button>
+        </div>
+      </div>
+
+      <div v-if="form.platform === 'grok' && accountCategory === 'oauth-based'" class="space-y-4">
+        <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-dark-700/60 dark:text-slate-300">
+          Grok OAuth 目前支持手工填入 xAI access_token / refresh_token；完整授权跳转稍后再接。
+        </div>
+        <div>
+          <label class="input-label">xAI Access Token</label>
+          <input v-model="grokOAuthAccessToken" type="password" class="input font-mono" required placeholder="xai access_token" />
+        </div>
+        <div>
+          <label class="input-label">xAI Refresh Token</label>
+          <input v-model="grokOAuthRefreshToken" type="password" class="input font-mono" placeholder="xai refresh_token" />
+        </div>
+        <div>
+          <label class="input-label">xAI Base URL</label>
+          <input v-model="grokOAuthBaseUrl" type="text" class="input font-mono" placeholder="https://api.x.ai/v1" />
+        </div>
+        <div>
+          <label class="input-label">Client ID</label>
+          <input v-model="grokOAuthClientId" type="text" class="input font-mono" placeholder="optional" />
+        </div>
+        <div>
+          <label class="input-label">Expires At</label>
+          <input v-model="grokOAuthExpiresAt" type="datetime-local" class="input" />
         </div>
       </div>
 
@@ -882,6 +921,8 @@
                   ? 'https://generativelanguage.googleapis.com'
                   : form.platform === 'glm'
                     ? (glmCompatMode === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL)
+                    : form.platform === 'grok'
+                      ? 'https://api.x.ai/v1'
                     : 'https://api.anthropic.com'
             "
           />
@@ -901,6 +942,8 @@
                   ? 'AIza...'
                   : form.platform === 'glm'
                     ? 'GLM API Key'
+                    : form.platform === 'grok'
+                      ? 'xAI API Key'
                     : 'sk-ant-...'
             "
           />
@@ -3055,6 +3098,7 @@ const oauthStepTitle = computed(() => {
 // Platform-specific hints for API Key type
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
+  if (form.platform === 'grok') return 'xAI OpenAI-compatible endpoint，默认 https://api.x.ai/v1；中转站可填自己的 base_url。'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (form.platform === 'glm') {
     return glmCompatMode.value === 'openai'
@@ -3066,6 +3110,7 @@ const baseUrlHint = computed(() => {
 
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
+  if (form.platform === 'grok') return '填入 xAI API Key；OAuth 账号可通过后台 API 创建 access_token/refresh_token 凭证。'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'glm') return '填入智谱官方 GLM key 或中转站 GLM key。'
   return t('admin.accounts.apiKeyHint')
@@ -3146,6 +3191,11 @@ const GLM_OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const glmCompatMode = ref<'anthropic' | 'openai'>('anthropic')
+const grokOAuthAccessToken = ref('')
+const grokOAuthRefreshToken = ref('')
+const grokOAuthBaseUrl = ref('https://api.x.ai/v1')
+const grokOAuthClientId = ref('')
+const grokOAuthExpiresAt = ref('')
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value.trim()) return undefined
@@ -3398,6 +3448,9 @@ const isOAuthFlow = computed(() => {
   if (form.platform === 'anthropic' && accountCategory.value === 'bedrock') {
     return false
   }
+  if (form.platform === 'grok') {
+    return false
+  }
   return accountCategory.value === 'oauth-based'
 })
 
@@ -3490,6 +3543,8 @@ watch(
           ? 'https://generativelanguage.googleapis.com'
           : newPlatform === 'glm'
             ? GLM_ANTHROPIC_BASE_URL
+            : newPlatform === 'grok'
+              ? 'https://api.x.ai/v1'
             : 'https://api.anthropic.com'
     // Clear model-related settings
     allowedModels.value = []
@@ -3909,6 +3964,11 @@ const resetForm = () => {
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   glmCompatMode.value = 'anthropic'
+  grokOAuthAccessToken.value = ''
+  grokOAuthRefreshToken.value = ''
+  grokOAuthBaseUrl.value = 'https://api.x.ai/v1'
+  grokOAuthClientId.value = ''
+  grokOAuthExpiresAt.value = ''
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4095,6 +4155,36 @@ const normalizePoolModeRetryCount = (value: number) => {
 }
 
 const handleSubmit = async () => {
+  if (form.platform === 'grok' && accountCategory.value === 'oauth-based') {
+    if (!form.name.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    if (!grokOAuthAccessToken.value.trim()) {
+      appStore.showError('请填写 xAI access_token')
+      return
+    }
+    const credentials: Record<string, unknown> = {
+      access_token: grokOAuthAccessToken.value.trim(),
+      base_url: grokOAuthBaseUrl.value.trim() || 'https://api.x.ai/v1'
+    }
+    if (grokOAuthRefreshToken.value.trim()) {
+      credentials.refresh_token = grokOAuthRefreshToken.value.trim()
+    }
+    if (grokOAuthClientId.value.trim()) {
+      credentials.client_id = grokOAuthClientId.value.trim()
+    }
+    if (grokOAuthExpiresAt.value) {
+      credentials.expires_at = new Date(grokOAuthExpiresAt.value).toISOString()
+    }
+    const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    if (modelMapping) {
+      credentials.model_mapping = modelMapping
+    }
+    await createAccountAndFinish('grok', 'oauth', credentials)
+    return
+  }
+
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
     if (!form.name.trim()) {
@@ -4221,6 +4311,8 @@ const handleSubmit = async () => {
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'glm'
           ? (glmCompatMode.value === 'openai' ? GLM_OPENAI_BASE_URL : GLM_ANTHROPIC_BASE_URL)
+          : form.platform === 'grok'
+            ? 'https://api.x.ai/v1'
           : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping

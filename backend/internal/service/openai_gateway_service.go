@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/cespare/xxhash/v2"
@@ -1844,6 +1845,16 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
 	switch account.Type {
 	case AccountTypeOAuth:
+		if account.Platform == PlatformGrok {
+			accessToken, err := s.getGrokOAuthAccessToken(ctx, account)
+			if err != nil {
+				return "", "", err
+			}
+			if accessToken == "" {
+				return "", "", errors.New("access_token not found in credentials")
+			}
+			return accessToken, "oauth", nil
+		}
 		// 使用 TokenProvider 获取缓存的 token
 		if s.openAITokenProvider != nil {
 			accessToken, err := s.openAITokenProvider.GetAccessToken(ctx, account)
@@ -1867,6 +1878,82 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 	default:
 		return "", "", fmt.Errorf("unsupported account type: %s", account.Type)
 	}
+}
+
+func (s *OpenAIGatewayService) getGrokOAuthAccessToken(ctx context.Context, account *Account) (string, error) {
+	if account == nil {
+		return "", errors.New("account is nil")
+	}
+	accessToken := account.GetOpenAIAccessToken()
+	expiresAt := account.GetCredentialAsTime("expires_at")
+	if accessToken != "" && expiresAt != nil && time.Until(*expiresAt) > 5*time.Minute {
+		return accessToken, nil
+	}
+	refreshToken := strings.TrimSpace(account.GetOpenAIRefreshToken())
+	if refreshToken == "" {
+		return accessToken, nil
+	}
+	if s == nil || s.httpUpstream == nil {
+		return accessToken, nil
+	}
+	tokenURL := strings.TrimSpace(xai.EffectiveTokenURL())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(xai.BuildRefreshForm(refreshToken, account.GetCredential("client_id")).Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "sub2api-grok-oauth/1.0")
+	resp, err := s.httpUpstream.Do(req, "", account.ID, account.Concurrency)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("grok token refresh failed: status %d", resp.StatusCode)
+	}
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		TokenType    string `json:"token_type"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", err
+	}
+	tokenResp.AccessToken = strings.TrimSpace(tokenResp.AccessToken)
+	if tokenResp.AccessToken == "" {
+		return "", errors.New("grok token refresh returned empty access_token")
+	}
+	updates := map[string]any{
+		"access_token": tokenResp.AccessToken,
+	}
+	if tokenResp.RefreshToken != "" {
+		updates["refresh_token"] = tokenResp.RefreshToken
+	}
+	if tokenResp.TokenType != "" {
+		updates["token_type"] = tokenResp.TokenType
+	}
+	expiresIn := tokenResp.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = int64((6 * time.Hour).Seconds())
+	}
+	updates["expires_at"] = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
+	nextCredentials := cloneCredentials(account.Credentials)
+	for key, value := range updates {
+		nextCredentials[key] = value
+	}
+	if s.accountRepo != nil {
+		if err := persistAccountCredentials(ctx, s.accountRepo, account, nextCredentials); err != nil {
+			return "", err
+		}
+	}
+	account.Credentials = nextCredentials
+	return tokenResp.AccessToken, nil
 }
 
 func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool {
@@ -3691,11 +3778,11 @@ func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, fil
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
 	// Determine target URL based on account type
 	var targetURL string
-	switch account.Type {
-	case AccountTypeOAuth:
+	switch {
+	case account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI:
 		// OAuth accounts use ChatGPT internal API
 		targetURL = chatgptCodexURL
-	case AccountTypeAPIKey:
+	case account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok:
 		// API Key accounts use Platform API or custom base URL
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
@@ -3721,7 +3808,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	req.Header.Set("authorization", "Bearer "+token)
 
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
-	if account.Type == AccountTypeOAuth {
+	if account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI {
 		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
 		req.Host = "chatgpt.com"
 		// Required: set chatgpt-account-id header
@@ -3740,7 +3827,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			}
 		}
 	}
-	if account.Type == AccountTypeOAuth {
+	if account.Type == AccountTypeOAuth && account.Platform == PlatformOpenAI {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))

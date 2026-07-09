@@ -25,6 +25,7 @@ const (
 	PlatformOpenRouter  = "openrouter"
 	PlatformDeepSeek    = "deepseek"
 	PlatformGLM         = "glm"
+	PlatformGrok        = "grok"
 )
 
 var supportedPlatforms = []string{
@@ -35,6 +36,25 @@ var supportedPlatforms = []string{
 	PlatformOpenRouter,
 	PlatformDeepSeek,
 	PlatformGLM,
+	PlatformGrok,
+}
+
+var DefaultGrokModelMapping = map[string]string{
+	"grok":                         "grok-4.5",
+	"grok-latest":                  "grok-4.5",
+	"grok-4.5":                     "grok-4.5",
+	"grok-4.5-latest":              "grok-4.5",
+	"grok-4.3":                     "grok-4.3",
+	"grok-build":                   "grok-build-0.1",
+	"grok-build-latest":            "grok-4.5",
+	"grok-build-0.1":               "grok-build-0.1",
+	"grok-composer":                "grok-composer-2.5-fast",
+	"grok-composer-2.5-fast":       "grok-composer-2.5-fast",
+	"grok-4.20-reasoning":          "grok-4.20-0309-reasoning",
+	"grok-4.20-non-reasoning":      "grok-4.20-0309-non-reasoning",
+	"grok-4.20-0309-reasoning":     "grok-4.20-0309-reasoning",
+	"grok-4.20-0309-non-reasoning": "grok-4.20-0309-non-reasoning",
+	"grok-4.20-multi-agent-0309":   "grok-4.20-multi-agent-0309",
 }
 
 // SupportedPlatforms returns every platform that can be attached to accounts,

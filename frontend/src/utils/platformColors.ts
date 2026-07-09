@@ -5,7 +5,7 @@
  * instead of defining their own color mappings.
  */
 
-export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini' | 'openrouter' | 'deepseek' | 'glm'
+export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini' | 'openrouter' | 'deepseek' | 'glm' | 'grok'
 
 // ── Badge (bg + text + border, for inline badges with border) ───────
 const BADGE: Record<Platform, string> = {
@@ -16,6 +16,7 @@ const BADGE: Record<Platform, string> = {
   openrouter: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/30 dark:text-indigo-400',
   deepseek: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/30 dark:text-cyan-400',
   glm: 'bg-teal-500/10 text-teal-600 border-teal-500/30 dark:text-teal-400',
+  grok: 'bg-slate-500/10 text-slate-700 border-slate-500/30 dark:text-slate-300',
 }
 const BADGE_DEFAULT = 'bg-slate-500/10 text-slate-600 border-slate-500/30 dark:text-slate-400'
 
@@ -28,6 +29,7 @@ const BADGE_LIGHT: Record<Platform, string> = {
   openrouter: 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300',
   deepseek: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/10 dark:text-cyan-300',
   glm: 'bg-teal-500/10 text-teal-600 dark:bg-teal-500/10 dark:text-teal-300',
+  grok: 'bg-slate-500/10 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300',
 }
 
 // ── Border ──────────────────────────────────────────────────────────
@@ -39,6 +41,7 @@ const BORDER: Record<Platform, string> = {
   openrouter: 'border-indigo-500/20 dark:border-indigo-500/20',
   deepseek: 'border-cyan-500/20 dark:border-cyan-500/20',
   glm: 'border-teal-500/20 dark:border-teal-500/20',
+  grok: 'border-slate-500/20 dark:border-slate-500/20',
 }
 const BORDER_DEFAULT = 'border-gray-200 dark:border-dark-700'
 
@@ -51,6 +54,7 @@ const ACCENT_BAR: Record<Platform, string> = {
   openrouter: 'bg-gradient-to-r from-indigo-400 to-violet-500',
   deepseek: 'bg-gradient-to-r from-cyan-400 to-sky-500',
   glm: 'bg-gradient-to-r from-teal-400 to-emerald-500',
+  grok: 'bg-gradient-to-r from-slate-500 to-zinc-700',
 }
 const ACCENT_BAR_DEFAULT = 'bg-gradient-to-r from-primary-400 to-primary-500'
 
@@ -63,6 +67,7 @@ const TEXT: Record<Platform, string> = {
   openrouter: 'text-indigo-600 dark:text-indigo-400',
   deepseek: 'text-cyan-600 dark:text-cyan-400',
   glm: 'text-teal-600 dark:text-teal-400',
+  grok: 'text-slate-700 dark:text-slate-300',
 }
 const TEXT_DEFAULT = 'text-primary-600 dark:text-primary-400'
 
@@ -75,6 +80,7 @@ const ICON: Record<Platform, string> = {
   openrouter: 'text-indigo-500 dark:text-indigo-400',
   deepseek: 'text-cyan-500 dark:text-cyan-400',
   glm: 'text-teal-500 dark:text-teal-400',
+  grok: 'text-slate-600 dark:text-slate-300',
 }
 const ICON_DEFAULT = 'text-primary-500 dark:text-primary-400'
 
@@ -87,6 +93,7 @@ const BUTTON: Record<Platform, string> = {
   openrouter: 'bg-indigo-500 text-white hover:bg-indigo-600 active:bg-indigo-700 dark:bg-indigo-500/80 dark:hover:bg-indigo-500',
   deepseek: 'bg-cyan-500 text-white hover:bg-cyan-600 active:bg-cyan-700 dark:bg-cyan-500/80 dark:hover:bg-cyan-500',
   glm: 'bg-teal-500 text-white hover:bg-teal-600 active:bg-teal-700 dark:bg-teal-500/80 dark:hover:bg-teal-500',
+  grok: 'bg-slate-700 text-white hover:bg-slate-800 active:bg-slate-900 dark:bg-slate-600 dark:hover:bg-slate-500',
 }
 const BUTTON_DEFAULT = 'bg-primary-500 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500'
 
@@ -99,6 +106,7 @@ const DISCOUNT: Record<Platform, string> = {
   openrouter: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
   deepseek: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
   glm: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+  grok: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
 }
 const DISCOUNT_DEFAULT = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
 
@@ -111,6 +119,7 @@ const GRADIENT: Record<Platform, string> = {
   openrouter: 'from-indigo-500 to-violet-600',
   deepseek: 'from-cyan-500 to-sky-600',
   glm: 'from-teal-500 to-emerald-600',
+  grok: 'from-slate-600 to-zinc-800',
 }
 const GRADIENT_DEFAULT = 'from-primary-500 to-primary-600'
 
@@ -123,6 +132,7 @@ const GRADIENT_TEXT: Record<Platform, string> = {
   openrouter: 'text-indigo-100',
   deepseek: 'text-cyan-100',
   glm: 'text-teal-100',
+  grok: 'text-slate-100',
 }
 const GRADIENT_TEXT_DEFAULT = 'text-primary-100'
 
@@ -134,13 +144,14 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
   openrouter: 'text-indigo-200',
   deepseek: 'text-cyan-200',
   glm: 'text-teal-200',
+  grok: 'text-slate-200',
 }
 const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
 
 // ── Public API ──────────────────────────────────────────────────────
 
 function isPlatform(p: string): p is Platform {
-	return p === 'anthropic' || p === 'openai' || p === 'antigravity' || p === 'gemini' || p === 'openrouter' || p === 'deepseek' || p === 'glm'
+	return p === 'anthropic' || p === 'openai' || p === 'antigravity' || p === 'gemini' || p === 'openrouter' || p === 'deepseek' || p === 'glm' || p === 'grok'
 }
 
 export function platformBadgeClass(p: string): string {

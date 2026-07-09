@@ -10,6 +10,7 @@ export const supportedPlatformOptions: PlatformOption[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'glm', label: 'GLM' },
+  { value: 'grok', label: 'Grok' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'deepseek', label: 'DeepSeek' }

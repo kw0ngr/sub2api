@@ -578,7 +578,7 @@ func filterSupportedAPIKeyAccounts(accounts []*service.Account) []*service.Accou
 			continue
 		}
 		switch account.Platform {
-		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformOpenRouter, service.PlatformDeepSeek, service.PlatformGLM:
+		case service.PlatformAnthropic, service.PlatformOpenAI, service.PlatformGemini, service.PlatformOpenRouter, service.PlatformDeepSeek, service.PlatformGLM, service.PlatformGrok:
 			result = append(result, account)
 		}
 	}
@@ -659,7 +659,7 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 			if !ok {
 				results = append(results, RawAPIKeyImportLineResult{
 					Line:  lineNo,
-					Error: "invalid platform, expected openai, anthropic, gemini, openrouter, deepseek, or glm",
+					Error: "invalid platform, expected openai, anthropic, gemini, openrouter, deepseek, glm, or grok",
 				})
 				continue
 			}
@@ -722,6 +722,8 @@ func detectRawAPIKeyPlatformFromBaseURL(raw string) (string, bool) {
 		return service.PlatformDeepSeek, true
 	case strings.Contains(normalized, "open.bigmodel.cn") || strings.Contains(normalized, "bigmodel.cn") || strings.Contains(normalized, "api.z.ai"):
 		return service.PlatformGLM, true
+	case strings.Contains(normalized, "api.x.ai") || strings.Contains(normalized, "x.ai"):
+		return service.PlatformGrok, true
 	case strings.Contains(normalized, "api.openai.com"):
 		return service.PlatformOpenAI, true
 	case strings.Contains(normalized, "anthropic.com"):

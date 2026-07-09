@@ -63,6 +63,14 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('chatglm_turbo')
   })
 
+  it('grok 模型列表包含 xAI 官方别名', () => {
+    const models = getModelsByPlatform('grok')
+
+    expect(models.slice(0, 3)).toEqual(['grok-4.5', 'grok-4.3', 'grok-build-0.1'])
+    expect(models).toContain('grok-composer-2.5-fast')
+    expect(models).toContain('grok-4.20-0309-reasoning')
+  })
+
   it('anthropic/antigravity 模型列表包含新发布的 Claude 模型', () => {
     expect(getModelsByPlatform('anthropic')).toContain('claude-fable-5')
     expect(getModelsByPlatform('antigravity')).toContain('claude-fable-5')

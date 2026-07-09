@@ -432,6 +432,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		if a.Platform == domain.PlatformAntigravity {
 			return domain.DefaultAntigravityModelMapping
 		}
+		if a.Platform == domain.PlatformGrok {
+			return domain.DefaultGrokModelMapping
+		}
 		// Bedrock 默认映射由 forwardBedrock 统一处理（需配合 region prefix 调整）
 		return nil
 	}
@@ -439,6 +442,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		// Antigravity 平台使用默认映射
 		if a.Platform == domain.PlatformAntigravity {
 			return domain.DefaultAntigravityModelMapping
+		}
+		if a.Platform == domain.PlatformGrok {
+			return domain.DefaultGrokModelMapping
 		}
 		return nil
 	}
@@ -463,6 +469,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 	// Antigravity 平台使用默认映射
 	if a.Platform == domain.PlatformAntigravity {
 		return domain.DefaultAntigravityModelMapping
+	}
+	if a.Platform == domain.PlatformGrok {
+		return domain.DefaultGrokModelMapping
 	}
 	return nil
 }
@@ -846,7 +855,7 @@ func (a *Account) IsOpenAI() bool {
 
 func IsOpenAICompatiblePlatform(platform string) bool {
 	switch strings.TrimSpace(platform) {
-	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek:
+	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGrok:
 		return true
 	default:
 		return false
@@ -855,7 +864,7 @@ func IsOpenAICompatiblePlatform(platform string) bool {
 
 func IsOpenAIChatCompletionsCompatiblePlatform(platform string) bool {
 	switch strings.TrimSpace(platform) {
-	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM, PlatformGemini:
+	case PlatformOpenAI, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM, PlatformGemini, PlatformGrok:
 		return true
 	default:
 		return false
@@ -880,6 +889,14 @@ func (a *Account) IsAnthropic() bool {
 
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
+}
+
+func (a *Account) IsGrok() bool {
+	return a.Platform == PlatformGrok
+}
+
+func (a *Account) IsGrokOAuth() bool {
+	return a.IsGrok() && a.Type == AccountTypeOAuth
 }
 
 func (a *Account) IsOpenAIApiKey() bool {
@@ -919,7 +936,7 @@ func (a *Account) GetOpenAIBaseURL() string {
 	if a == nil || !IsOpenAIChatCompletionsCompatiblePlatform(a.Platform) {
 		return ""
 	}
-	if a.Type == AccountTypeAPIKey {
+	if a.Type == AccountTypeAPIKey || a.Platform == PlatformGrok {
 		baseURL := a.GetCredential("base_url")
 		if baseURL != "" {
 			return baseURL
@@ -929,14 +946,14 @@ func (a *Account) GetOpenAIBaseURL() string {
 }
 
 func (a *Account) GetOpenAIAccessToken() string {
-	if !a.IsOpenAI() {
+	if a == nil || (a.Platform != PlatformOpenAI && a.Platform != PlatformGrok) {
 		return ""
 	}
 	return a.GetCredential("access_token")
 }
 
 func (a *Account) GetOpenAIRefreshToken() string {
-	if !a.IsOpenAIOAuth() {
+	if a == nil || (a.Platform != PlatformOpenAI && a.Platform != PlatformGrok) || a.Type != AccountTypeOAuth {
 		return ""
 	}
 	return a.GetCredential("refresh_token")
@@ -962,7 +979,7 @@ func (a *Account) GetOpenAIApiKey() string {
 		}
 		return ""
 	}
-	if !a.IsOpenAICompatible() {
+	if !a.IsOpenAICompatible() || a.Type != AccountTypeAPIKey {
 		return ""
 	}
 	return a.GetCredential("api_key")

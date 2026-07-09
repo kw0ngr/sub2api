@@ -8,6 +8,7 @@ describe('platformOptions', () => {
       'openai',
       'gemini',
       'glm',
+      'grok',
       'antigravity',
       'openrouter',
       'deepseek'

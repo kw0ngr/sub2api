@@ -41,6 +41,16 @@ type streamFailureAccountRepo struct {
 	lastErrorMsg  string
 }
 
+type grokOAuthRefreshAccountRepo struct {
+	stubOpenAIAccountRepo
+	updated map[string]any
+}
+
+func (r *grokOAuthRefreshAccountRepo) UpdateCredentials(_ context.Context, _ int64, credentials map[string]any) error {
+	r.updated = cloneCredentials(credentials)
+	return nil
+}
+
 func (r *streamFailureAccountRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
 	r.setErrorCalls++
 	r.lastErrorMsg = errorMsg
@@ -397,7 +407,7 @@ func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing
 func TestOpenAIGatewayService_GetAccessToken_OpenAICompatibleAPIKeys(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 
-	for _, platform := range []string{PlatformOpenRouter, PlatformDeepSeek} {
+	for _, platform := range []string{PlatformOpenRouter, PlatformDeepSeek, PlatformGrok} {
 		token, mode, err := svc.GetAccessToken(context.Background(), &Account{
 			Platform:    platform,
 			Type:        AccountTypeAPIKey,
@@ -408,6 +418,86 @@ func TestOpenAIGatewayService_GetAccessToken_OpenAICompatibleAPIKeys(t *testing.
 		require.Equal(t, "sk-compatible", token, platform)
 		require.Equal(t, "apikey", mode, platform)
 	}
+}
+
+func TestOpenAIGatewayService_GetAccessToken_GrokOAuth(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+
+	token, mode, err := svc.GetAccessToken(context.Background(), &Account{
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "xai-token"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "xai-token", token)
+	require.Equal(t, "oauth", mode)
+}
+
+func TestOpenAIGatewayService_GetAccessToken_GrokOAuthRefreshesExpiredToken(t *testing.T) {
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"access_token":"fresh-token","refresh_token":"fresh-refresh","expires_in":3600,"token_type":"Bearer"}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		},
+	}
+	repo := &grokOAuthRefreshAccountRepo{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, accountRepo: repo}
+	expiredAt := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
+	account := &Account{
+		ID:       99,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "stale-token",
+			"refresh_token": "old-refresh",
+			"expires_at":    expiredAt,
+			"client_id":     "client-1",
+		},
+	}
+
+	token, mode, err := svc.GetAccessToken(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, "fresh-token", token)
+	require.Equal(t, "oauth", mode)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://auth.x.ai/oauth2/token", upstream.lastReq.URL.String())
+	require.Contains(t, string(upstream.lastBody), "refresh_token=old-refresh")
+	require.Equal(t, "fresh-token", repo.updated["access_token"])
+	require.Equal(t, "fresh-refresh", repo.updated["refresh_token"])
+	require.Equal(t, "fresh-token", account.GetOpenAIAccessToken())
+}
+
+func TestOpenAIGatewayService_GetAccessToken_GrokOAuthRefreshesWhenExpiryMissing(t *testing.T) {
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"access_token":"fresh-token","expires_in":3600}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       99,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "possibly-stale-token",
+			"refresh_token": "refresh-token",
+		},
+	}
+
+	token, mode, err := svc.GetAccessToken(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, "fresh-token", token)
+	require.Equal(t, "oauth", mode)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "sub2api-grok-oauth/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Contains(t, string(upstream.lastBody), "refresh_token=refresh-token")
+	require.Equal(t, "fresh-token", account.GetOpenAIAccessToken())
 }
 
 func TestBuildOpenAICompatibleChatCompletionsURL(t *testing.T) {
@@ -424,6 +514,10 @@ func TestBuildOpenAICompatibleChatCompletionsURL(t *testing.T) {
 		buildOpenAICompatibleChatCompletionsURL(PlatformDeepSeek, "https://api.deepseek.com/v1"),
 	)
 	require.Equal(t,
+		"https://api.x.ai/v1/chat/completions",
+		buildOpenAICompatibleChatCompletionsURL(PlatformGrok, "https://api.x.ai/v1"),
+	)
+	require.Equal(t,
 		"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
 		buildOpenAICompatibleChatCompletionsURL(PlatformGemini, "https://generativelanguage.googleapis.com"),
 	)
@@ -431,6 +525,57 @@ func TestBuildOpenAICompatibleChatCompletionsURL(t *testing.T) {
 		"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
 		buildOpenAICompatibleChatCompletionsURL(PlatformGemini, "https://generativelanguage.googleapis.com/v1beta/openai"),
 	)
+}
+
+func TestIsThirdPartyOpenAICompatibleAccount_GrokOAuthUsesNativeChatCompletions(t *testing.T) {
+	require.True(t, isThirdPartyOpenAICompatibleAccount(&Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+	}))
+	require.True(t, isThirdPartyOpenAICompatibleAccount(&Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+	}))
+	require.False(t, isThirdPartyOpenAICompatibleAccount(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}))
+}
+
+func TestOpenAIGatewayService_BuildUpstreamRequest_GrokOAuthUsesXAIResponses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+
+	req, err := svc.buildUpstreamRequest(
+		context.Background(),
+		c,
+		&Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{"access_token": "xai-token"}},
+		[]byte(`{"model":"grok-4.5","input":"hi"}`),
+		"xai-token",
+		false,
+		"",
+		false,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "https://api.x.ai/v1/responses", req.URL.String())
+	require.Equal(t, "Bearer xai-token", req.Header.Get("Authorization"))
+	require.NotEqual(t, "chatgpt.com", req.Host)
+}
+
+func TestAccountGetOpenAIBaseURL_GrokOAuthUsesCredentialBaseURL(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": "https://relay.example.test/v1",
+		},
+	}
+
+	require.Equal(t, "https://relay.example.test/v1", account.GetOpenAIBaseURL())
 }
 
 func TestOpenAIGatewayService_SelectAccountWithSchedulerForPlatform_OpenRouter(t *testing.T) {

@@ -303,14 +303,16 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 }
 
 func isThirdPartyOpenAICompatibleAccount(account *Account) bool {
-	if account == nil || account.Type != AccountTypeAPIKey {
+	if account == nil {
 		return false
 	}
 	switch account.Platform {
+	case PlatformGrok:
+		return account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth
 	case PlatformOpenRouter, PlatformDeepSeek, PlatformGemini:
-		return true
+		return account.Type == AccountTypeAPIKey
 	case PlatformGLM:
-		return account.IsGLMOpenAICompatible()
+		return account.Type == AccountTypeAPIKey && account.IsGLMOpenAICompatible()
 	default:
 		return false
 	}

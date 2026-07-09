@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -2270,6 +2271,10 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		response.Success(c, glmDefaultModels())
 		return
 	}
+	if account.Platform == service.PlatformGrok {
+		response.Success(c, xaiDefaultModels())
+		return
+	}
 
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
@@ -2320,6 +2325,20 @@ func glmDefaultModels() []claude.Model {
 			ID:          id,
 			Type:        "model",
 			DisplayName: id,
+			CreatedAt:   "",
+		})
+	}
+	return models
+}
+
+func xaiDefaultModels() []claude.Model {
+	defaults := xai.DefaultModels()
+	models := make([]claude.Model, 0, len(defaults))
+	for _, model := range defaults {
+		models = append(models, claude.Model{
+			ID:          model.ID,
+			Type:        "model",
+			DisplayName: model.DisplayName,
 			CreatedAt:   "",
 		})
 	}

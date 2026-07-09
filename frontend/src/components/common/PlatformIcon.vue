@@ -37,6 +37,11 @@
     <path stroke-linecap="round" stroke-linejoin="round" d="M7 6h10L7 18h10" />
     <path stroke-linecap="round" stroke-linejoin="round" d="M18 3l.6 2.1L21 6l-2.4.9L18 9l-.6-2.1L15 6l2.4-.9L18 3z" />
   </svg>
+  <!-- Grok / xAI logo (minimal X) -->
+  <svg v-else-if="platform === 'grok'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M6 5l12 14M18 5L6 19" />
+    <circle cx="12" cy="12" r="9" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

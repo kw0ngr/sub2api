@@ -180,6 +180,7 @@ func TestClassifyAPIKeyProbeResponse(t *testing.T) {
 func TestDefaultAPIKeyBaseURL_OpenRouterAndDeepSeek(t *testing.T) {
 	require.Equal(t, "https://openrouter.ai/api/v1", DefaultAPIKeyBaseURL(PlatformOpenRouter))
 	require.Equal(t, "https://api.deepseek.com", DefaultAPIKeyBaseURL(PlatformDeepSeek))
+	require.Equal(t, "https://api.x.ai/v1", DefaultAPIKeyBaseURL(PlatformGrok))
 }
 
 func TestCheckOpenRouterAPIKey_LowBalanceIsInvalid(t *testing.T) {

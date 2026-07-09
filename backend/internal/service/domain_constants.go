@@ -27,6 +27,7 @@ const (
 	PlatformOpenRouter  = domain.PlatformOpenRouter
 	PlatformDeepSeek    = domain.PlatformDeepSeek
 	PlatformGLM         = domain.PlatformGLM
+	PlatformGrok        = domain.PlatformGrok
 )
 
 func SupportedPlatforms() []string {

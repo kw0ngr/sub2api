@@ -54,7 +54,8 @@ func RegisterGatewayRoutes(
 	{
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			platform := getGroupPlatform(c)
+			if platform == service.PlatformOpenAI || platform == service.PlatformGrok {
 				h.OpenAIGateway.Messages(c)
 				return
 			}
@@ -63,7 +64,8 @@ func RegisterGatewayRoutes(
 		// /v1/messages/count_tokens: native OpenAI groups get 404; third-party
 		// Anthropic-compatible gateways can still try their provider endpoint.
 		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			platform := getGroupPlatform(c)
+			if platform == service.PlatformOpenAI || platform == service.PlatformGrok {
 				c.JSON(http.StatusNotFound, gin.H{
 					"type": "error",
 					"error": gin.H{

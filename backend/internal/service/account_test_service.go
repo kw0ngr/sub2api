@@ -190,7 +190,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
-	if account.IsOpenAI() {
+	if account.IsOpenAI() || account.IsGrok() {
 		return s.testOpenAIAccountConnection(c, account, modelID, prompt)
 	}
 
@@ -574,7 +574,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Default to openai.DefaultTestModel for OpenAI testing
 	testModelID := modelID
 	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
+		if account.IsGrok() {
+			testModelID = "grok-4.5"
+		} else {
+			testModelID = openai.DefaultTestModel
+		}
 	}
 
 	// For API Key accounts with model mapping, map the model
@@ -606,15 +610,24 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if account.IsOAuth() {
 		isOAuth = true
-		// OAuth - use Bearer token with ChatGPT internal API
 		authToken = account.GetOpenAIAccessToken()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No access token available")
 		}
-
-		// OAuth uses ChatGPT internal API
-		apiURL = chatgptCodexAPIURL
-		chatgptAccountID = account.GetChatGPTAccountID()
+		if account.IsGrok() {
+			baseURL := account.GetOpenAIBaseURL()
+			if baseURL == "" {
+				baseURL = DefaultAPIKeyBaseURL(PlatformGrok)
+			}
+			normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+			if err != nil {
+				return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
+			}
+			apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
+		} else {
+			apiURL = chatgptCodexAPIURL
+			chatgptAccountID = account.GetChatGPTAccountID()
+		}
 	} else if account.Type == "apikey" {
 		// API Key - use Platform API
 		authToken = account.GetOpenAIApiKey()
@@ -659,7 +672,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	// Set OAuth-specific headers for ChatGPT internal API
-	if isOAuth {
+	if isOAuth && account.IsOpenAI() {
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		if chatgptAccountID != "" {

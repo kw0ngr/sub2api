@@ -68,6 +68,8 @@ func NormalizeAPIKeyPlatform(raw string) (string, bool) {
 		return PlatformDeepSeek, true
 	case PlatformGLM, "zhipu", "bigmodel":
 		return PlatformGLM, true
+	case PlatformGrok, "xai", "x.ai":
+		return PlatformGrok, true
 	default:
 		return "", false
 	}
@@ -75,7 +77,7 @@ func NormalizeAPIKeyPlatform(raw string) (string, bool) {
 
 func SupportedAPIKeyProbePlatform(platform string) bool {
 	switch strings.TrimSpace(platform) {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM, PlatformGrok:
 		return true
 	default:
 		return false
@@ -96,6 +98,8 @@ func DefaultAPIKeyBaseURL(platform string) string {
 		return "https://api.deepseek.com"
 	case PlatformGLM:
 		return "https://open.bigmodel.cn/api/paas/v4"
+	case PlatformGrok:
+		return "https://api.x.ai/v1"
 	default:
 		return ""
 	}
@@ -497,7 +501,7 @@ func ClassifyAPIKeyProbeResponse(account *Account, statusCode int, responseBody 
 	message = sanitizeUpstreamErrorMessage(message)
 
 	switch account.Platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformOpenRouter, PlatformDeepSeek, PlatformGLM, PlatformGrok:
 		switch ClassifyAPIKeyStatusAction(account, statusCode, responseBody) {
 		case APIKeyStatusActionValid:
 			return true, false, false, message
@@ -527,6 +531,8 @@ func (s *AccountTestService) CheckAPIKeyValidity(ctx context.Context, account *A
 		return nil, fmt.Errorf("account test service is not configured")
 	}
 	switch account.Platform {
+	case PlatformGrok:
+		return s.checkGrokAPIKey(ctx, account)
 	case PlatformOpenRouter:
 		return s.checkOpenRouterAPIKey(ctx, account)
 	case PlatformDeepSeek:
@@ -630,6 +636,14 @@ func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *A
 	}
 
 	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformDeepSeek, baseURL+"/models")
+}
+
+func (s *AccountTestService) checkGrokAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(account.GetOpenAIBaseURL()), "/")
+	if baseURL == "" {
+		baseURL = DefaultAPIKeyBaseURL(PlatformGrok)
+	}
+	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformGrok, baseURL+"/models")
 }
 
 func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
