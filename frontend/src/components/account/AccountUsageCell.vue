@@ -285,7 +285,6 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
-
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
       <div v-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
@@ -295,45 +294,57 @@
         </div>
       </div>
       <div v-else-if="error" class="text-xs text-red-500">{{ error }}</div>
-      <div v-else-if="usageInfo" class="max-w-[240px] space-y-1">
-        <div class="flex flex-wrap items-center gap-1">
+      <div
+        v-else-if="usageInfo"
+        class="max-w-[260px] rounded-lg border border-slate-500/15 bg-slate-500/[0.055] px-2.5 py-2 text-[10px] shadow-sm shadow-black/5 dark:border-slate-400/10 dark:bg-slate-400/[0.06]"
+      >
+        <div class="mb-1.5 flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">xAI 额度</div>
+            <div class="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokQuotaSubtitle">
+              {{ grokQuotaSubtitle }}
+            </div>
+          </div>
           <span
-            v-if="usageInfo.grok_entitlement_status"
-            class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            :class="[
+              'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+              grokQuotaStateClass
+            ]"
           >
-            {{ usageInfo.grok_entitlement_status }}
-          </span>
-          <span
-            v-if="usageInfo.grok_quota_snapshot_state"
-            class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-          >
-            {{ usageInfo.grok_quota_snapshot_state }}
+            {{ grokQuotaStateLabel }}
           </span>
         </div>
-        <div v-if="grokQuotaSummary" class="rounded-md border border-slate-400/20 bg-slate-500/[0.06] px-2 py-1.5 text-[10px] text-gray-600 dark:text-gray-300">
-          <div v-for="row in grokQuotaSummary" :key="row.label" class="flex items-center justify-between gap-2">
+
+        <div v-if="grokQuotaSummary" class="space-y-0.5">
+          <div v-for="row in grokQuotaSummary" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
             <span>{{ row.label }}</span>
-            <span class="tabular-nums">{{ row.value }}</span>
+            <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
           </div>
         </div>
+
+        <div v-else class="rounded-md border border-dashed border-amber-400/30 bg-amber-400/[0.08] px-2 py-1.5 text-amber-700 dark:text-amber-300">
+          {{ grokQuotaEmptyText }}
+        </div>
+
         <div v-if="usageInfo.grok_retry_after_seconds" class="text-[10px] text-amber-600 dark:text-amber-400">
           Retry-After {{ formatDurationSeconds(usageInfo.grok_retry_after_seconds) }}
         </div>
-        <div v-if="usageInfo.grok_local_usage" class="flex flex-wrap gap-1 text-[9px] text-gray-500 dark:text-gray-400">
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ usageInfo.grok_local_usage.requests }} req</span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ formatCompactNumber(usageInfo.grok_local_usage.tokens) }}</span>
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">${{ usageInfo.grok_local_usage.cost.toFixed(2) }}</span>
+
+        <div v-if="grokLocalUsageText" class="mt-1.5 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokLocalUsageText">
+          {{ grokLocalUsageText }}
         </div>
-        <div v-if="usageInfo.error" class="truncate text-[10px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
-          {{ usageInfo.error }}
+
+        <div v-if="grokFriendlyError" class="mt-1 truncate text-[9px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
+          {{ grokFriendlyError }}
         </div>
+
         <button
           type="button"
-          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-900/30"
+          class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-slate-500/15 bg-white/60 px-1.5 py-1 text-[9px] font-medium text-slate-600 transition-colors hover:bg-white disabled:opacity-50 dark:border-slate-400/10 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-900/70"
           :disabled="activeQueryLoading"
           @click="loadActiveUsage"
         >
-          {{ activeQueryLoading ? 'Querying...' : 'Probe xAI quota' }}
+          {{ activeQueryLoading ? '探测中...' : '主动探测额度' }}
         </button>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -1152,7 +1163,6 @@ const loadActiveUsage = async () => {
   }
 }
 
-
 function formatDurationSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
   if (seconds < 60) return `${Math.round(seconds)}s`
@@ -1173,11 +1183,73 @@ function formatGrokQuotaWindow(label: string, window?: { limit?: number | null; 
 
 const grokQuotaSummary = computed(() => {
   const rows = [
-    formatGrokQuotaWindow('Requests', usageInfo.value?.grok_request_quota),
-    formatGrokQuotaWindow('Tokens', usageInfo.value?.grok_token_quota)
+    formatGrokQuotaWindow('请求', usageInfo.value?.grok_request_quota),
+    formatGrokQuotaWindow('Token', usageInfo.value?.grok_token_quota)
   ].filter((row): row is { label: string; value: string } => row !== null)
   return rows.length > 0 ? rows : null
 })
+
+const grokQuotaStateLabel = computed(() => {
+  switch (usageInfo.value?.grok_quota_snapshot_state) {
+    case 'observed':
+      return '已观测'
+    case 'no_headers':
+      return '无额度头'
+    default:
+      return '待观测'
+  }
+})
+
+const grokQuotaStateClass = computed(() => {
+  switch (usageInfo.value?.grok_quota_snapshot_state) {
+    case 'observed':
+      return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+    case 'no_headers':
+      return 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    default:
+      return 'bg-slate-500/10 text-slate-600 dark:text-slate-300'
+  }
+})
+
+const grokQuotaSubtitle = computed(() => {
+  const lastSeen = usageInfo.value?.grok_last_headers_seen_at || usageInfo.value?.grok_last_quota_probe_at
+  if (lastSeen) return `更新 ${formatRelativeTime(lastSeen)}`
+  return '等待 xAI rate-limit headers'
+})
+
+const grokQuotaEmptyText = computed(() => {
+  if (usageInfo.value?.grok_quota_snapshot_state === 'no_headers') {
+    return '上游本次未返回额度头，可稍后再探测。'
+  }
+  return '等待首个上游额度响应，也可主动探测。'
+})
+
+const grokFriendlyError = computed(() => {
+  const message = usageInfo.value?.error?.trim()
+  if (!message) return ''
+  if (message.includes('unknown until the first upstream response')) {
+    return ''
+  }
+  return message
+})
+
+const grokLocalUsageText = computed(() => {
+  const local = usageInfo.value?.grok_local_usage
+  if (!local) return ''
+  return `本地今日 ${formatCompactNumber(local.requests, { allowBillions: false })} req · ${formatCompactNumber(local.tokens)} token · $${local.cost.toFixed(2)}`
+})
+
+function formatRelativeTime(raw: string): string {
+  const ts = new Date(raw).getTime()
+  if (!Number.isFinite(ts)) return raw
+  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+  if (seconds < 60) return `${seconds}s 前`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m 前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h 前`
+  return `${Math.floor(hours / 24)}d 前`
+}
 
 // ===== API Key quota progress bars =====
 
