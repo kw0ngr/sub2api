@@ -1,13 +1,19 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func shouldFallbackCodexModelsToV1List(fullPath string, err error) bool {
+	return fullPath == "/v1/models" && errors.Is(err, service.ErrNoAvailableAccounts)
+}
 
 func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -22,6 +28,13 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 
 	account, err := h.gatewayService.SelectCodexModelsAccount(c.Request.Context(), apiKey.GroupID)
 	if err != nil {
+		if shouldFallbackCodexModelsToV1List(c.FullPath(), err) {
+			c.JSON(http.StatusOK, gin.H{
+				"object": "list",
+				"data":   openai.DefaultModels,
+			})
+			return
+		}
 		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI OAuth accounts")
 		return
 	}
