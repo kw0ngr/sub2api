@@ -300,7 +300,7 @@
       >
         <div class="mb-1.5 flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">xAI 额度</div>
+            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">xAI 速率窗口</div>
             <div class="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokQuotaSubtitle">
               {{ grokQuotaSubtitle }}
             </div>
@@ -334,6 +334,10 @@
           {{ grokLocalUsageText }}
         </div>
 
+        <div v-if="grokQuotaNote" class="mt-0.5 truncate text-[9px] text-slate-400 dark:text-slate-500" :title="grokQuotaNote">
+          {{ grokQuotaNote }}
+        </div>
+
         <div v-if="grokFriendlyError" class="mt-1 truncate text-[9px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
           {{ grokFriendlyError }}
         </div>
@@ -344,7 +348,7 @@
           :disabled="activeQueryLoading"
           @click="loadActiveUsage"
         >
-          {{ activeQueryLoading ? '探测中...' : '主动探测额度' }}
+          {{ activeQueryLoading ? '探测中...' : '主动探测速率' }}
         </button>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -1205,7 +1209,7 @@ function applyGrokQuotaProbe(probe: GrokQuotaProbeResult): void {
     grok_last_quota_probe_at: snapshot?.last_probe_at ?? '',
     grok_last_headers_seen_at: snapshot?.last_headers_seen_at ?? '',
     grok_last_status_code: snapshot?.status_code ?? probe.status_code ?? 0,
-    error: probe.error_message || (snapshot?.headers_observed ? '' : '上游本次未返回额度头，可稍后再探测。')
+    error: probe.error_message || (snapshot?.headers_observed ? '' : '上游本次未返回速率头，可稍后再探测。')
   }
 }
 
@@ -1219,11 +1223,11 @@ function formatDurationSeconds(seconds: number): string {
 
 function formatGrokQuotaWindow(label: string, window?: { limit?: number | null; remaining?: number | null; reset_at?: string | null } | null) {
   if (!window || window.limit == null || window.remaining == null) return null
-  const used = Math.max(0, window.limit - window.remaining)
+  const remaining = Math.max(0, window.remaining)
   const reset = window.reset_at ? ` · ${formatGLMResetText(window.reset_at)}` : ''
   return {
-    label,
-    value: `${formatCompactNumber(used)} / ${formatCompactNumber(window.limit)}${reset}`
+    label: `${label}剩余`,
+    value: `${formatCompactNumber(remaining)} / ${formatCompactNumber(window.limit)}${reset}`
   }
 }
 
@@ -1240,7 +1244,7 @@ const grokQuotaStateLabel = computed(() => {
     case 'observed':
       return '已观测'
     case 'no_headers':
-      return '无额度头'
+      return '无速率头'
     default:
       return '待观测'
   }
@@ -1265,9 +1269,14 @@ const grokQuotaSubtitle = computed(() => {
 
 const grokQuotaEmptyText = computed(() => {
   if (usageInfo.value?.grok_quota_snapshot_state === 'no_headers') {
-    return '上游本次未返回额度头，可稍后再探测。'
+    return '上游本次未返回速率头，可稍后再探测。'
   }
-  return '等待首个上游额度响应，也可主动探测。'
+  return '等待首个上游速率响应，也可主动探测。'
+})
+
+const grokQuotaNote = computed(() => {
+  if (!grokQuotaSummary.value) return ''
+  return '上游 rate-limit 剩余，不是今日累计用量'
 })
 
 const grokFriendlyError = computed(() => {

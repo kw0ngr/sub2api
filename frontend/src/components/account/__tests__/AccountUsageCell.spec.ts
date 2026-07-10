@@ -553,6 +553,51 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
+  it('Grok OAuth 显示 xAI rate-limit 剩余额度而不是误算成已用量', async () => {
+    getUsage.mockResolvedValue({
+      updated_at: '2026-07-10T16:53:45Z',
+      source: 'passive',
+      grok_request_quota: { limit: 480, remaining: 480 },
+      grok_token_quota: { limit: 10_000_000, remaining: 10_000_000 },
+      grok_quota_snapshot_state: 'observed',
+      grok_last_headers_seen_at: '2026-07-10T16:53:45Z',
+      grok_local_usage: {
+        requests: 204,
+        tokens: 25_800_000,
+        cost: 16.29,
+        standard_cost: 16.29,
+        user_cost: 16.29
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3201,
+          platform: 'grok',
+          type: 'oauth'
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('xAI 速率窗口')
+    expect(wrapper.text()).toContain('请求剩余')
+    expect(wrapper.text()).toContain('480 / 480')
+    expect(wrapper.text()).toContain('Token剩余')
+    expect(wrapper.text()).toContain('10.0M / 10.0M')
+    expect(wrapper.text()).toContain('本地今日 204 req · 25.8M token · $16.29')
+    expect(wrapper.text()).not.toContain('请求0 / 480')
+    expect(wrapper.text()).not.toContain('Token0 / 10.0M')
+  })
+
   it('GLM Key 账号优先展示真实 5h token 窗口', async () => {
     const wrapper = mount(AccountUsageCell, {
       props: {
