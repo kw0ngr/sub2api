@@ -342,6 +342,11 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 			return nil, fmt.Errorf("enable stream usage: %w", err)
 		}
 	}
+	if normalizedBody, normalized, normalizeErr := normalizeGrokThirdPartyChatToolMessageNames(account, chatBody, chatReq); normalizeErr != nil {
+		return nil, normalizeErr
+	} else if normalized {
+		chatBody = normalizedBody
+	}
 
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
