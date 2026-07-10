@@ -79,9 +79,23 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 		{
 			name:      "兼容 DeepSeek max reasoning effort",
 			body:      []byte(`{"reasoning_effort":"max"}`),
-			model:     "",
+			model:     "gpt-5.4",
 			wantNil:   false,
 			wantValue: "xhigh",
+		},
+		{
+			name:      "GPT 5.6 保留 max reasoning effort",
+			body:      []byte(`{"reasoning_effort":"max"}`),
+			model:     "gpt-5.6-sol",
+			wantNil:   false,
+			wantValue: "max",
+		},
+		{
+			name:      "GPT 5.6 从模型后缀推导 max",
+			body:      []byte(`{"input":"hi"}`),
+			model:     "openai/gpt-5.6-sol-max",
+			wantNil:   false,
+			wantValue: "max",
 		},
 		{
 			name:    "minimal 归一化为空",

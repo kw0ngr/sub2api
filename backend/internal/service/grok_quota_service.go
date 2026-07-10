@@ -24,6 +24,7 @@ type GrokQuotaProbeResult struct {
 	Source          string             `json:"source"`
 	Snapshot        *xai.QuotaSnapshot `json:"snapshot,omitempty"`
 	StatusCode      int                `json:"status_code,omitempty"`
+	ErrorMessage    string             `json:"error_message,omitempty"`
 	HeadersObserved bool               `json:"headers_observed"`
 	ResetSupported  bool               `json:"reset_supported"`
 	FetchedAt       int64              `json:"fetched_at"`
@@ -101,14 +102,12 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 		ResetSupported:  false,
 		FetchedAt:       time.Now().Unix(),
 	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return result, nil
-	}
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 240))
 		bodyText := truncate(strings.TrimSpace(string(bodyBytes)), 240)
 		slog.Warn("grok_quota_probe_failed", "account_id", account.ID, "status", resp.StatusCode, "body", bodyText)
-		return nil, infraerrors.Newf(mapUpstreamStatusCode(resp.StatusCode), "GROK_QUOTA_PROBE_UPSTREAM_ERROR", "upstream returned %d: %s", resp.StatusCode, bodyText)
+		result.ErrorMessage = bodyText
+		return result, nil
 	}
 	return result, nil
 }
@@ -178,7 +177,7 @@ func (s *GrokQuotaService) loadGrokOAuthAccount(ctx context.Context, accountID i
 func buildGrokQuotaProbeBody(account *Account) ([]byte, error) {
 	model := grokQuotaDefaultModel
 	if account != nil {
-		if mapped := strings.TrimSpace(account.GetMappedModel("grok")); mapped != "" {
+		if mapped := strings.TrimSpace(account.GetMappedModel(grokQuotaDefaultModel)); mapped != "" {
 			model = mapped
 		}
 	}

@@ -65,6 +65,7 @@ export interface GrokQuotaProbeResult {
   source: 'active_probe'
   snapshot?: GrokQuotaSnapshot | null
   status_code?: number
+  error_message?: string
   headers_observed: boolean
   reset_supported: boolean
   fetched_at: number

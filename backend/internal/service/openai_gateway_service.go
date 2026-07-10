@@ -6068,21 +6068,28 @@ func (s *OpenAIGatewayService) UpdateCodexUsageSnapshotFromHeaders(ctx context.C
 	}
 }
 
-func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any) (value string, present bool) {
+func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any, requestedModel string) (value string, present bool) {
 	if reqBody == nil {
 		return "", false
+	}
+
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		if rawModel, ok := reqBody["model"].(string); ok {
+			model = rawModel
+		}
 	}
 
 	// Primary: reasoning.effort
 	if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
 		if effort, ok := reasoning["effort"].(string); ok {
-			return normalizeOpenAIReasoningEffort(effort), true
+			return normalizeOpenAIReasoningEffortForModel(effort, model), true
 		}
 	}
 
 	// Fallback: some clients may use a flat field.
 	if effort, ok := reqBody["reasoning_effort"].(string); ok {
-		return normalizeOpenAIReasoningEffort(effort), true
+		return normalizeOpenAIReasoningEffortForModel(effort, model), true
 	}
 
 	return "", false
@@ -6111,7 +6118,7 @@ func deriveOpenAIReasoningEffortFromModel(model string) string {
 		return ""
 	}
 
-	return normalizeOpenAIReasoningEffort(parts[len(parts)-1])
+	return normalizeOpenAIReasoningEffortForModel(parts[len(parts)-1], model)
 }
 
 func extractOpenAIRequestMetaFromBody(body []byte) (model string, stream bool, promptCacheKey string) {
@@ -6212,7 +6219,11 @@ func extractOpenAIReasoningEffortFromBody(body []byte, requestedModel string) *s
 		reasoningEffort = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
 	}
 	if reasoningEffort != "" {
-		normalized := normalizeOpenAIReasoningEffort(reasoningEffort)
+		model := strings.TrimSpace(requestedModel)
+		if model == "" {
+			model = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		}
+		normalized := normalizeOpenAIReasoningEffortForModel(reasoningEffort, model)
 		if normalized == "" {
 			return nil
 		}
@@ -6811,7 +6822,7 @@ func getOpenAIRequestBodyMap(c *gin.Context, body []byte) (map[string]any, error
 }
 
 func extractOpenAIReasoningEffort(reqBody map[string]any, requestedModel string) *string {
-	if value, present := getOpenAIReasoningEffortFromReqBody(reqBody); present {
+	if value, present := getOpenAIReasoningEffortFromReqBody(reqBody, requestedModel); present {
 		if value == "" {
 			return nil
 		}
@@ -6826,6 +6837,10 @@ func extractOpenAIReasoningEffort(reqBody map[string]any, requestedModel string)
 }
 
 func normalizeOpenAIReasoningEffort(raw string) string {
+	return normalizeOpenAIReasoningEffortForModel(raw, "")
+}
+
+func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	if value == "" {
 		return ""
@@ -6839,10 +6854,28 @@ func normalizeOpenAIReasoningEffort(raw string) string {
 		return ""
 	case "low", "medium", "high":
 		return value
-	case "xhigh", "extrahigh", "max":
+	case "xhigh", "extrahigh":
+		return "xhigh"
+	case "max":
+		if openAIModelSupportsMaxReasoning(model) {
+			return "max"
+		}
 		return "xhigh"
 	default:
 		// Only store known effort levels for now to keep UI consistent.
 		return ""
 	}
+}
+
+func openAIModelSupportsMaxReasoning(model string) bool {
+	modelID := strings.ToLower(strings.TrimSpace(model))
+	if modelID == "" {
+		return false
+	}
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		modelID = parts[len(parts)-1]
+	}
+	modelID = strings.ReplaceAll(modelID, "_", "-")
+	return modelID == "gpt-5.6" || strings.HasPrefix(modelID, "gpt-5.6-")
 }

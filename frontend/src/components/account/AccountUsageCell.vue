@@ -1153,7 +1153,9 @@ const loadActiveUsage = async () => {
     if (props.account.platform === 'grok') {
       const probe = await adminAPI.grok.queryQuota(props.account.id)
       applyGrokQuotaProbe(probe)
-      await loadUsage({ bypassCache: true })
+      if (usageInfo.value) {
+        _usageCache.set(props.account.id, { data: usageInfo.value, ts: Date.now() })
+      }
       return
     }
     usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
@@ -1203,7 +1205,7 @@ function applyGrokQuotaProbe(probe: GrokQuotaProbeResult): void {
     grok_last_quota_probe_at: snapshot?.last_probe_at ?? '',
     grok_last_headers_seen_at: snapshot?.last_headers_seen_at ?? '',
     grok_last_status_code: snapshot?.status_code ?? probe.status_code ?? 0,
-    error: snapshot?.headers_observed ? '' : '上游本次未返回额度头，可稍后再探测。'
+    error: probe.error_message || (snapshot?.headers_observed ? '' : '上游本次未返回额度头，可稍后再探测。')
   }
 }
 

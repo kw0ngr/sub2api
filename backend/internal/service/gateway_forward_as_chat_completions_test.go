@@ -29,6 +29,18 @@ func TestExtractCCReasoningEffortFromBody(t *testing.T) {
 		require.Equal(t, "xhigh", *got)
 	})
 
+	t.Run("gpt 5.6 preserves max", func(t *testing.T) {
+		got := extractCCReasoningEffortFromBody([]byte(`{"model":"gpt-5.6-sol","reasoning_effort":"max"}`))
+		require.NotNil(t, got)
+		require.Equal(t, "max", *got)
+	})
+
+	t.Run("older openai-compatible model downgrades max", func(t *testing.T) {
+		got := extractCCReasoningEffortFromBody([]byte(`{"model":"gpt-5.4","reasoning_effort":"max"}`))
+		require.NotNil(t, got)
+		require.Equal(t, "xhigh", *got)
+	})
+
 	t.Run("missing effort", func(t *testing.T) {
 		require.Nil(t, extractCCReasoningEffortFromBody([]byte(`{"model":"gpt-5"}`)))
 	})
