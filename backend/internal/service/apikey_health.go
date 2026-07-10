@@ -128,9 +128,13 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 		return APIKeyStatusActionIgnore
 	}
 
-	// 5xx and 529 are always temporary cooldowns regardless of platform
 	switch statusCode {
-	case 529, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		if isThirdPartyGrokAPIKey(account) {
+			return APIKeyStatusActionIgnore
+		}
+		return APIKeyStatusActionTemporaryCooldown
+	case 529:
 		return APIKeyStatusActionTemporaryCooldown
 	}
 
@@ -406,6 +410,22 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	// treat as temporary cooldown so the key is not scheduled again immediately.
 	// This covers endpoint-not-found, method-not-allowed, and any future unknown error codes.
 	return APIKeyStatusActionTemporaryCooldown
+}
+
+func isThirdPartyGrokAPIKey(account *Account) bool {
+	if account == nil || account.Platform != PlatformGrok || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	rawBaseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if rawBaseURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(rawBaseURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host != "" && host != "api.x.ai"
 }
 
 func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {
