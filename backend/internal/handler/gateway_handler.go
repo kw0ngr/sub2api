@@ -936,6 +936,13 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 
 	if len(availableModels) > 0 {
+		if platform == service.PlatformGrok {
+			c.JSON(http.StatusOK, gin.H{
+				"object": "list",
+				"data":   xai.Models(availableModels),
+			})
+			return
+		}
 		// Build model list from whitelist
 		models := make([]claude.Model, 0, len(availableModels))
 		for _, modelID := range availableModels {

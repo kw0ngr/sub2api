@@ -545,6 +545,21 @@ func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *te
 	require.False(t, hasCompression)
 }
 
+func TestHasOpenAIImageGenerationTool_DetectsNamespaceAdditionalTools(t *testing.T) {
+	reqBody := map[string]any{
+		"input": []any{
+			map[string]any{
+				"type": "additional_tools",
+				"tools": []any{
+					map[string]any{"type": "namespace", "name": "image_gen"},
+				},
+			},
+		},
+	}
+
+	require.True(t, hasOpenAIImageGenerationTool(reqBody))
+}
+
 func TestEnsureOpenAIResponsesImageGenerationTool_NoTools(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.4",
@@ -1189,22 +1204,16 @@ func TestIsInstructionsEmpty(t *testing.T) {
 	}
 }
 
-func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *testing.T) {
-	// Reasoning items in input[] reference rs_* IDs that were emitted by
-	// chatgpt.com under store=false (forced by applyCodexOAuthTransform).
-	// They are never persisted upstream, so forwarding them produces a
-	// guaranteed 404 ("Item with id 'rs_...' not found"). Drop them
-	// regardless of preserveReferences. See: Wei-Shaw/sub2api issue #1957.
-
+func TestFilterCodexInput_PreservesEncryptedReasoningWithoutReplayID(t *testing.T) {
 	build := func() []any {
 		return []any{
 			map[string]any{"type": "message", "id": "msg_0", "role": "user", "content": "hi"},
 			map[string]any{
-				"type":    "reasoning",
-				"id":      "rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344",
-				"summary": []any{},
+				"type":              "reasoning",
+				"id":                "rs_0672f12450da0b9c0169f07220a6c08198b68c2455ced99344",
+				"encrypted_content": "enc",
 			},
-			map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "tool"},
+			map[string]any{"type": "function_call", "id": "item_bad", "call_id": "call_1", "name": "tool"},
 			map[string]any{"type": "function_call_output", "call_id": "call_1", "output": "{}"},
 		}
 	}
@@ -1214,18 +1223,25 @@ func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *t
 		t.Run(fmt.Sprintf("preserveReferences=%v", preserve), func(t *testing.T) {
 			filtered := filterCodexInput(build(), preserve)
 
+			gotReasoning := 0
 			for _, raw := range filtered {
 				item, ok := raw.(map[string]any)
 				require.True(t, ok)
-				require.NotEqual(t, "reasoning", item["type"],
-					"reasoning items must be dropped from input on the OAuth path")
+				if item["type"] == "reasoning" {
+					gotReasoning++
+					require.Equal(t, "enc", item["encrypted_content"])
+					require.Equal(t, []any{}, item["summary"])
+					require.NotContains(t, item, "id")
+				}
 				if id, ok := item["id"].(string); ok {
 					require.False(t, strings.HasPrefix(id, "rs_"),
 						"no item carrying an rs_* id should survive the filter")
 				}
+				if item["type"] == "function_call" && preserve {
+					require.NotContains(t, item, "id")
+				}
 			}
 
-			// Sanity check: the non-reasoning items should still be present.
 			gotTypes := make(map[string]int)
 			for _, raw := range filtered {
 				item, ok := raw.(map[string]any)
@@ -1237,7 +1253,7 @@ func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *t
 			require.Equal(t, 1, gotTypes["message"])
 			require.Equal(t, 1, gotTypes["function_call"])
 			require.Equal(t, 1, gotTypes["function_call_output"])
-			require.Equal(t, 0, gotTypes["reasoning"])
+			require.Equal(t, 1, gotReasoning)
 		})
 	}
 }

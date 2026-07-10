@@ -134,6 +134,7 @@ func TestAccountIsModelSupported(t *testing.T) {
 	tests := []struct {
 		name           string
 		platform       string
+		accountType    AccountType
 		credentials    map[string]any
 		requestedModel string
 		expected       bool
@@ -149,6 +150,22 @@ func TestAccountIsModelSupported(t *testing.T) {
 			name:           "empty mapping allows all",
 			credentials:    map[string]any{},
 			requestedModel: "any-model",
+			expected:       true,
+		},
+		{
+			name:           "openai oauth empty mapping rejects foreign model",
+			platform:       PlatformOpenAI,
+			accountType:    AccountTypeOAuth,
+			credentials:    map[string]any{},
+			requestedModel: "deepseek-v4-pro",
+			expected:       false,
+		},
+		{
+			name:           "openai oauth empty mapping allows openai model",
+			platform:       PlatformOpenAI,
+			accountType:    AccountTypeOAuth,
+			credentials:    map[string]any{},
+			requestedModel: "gpt-5.6",
 			expected:       true,
 		},
 
@@ -211,6 +228,7 @@ func TestAccountIsModelSupported(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			account := &Account{
+				Type:        tt.accountType,
 				Platform:    tt.platform,
 				Credentials: tt.credentials,
 			}

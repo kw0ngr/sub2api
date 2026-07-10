@@ -83,6 +83,9 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 		}
 		out.ToolChoice = tc
 	}
+	if len(req.ResponseFormat) > 0 {
+		out.Text = &ResponsesText{Format: chatResponseFormatToResponsesTextFormat(req.ResponseFormat)}
+	}
 
 	return out, nil
 }

@@ -61,11 +61,13 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// /v1/messages/count_tokens: native OpenAI groups get 404; third-party
-		// Anthropic-compatible gateways can still try their provider endpoint.
 		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
 			platform := getGroupPlatform(c)
-			if platform == service.PlatformOpenAI || platform == service.PlatformGrok {
+			if platform == service.PlatformOpenAI {
+				h.OpenAIGateway.CountTokens(c)
+				return
+			}
+			if platform == service.PlatformGrok {
 				c.JSON(http.StatusNotFound, gin.H{
 					"type": "error",
 					"error": gin.H{
@@ -77,7 +79,13 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.CountTokens(c)
 		})
-		gateway.GET("/models", h.Gateway.Models)
+		gateway.GET("/models", func(c *gin.Context) {
+			if c.Query("client_version") != "" && getGroupPlatform(c) == service.PlatformOpenAI {
+				h.OpenAIGateway.CodexModels(c)
+				return
+			}
+			h.Gateway.Models(c)
+		})
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
@@ -169,6 +177,7 @@ func RegisterGatewayRoutes(
 		codexDirect.POST("/responses", responsesHandler)
 		codexDirect.POST("/responses/*subpath", responsesHandler)
 		codexDirect.GET("/responses", responsesWebSocketHandler)
+		codexDirect.GET("/models", h.OpenAIGateway.CodexModels)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {

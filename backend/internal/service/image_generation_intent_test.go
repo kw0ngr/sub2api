@@ -31,6 +31,20 @@ func TestIsImageGenerationIntent(t *testing.T) {
 			want:     true,
 		},
 		{
+			name:     "image namespace tool",
+			endpoint: "/v1/responses",
+			model:    "gpt-5.4",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"namespace","name":"image_gen"}]}`),
+			want:     true,
+		},
+		{
+			name:     "image namespace additional tool",
+			endpoint: "/v1/responses",
+			model:    "gpt-5.4",
+			body:     []byte(`{"model":"gpt-5.4","input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"image_gen"}]}]}`),
+			want:     true,
+		},
+		{
 			name:     "image tool choice",
 			endpoint: "/v1/responses",
 			model:    "gpt-5.4",

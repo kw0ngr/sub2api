@@ -1,12 +1,18 @@
 package xai
 
+import "strings"
+
 // Model describes an xAI model in OpenAI-compatible /models shape.
 type Model struct {
-	ID          string `json:"id"`
-	Object      string `json:"object"`
-	Created     int64  `json:"created,omitempty"`
-	OwnedBy     string `json:"owned_by"`
-	DisplayName string `json:"display_name,omitempty"`
+	ID                      string `json:"id"`
+	Object                  string `json:"object,omitempty"`
+	Type                    string `json:"type,omitempty"`
+	Created                 int64  `json:"created,omitempty"`
+	CreatedAt               string `json:"created_at,omitempty"`
+	OwnedBy                 string `json:"owned_by,omitempty"`
+	DisplayName             string `json:"display_name,omitempty"`
+	ReasoningEffort         string `json:"reasoning_effort,omitempty"`
+	SupportsReasoningEffort bool   `json:"supports_reasoning_effort"`
 }
 
 var defaultModels = []Model{
@@ -28,7 +34,39 @@ var defaultModels = []Model{
 func DefaultModels() []Model {
 	out := make([]Model, len(defaultModels))
 	copy(out, defaultModels)
+	for i := range out {
+		setReasoningMetadata(&out[i])
+	}
 	return out
+}
+
+func Models(ids []string) []Model {
+	models := make([]Model, len(ids))
+	for i, id := range ids {
+		models[i] = Model{
+			ID:          id,
+			Type:        "model",
+			CreatedAt:   "2024-01-01T00:00:00Z",
+			DisplayName: id,
+		}
+		setReasoningMetadata(&models[i])
+	}
+	return models
+}
+
+func setReasoningMetadata(model *Model) {
+	id := strings.ToLower(strings.TrimSpace(model.ID))
+	if strings.Contains(id, "non-reasoning") || strings.Contains(id, "imagine") {
+		return
+	}
+	supportsReasoningEffort := id == "grok" || id == "grok-latest" ||
+		strings.HasPrefix(id, "grok-4") ||
+		strings.HasPrefix(id, "grok-build") ||
+		strings.HasPrefix(id, "grok-composer")
+	if supportsReasoningEffort {
+		model.SupportsReasoningEffort = true
+		model.ReasoningEffort = "high"
+	}
 }
 
 func DefaultModelIDs() []string {
