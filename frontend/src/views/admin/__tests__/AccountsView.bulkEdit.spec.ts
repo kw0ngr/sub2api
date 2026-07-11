@@ -8,13 +8,17 @@ const {
   listWithEtag,
   getBatchTodayStats,
   getAllProxies,
-  getAllGroups
+  getAllGroups,
+  startAPIKeysHealthCheck,
+  getAPIKeysHealthStatus
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getAllProxies: vi.fn(),
-  getAllGroups: vi.fn()
+  getAllGroups: vi.fn(),
+  startAPIKeysHealthCheck: vi.fn(),
+  getAPIKeysHealthStatus: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -26,7 +30,9 @@ vi.mock('@/api/admin', () => ({
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
-      toggleSchedulable: vi.fn()
+      toggleSchedulable: vi.fn(),
+      startAPIKeysHealthCheck,
+      getAPIKeysHealthStatus
     },
     proxies: {
       getAll: getAllProxies
@@ -86,6 +92,8 @@ describe('admin AccountsView bulk edit scope', () => {
     getBatchTodayStats.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
+    startAPIKeysHealthCheck.mockReset()
+    getAPIKeysHealthStatus.mockReset()
 
     listAccounts.mockResolvedValue({
       items: [],
@@ -102,6 +110,12 @@ describe('admin AccountsView bulk edit scope', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    startAPIKeysHealthCheck.mockResolvedValue({ job_id: 'health-job-1', total: 2 })
+    getAPIKeysHealthStatus.mockResolvedValue({
+      job_id: 'health-job-1',
+      status: 'completed',
+      result: { checked: 2, valid: 2, invalid_disabled: 0, failed: 0 }
+    })
   })
 
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
@@ -115,7 +129,7 @@ describe('admin AccountsView bulk edit scope', () => {
           DataTable: DataTableStub,
           Pagination: true,
           ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
+          AccountTableActions: { template: '<div><slot name="before" /><slot name="beforeCreate" /><slot name="after" /></div>' },
           AccountTableFilters: { template: '<div></div>' },
           AccountBulkActionsBar: AccountBulkActionsBarStub,
           AccountActionMenu: true,
@@ -149,4 +163,64 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
+
+
+  it('starts all API key health check without a confirm dialog', async () => {
+    vi.useFakeTimers()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+
+    const wrapper = mount(AccountsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          AccountTableActions: { template: '<div><slot name="before" /><slot name="beforeCreate" /><slot name="after" /></div>' },
+          AccountTableFilters: { template: '<div></div>' },
+          AccountBulkActionsBar: AccountBulkActionsBarStub,
+          AccountActionMenu: true,
+          ImportDataModal: true,
+          ReAuthAccountModal: true,
+          AccountTestModal: true,
+          AccountStatsModal: true,
+          ScheduledTestsPanel: true,
+          SyncFromCrsModal: true,
+          TempUnschedStatusModal: true,
+          ErrorPassthroughRulesModal: true,
+          TLSFingerprintProfilesModal: true,
+          CreateAccountModal: true,
+          EditAccountModal: true,
+          BulkEditAccountModal: BulkEditAccountModalStub,
+          PlatformTypeBadge: true,
+          AccountCapacityCell: true,
+          AccountStatusIndicator: true,
+          AccountTodayStatsCell: true,
+          AccountGroupsCell: true,
+          AccountUsageCell: true,
+          Icon: true
+        }
+      }
+    })
+
+    await flushPromises()
+    const button = wrapper.findAll('button').find((item) => item.text() === 'admin.accounts.apiKeyHealthCheckAll')
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(startAPIKeysHealthCheck).toHaveBeenCalledWith(undefined)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    confirmSpy.mockRestore()
+    vi.useRealTimers()
+  })
+
 })

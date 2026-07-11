@@ -32,11 +32,12 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 	if req.Reasoning != nil {
 		out.ReasoningEffort = req.Reasoning.Effort
 	}
+	var declaredTools map[string]bool
 	if len(req.Tools) > 0 {
-		out.Tools = responsesToolsToChatTools(req.Tools)
+		out.Tools, declaredTools = responsesToolsToChatTools(req.Tools)
 	}
 	if len(req.ToolChoice) > 0 {
-		out.ToolChoice = responsesToolChoiceToChatToolChoice(req.ToolChoice)
+		out.ToolChoice = responsesToolChoiceToChatToolChoice(req.ToolChoice, declaredTools)
 	}
 	if req.Text != nil {
 		out.ResponseFormat = responsesTextFormatToChatResponseFormat(req.Text.Format)
@@ -359,12 +360,14 @@ func chatContentFromSingleResponsesPart(partType string, part map[string]json.Ra
 	}
 }
 
-func responsesToolsToChatTools(tools []ResponsesTool) []ChatTool {
+func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, map[string]bool) {
 	out := make([]ChatTool, 0, len(tools))
+	declared := make(map[string]bool, len(tools))
 	for _, tool := range tools {
 		if tool.Type != "function" {
 			continue
 		}
+		declared[tool.Name] = true
 		out = append(out, ChatTool{
 			Type: "function",
 			Function: &ChatFunction{
@@ -375,10 +378,10 @@ func responsesToolsToChatTools(tools []ResponsesTool) []ChatTool {
 			},
 		})
 	}
-	return out
+	return out, declared
 }
 
-func responsesToolChoiceToChatToolChoice(raw json.RawMessage) json.RawMessage {
+func responsesToolChoiceToChatToolChoice(raw json.RawMessage, declared map[string]bool) json.RawMessage {
 	var choice map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &choice); err != nil {
 		return raw
@@ -392,6 +395,9 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage) json.RawMessage {
 	}
 	if name == "" {
 		return raw
+	}
+	if declared != nil && !declared[name] {
+		return nil
 	}
 	out, err := json.Marshal(map[string]any{
 		"type": "function",

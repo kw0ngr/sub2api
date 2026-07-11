@@ -275,3 +275,35 @@ func TestResponsesUsageUnmarshalAcceptsChatUsageShape(t *testing.T) {
 	require.NotNil(t, usage.OutputTokensDetails)
 	require.Equal(t, 3, usage.OutputTokensDetails.ReasoningTokens)
 }
+
+func TestResponsesToChatCompletionsRequest_DropsToolChoiceForDroppedTool(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Tools: []ResponsesTool{{
+			Type: "custom",
+			Name: "exec",
+		}},
+		ToolChoice: json.RawMessage(`{"type":"function","name":"exec"}`),
+	}
+
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Empty(t, out.Tools)
+	require.Empty(t, out.ToolChoice)
+}
+
+func TestResponsesToChatCompletionsRequest_KeepsToolChoiceForDeclaredFunction(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Tools: []ResponsesTool{{
+			Type: "function",
+			Name: "lookup",
+		}},
+		ToolChoice: json.RawMessage(`{"type":"function","name":"lookup"}`),
+	}
+
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 1)
+	require.NotEmpty(t, out.ToolChoice)
+}

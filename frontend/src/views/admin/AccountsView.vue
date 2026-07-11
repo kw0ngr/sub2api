@@ -17,6 +17,16 @@
             @sync="showSync = true"
             @create="openCreateAccount"
           >
+            <template #before>
+              <button
+                @click="handleCheckAllAPIKeys"
+                class="btn btn-secondary"
+                :disabled="checkingAPIKeyHealth"
+                :title="t('admin.accounts.apiKeyHealthCheckAllTitle')"
+              >
+                {{ checkingAPIKeyHealth ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
+              </button>
+            </template>
             <template #after>
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
@@ -126,9 +136,6 @@
               </button>
               <button @click="openGrokBulkImport" class="btn btn-secondary" title="批量导入 Grok RT / AT / SSO（SSO 自动换 RT）">
                 {{ t('admin.accounts.grokBulkImport', 'Grok 批量导入 (RT/AT/SSO)') }}
-              </button>
-              <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAPIKeyHealth">
-                {{ checkingAPIKeyHealth ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
               </button>
               <button @click="openExportDataDialog" class="btn btn-secondary">
                 {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
@@ -1436,7 +1443,6 @@ const runAPIKeyHealthCheck = async (accountIds?: number[]) => {
 }
 
 const handleCheckAllAPIKeys = async () => {
-  if (!confirm(t('admin.accounts.apiKeyHealthCheckAllConfirm'))) return
   await runAPIKeyHealthCheck()
 }
 

@@ -2171,10 +2171,10 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 		wantOriginator string
 		wantUserAgent  string
 	}{
-		{name: "desktop originator preserved", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
-		{name: "vscode originator preserved", originator: "codex_vscode", wantOriginator: "codex_vscode"},
-		{name: "official ua fallback to codex_cli_rs", userAgent: "Codex Desktop/1.2.3", wantOriginator: "codex_cli_rs"},
-		{name: "browser ua falls back", userAgent: "Mozilla/5.0 Chrome/136.0.0.0 Safari/537.36", wantOriginator: "opencode", wantUserAgent: codexCLIUserAgent},
+		{name: "originator only falls back to paired codex cli", originator: "Codex Desktop", wantOriginator: "codex_cli_rs", wantUserAgent: codexCLIUserAgent},
+		{name: "vscode originator without ua falls back", originator: "codex_vscode", wantOriginator: "codex_cli_rs", wantUserAgent: codexCLIUserAgent},
+		{name: "official ua pairs originator", userAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUserAgent: "Codex Desktop/1.2.3"},
+		{name: "browser ua falls back", userAgent: "Mozilla/5.0 Chrome/136.0.0.0 Safari/537.36", wantOriginator: "codex_cli_rs", wantUserAgent: codexCLIUserAgent},
 	}
 
 	for _, tt := range tests {

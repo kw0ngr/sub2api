@@ -3108,9 +3108,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
-	// OAuth 安全透传：对非 Codex UA 统一兜底，降低被上游风控拦截概率。
-	if account.Type == AccountTypeOAuth && !openai.IsCodexCLIRequest(req.Header.Get("user-agent")) {
-		req.Header.Set("user-agent", codexCLIUserAgent)
+	// 终态收口：originator 必须与最终 User-Agent 首段配套；非官方 UA 在 helper 内整体回退。
+	if account.Type == AccountTypeOAuth {
+		enforceCodexIdentityHeaders(req.Header)
 	}
 
 	if req.Header.Get("content-type") == "" {
@@ -3969,8 +3969,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
-	if isOpenAIInternalOAuthAccount(account) && strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.Header.Get("user-agent"))), "mozilla/") {
+	if isOpenAIInternalOAuthAccount(account) && openai.IsBrowserUserAgent(req.Header.Get("user-agent")) {
 		req.Header.Set("user-agent", codexCLIUserAgent)
+	}
+	if isOpenAIInternalOAuthAccount(account) {
+		enforceCodexIdentityHeaders(req.Header)
 	}
 
 	// Ensure required headers exist
