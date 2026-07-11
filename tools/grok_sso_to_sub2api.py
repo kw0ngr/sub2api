@@ -70,6 +70,9 @@ class AccountResult:
     access_token: str = ""
     oauth_status: str = "skipped"
     oauth_detail: str = ""
+    rt_probe_status: str = "skipped"
+    rt_probe_detail: str = ""
+    rt_usable: bool | None = None
     import_status: str = "skipped"
     import_detail: str = ""
     account_id: int | None = None
@@ -240,6 +243,133 @@ def exchange_code_for_tokens(
     if not isinstance(obj, dict):
         raise RuntimeError("token exchange returned non-object JSON")
     return obj
+
+
+
+def refresh_oauth_token(
+    refresh_token: str,
+    *,
+    client_id: str = DEFAULT_CLIENT_ID,
+    token_url: str = DEFAULT_TOKEN_URL,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    status, _, body = http_json(
+        "POST",
+        token_url,
+        form_body={
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+        },
+        timeout=timeout,
+    )
+    text = body.decode("utf-8", errors="replace")
+    if status >= 400:
+        raise RuntimeError(f"refresh failed HTTP {status}: {text[:300]}")
+    obj = json.loads(text)
+    if not isinstance(obj, dict) or not str(obj.get("access_token") or "").strip():
+        raise RuntimeError(f"refresh response missing access_token: {text[:200]}")
+    return obj
+
+
+def probe_refresh_token_usability(
+    refresh_token: str,
+    *,
+    client_id: str = DEFAULT_CLIENT_ID,
+    timeout: float = 30.0,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Probe whether an OAuth RT can become a usable api.x.ai access token.
+
+    Levels:
+      - refresh_ok: RT can mint access_token (typ=at+jwt expected)
+      - models_ok: GET /v1/models accepts AT
+      - chat_ok: POST /v1/chat/completions accepts AT
+
+    Returns (usable_for_import, detail, meta).
+    usable_for_import is True when refresh_ok (credential is real OAuth RT).
+    chat_ok may still be false for web-only accounts without API entitlement.
+    """
+    meta: dict[str, Any] = {
+        "refresh_ok": False,
+        "models_ok": False,
+        "chat_ok": False,
+        "access_token_typ": "",
+        "models_status": None,
+        "chat_status": None,
+        "chat_error": "",
+    }
+    try:
+        token = refresh_oauth_token(refresh_token, client_id=client_id, timeout=timeout)
+    except Exception as exc:
+        return False, f"refresh failed: {exc}", meta
+
+    at = str(token.get("access_token") or "").strip()
+    meta["refresh_ok"] = True
+    meta["expires_in"] = token.get("expires_in")
+    # decode JWT header typ if possible
+    try:
+        hdr = decode_jwt_part(at.split(".")[0]) or {}
+        meta["access_token_typ"] = str(hdr.get("typ") or "")
+        meta["access_token_alg"] = str(hdr.get("alg") or "")
+    except Exception:
+        pass
+
+    # models probe
+    try:
+        st, _, body = http_json(
+            "GET",
+            "https://api.x.ai/v1/models",
+            headers={"Authorization": f"Bearer {at}", "Accept": "application/json"},
+            timeout=timeout,
+        )
+        meta["models_status"] = st
+        meta["models_ok"] = 200 <= st < 300
+        if not meta["models_ok"]:
+            meta["models_error"] = body.decode("utf-8", errors="replace")[:180]
+    except Exception as exc:
+        meta["models_error"] = str(exc)
+
+    # chat probe (minimal)
+    try:
+        st, _, body = http_json(
+            "POST",
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {at}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json_body={
+                "model": "grok-3",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            },
+            timeout=timeout,
+        )
+        meta["chat_status"] = st
+        # 200 = ok; 429 = authenticated but rate-limited; 400 may be model/param
+        if 200 <= st < 300 or st == 429:
+            meta["chat_ok"] = True
+        else:
+            msg = body.decode("utf-8", errors="replace")
+            meta["chat_error"] = msg[:220]
+            # model not found still means auth worked
+            low = msg.lower()
+            if st == 400 and ("model" in low or "invalid" in low) and "permission" not in low and "incorrect api key" not in low:
+                meta["chat_ok"] = True
+                meta["chat_note"] = "auth accepted; model/param issue"
+    except Exception as exc:
+        meta["chat_error"] = str(exc)
+
+    usable = bool(meta["refresh_ok"])
+    detail = (
+        f"refresh_ok={meta['refresh_ok']} typ={meta.get('access_token_typ') or '?'} "
+        f"models_ok={meta['models_ok']}({meta.get('models_status')}) "
+        f"chat_ok={meta['chat_ok']}({meta.get('chat_status')})"
+    )
+    if meta.get("chat_error"):
+        detail += f" chat_err={meta['chat_error'][:120]}"
+    return usable, detail, meta
 
 
 def sso_to_oauth_tokens_http(
@@ -427,6 +557,7 @@ def import_refresh_tokens(
     *,
     name_prefix: str,
     group_ids: list[int],
+    notes: str | None = None,
     import_concurrency: int = 5,
     confirm_mixed_channel_risk: bool = True,
     timeout: float = 120.0,
@@ -436,11 +567,14 @@ def import_refresh_tokens(
         "refresh_tokens": refresh_tokens,
         "import_mode": "refresh_token",
         "name_prefix": name_prefix,
+        "concurrency": 3,
         "import_concurrency": import_concurrency,
         "confirm_mixed_channel_risk": confirm_mixed_channel_risk,
     }
     if group_ids:
         payload["group_ids"] = group_ids
+    if notes:
+        payload["notes"] = notes
     status, _, body = http_json(
         "POST",
         url,
@@ -460,6 +594,32 @@ def import_refresh_tokens(
     if isinstance(obj, dict):
         return obj
     raise RuntimeError(f"unexpected import response: {text[:200]}")
+
+
+
+def _redact_import_summary(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not summary:
+        return summary
+    out = dict(summary)
+    results = []
+    for item in out.get("results") or []:
+        if not isinstance(item, dict):
+            results.append(item)
+            continue
+        copy = {k: v for k, v in item.items() if k != "account"}
+        acc = item.get("account")
+        if isinstance(acc, dict):
+            copy["account"] = {
+                "id": acc.get("id"),
+                "name": acc.get("name"),
+                "platform": acc.get("platform"),
+                "type": acc.get("type"),
+                "status": acc.get("status"),
+                "schedulable": acc.get("schedulable"),
+            }
+        results.append(copy)
+    out["results"] = results
+    return out
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -488,6 +648,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--input", "-i", help="account dump file (default: stdin)")
     p.add_argument("--out-dir", default="tmp/grok_sso_import", help="report output directory")
     p.add_argument("--probe-sso", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--probe-rt", action=argparse.BooleanOptionalAction, default=True,
+                   help="after obtaining RT, probe refresh/models/chat usability (default: true)")
+    p.add_argument("--import-only-chat-ok", action=argparse.BooleanOptionalAction, default=False,
+                   help="when importing, only import RTs with chat_ok=true (default: false)")
     p.add_argument(
         "--oauth",
         action=argparse.BooleanOptionalAction,
@@ -604,8 +768,29 @@ def main(argv: list[str] | None = None) -> int:
                 result.refresh_token = rt
                 result.access_token = at
                 if status == "ok" and rt:
-                    refresh_tokens.append(rt)
-                    token_email[rt] = acc.email
+                    if args.probe_rt:
+                        try:
+                            usable, pdetail, pmeta = probe_refresh_token_usability(
+                                rt, client_id=args.client_id
+                            )
+                        except Exception as exc:
+                            usable, pdetail, pmeta = False, f"probe exception: {exc}", {}
+                        result.rt_usable = usable
+                        result.rt_probe_status = "ok" if usable else "failed"
+                        result.rt_probe_detail = pdetail
+                        result.extras["rt_probe"] = pmeta
+                        print(f"[{acc.line_no}] {acc.email} rt_probe={result.rt_probe_status} {pdetail}")
+                        chat_ok = bool(pmeta.get("chat_ok"))
+                        if args.import_only_chat_ok and not chat_ok:
+                            print(f"[{acc.line_no}] {acc.email} skip import queue (chat_ok=false)")
+                        else:
+                            refresh_tokens.append(rt)
+                            token_email[rt] = acc.email
+                    else:
+                        result.rt_usable = None
+                        result.rt_probe_status = "skipped"
+                        refresh_tokens.append(rt)
+                        token_email[rt] = acc.email
                     print(f"[{acc.line_no}] {acc.email} oauth=ok rt={preview_token(rt)}")
                 else:
                     print(f"[{acc.line_no}] {acc.email} oauth={status} {detail[:180]}")
@@ -633,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
                     refresh_tokens,
                     name_prefix=args.name_prefix,
                     group_ids=group_ids,
+                    notes="imported via tools/grok_sso_to_sub2api.py (SSO->RT HTTP)",
                 )
                 oauth_ok = [r for r in results if r.refresh_token]
                 line_results = import_summary.get("results") or []
@@ -669,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
             "sso_valid": sum(1 for r in results if r.sso_valid is True),
             "sso_invalid": sum(1 for r in results if r.sso_valid is False),
             "oauth_ok": sum(1 for r in results if r.oauth_status == "ok"),
+            "rt_usable": sum(1 for r in results if r.rt_usable is True),
+            "rt_chat_ok": sum(1 for r in results if (r.extras.get("rt_probe") or {}).get("chat_ok")),
             "refresh_tokens": len(refresh_tokens),
             "imported_created": sum(1 for r in results if r.import_status == "created"),
         },
@@ -685,7 +873,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             for r in results
         ],
-        "import_summary": import_summary,
+        "import_summary": _redact_import_summary(import_summary),
     }
     write_json(out_dir / "report.json", report)
 
