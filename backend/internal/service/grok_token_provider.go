@@ -62,15 +62,27 @@ func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	}
 
 	cacheKey := GrokTokenCacheKey(account)
+	expiresAt := account.GetCredentialAsTime("expires_at")
+	hasRefresh := strings.TrimSpace(account.GetGrokRefreshToken()) != ""
+	// Access-token-only accounts cannot be refreshed. Reject early (and ignore stale cache).
+	if !hasRefresh && expiresAt != nil && !time.Now().Before(*expiresAt) {
+		if p.tokenCache != nil {
+			_ = p.tokenCache.DeleteAccessToken(ctx, cacheKey)
+		}
+		p.markTempUnschedulable(account, errors.New("grok access_token expired and refresh_token is missing"))
+		return "", errors.New("grok access_token expired and refresh_token is missing")
+	}
 	if p.tokenCache != nil {
 		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && strings.TrimSpace(token) != "" {
-			return token, nil
+			// Only trust cache when token is still within skew window (or no expiry known).
+			if expiresAt == nil || time.Until(*expiresAt) > grokTokenCacheSkew {
+				return token, nil
+			}
 		}
 	}
 
-	expiresAt := account.GetCredentialAsTime("expires_at")
 	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= grokTokenRefreshSkew
-	if needsRefresh && strings.TrimSpace(account.GetGrokRefreshToken()) == "" {
+	if needsRefresh && !hasRefresh {
 		if expiresAt == nil || !time.Now().Before(*expiresAt) {
 			return "", errors.New("grok access_token expired and refresh_token is missing")
 		}

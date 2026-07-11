@@ -551,7 +551,8 @@ func codexModelLookupKey(modelID string) string {
 
 func isKnownCodexModelSuffix(suffix string) bool {
 	switch suffix {
-	case "none", "minimal", "low", "medium", "high", "xhigh":
+	// max is valid on gpt-5.6-sol/terra/luna effort aliases (e.g. gpt-5.6-sol-max).
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
 		return true
 	}
 	return isCodexDateSuffix(suffix)

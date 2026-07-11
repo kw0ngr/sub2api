@@ -124,7 +124,7 @@
               <button @click="showRawKeyImport = true" class="btn btn-secondary">
                 {{ t('admin.accounts.rawKeyImport') }}
               </button>
-              <button @click="openGrokBulkImport" class="btn btn-secondary" title="批量导入 Grok RT / AT / SSO">
+              <button @click="openGrokBulkImport" class="btn btn-secondary" title="批量导入 Grok RT / OAuth AT（at+jwt）">
                 {{ t('admin.accounts.grokBulkImport', 'Grok 批量导入') }}
               </button>
               <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAPIKeyHealth">

@@ -15,7 +15,7 @@
             {{ methodLabel }}
           </label>
           <div class="flex flex-wrap gap-4">
-            <!-- Grok: bulk token import first (RT / AT / SSO) -->
+            <!-- Grok: bulk token import first (RT / OAuth AT) -->
             <label v-if="showRefreshTokenOption" class="flex cursor-pointer items-center gap-2">
               <input
                 v-model="inputMethod"
@@ -85,7 +85,7 @@
           </div>
         </div>
 
-        <!-- Refresh Token / bulk token paste (OpenAI / Antigravity / Grok RT|AT|SSO) -->
+        <!-- Refresh Token / bulk token paste (OpenAI / Antigravity / Grok RT|AT) -->
         <div v-if="inputMethod === 'refresh_token' || inputMethod === 'mobile_refresh_token'" class="space-y-4">
           <div
             class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
@@ -98,7 +98,7 @@
               v-if="platform === 'grok'"
               class="mb-3 rounded-md border border-dashed border-blue-300/70 bg-blue-50/70 px-3 py-2 text-xs text-blue-800 dark:border-blue-600/60 dark:bg-blue-900/20 dark:text-blue-200"
             >
-              支持格式：每行一个；可用 <code>refresh_token:</code> / <code>rt:</code> / <code>access_token:</code> / <code>sso=</code> 前缀；JWT 自动识别为 access_token。
+              仅支持：每行一个 Refresh Token，或 OAuth Access Token（JWT header typ=at+jwt）。网页 SSO Cookie 会被拒绝。
             </div>
 
             <!-- Token list -->
@@ -109,7 +109,7 @@
                 <Icon name="key" size="sm" class="text-blue-500" />
                 {{
                   platform === 'grok'
-                    ? t('admin.accounts.oauth.grok.tokenListLabel', 'Token 列表（RT / AT / SSO）')
+                    ? t('admin.accounts.oauth.grok.tokenListLabel', 'Token 列表（RT / OAuth AT）')
                     : 'Refresh Token'
                 }}
                 <span
@@ -732,7 +732,7 @@ const oauthImportantNotice = computed(() => {
 
 // Local state
 const resolveDefaultInputMethod = (): AuthInputMethod => {
-  // Grok bulk import is the primary path (RT / access_token / sso paste).
+  // Grok bulk import is the primary path (RT / OAuth access_token).
   if (props.platform === 'grok' && props.showRefreshTokenOption) return 'refresh_token'
   if (props.showAccessTokenOption && props.platform === 'openai') return 'manual'
   return 'manual'

@@ -133,6 +133,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	if account != nil {
+		// Grok OAuth AT-only / invalid token: xAI returns 400 "Incorrect API key provided".
+		if account.Platform == PlatformGrok && isGrokInvalidCredentialError(statusCode, responseBody) {
+			if s != nil && s.accountRepo != nil {
+				msg := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "Grok credential rejected")
+				s.handleAuthError(ctx, account, msg)
+			}
+			return true
+		}
 		customErrorCodesDisabledPool := account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()
 		if !customErrorCodesDisabledPool &&
 			len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
@@ -2104,4 +2112,18 @@ func (s *RateLimitService) triggerStreamTimeoutError(ctx context.Context, accoun
 
 	slog.Warn("stream_timeout_account_error", "account_id", account.ID, "model", model)
 	return true
+}
+
+// isGrokInvalidCredentialError detects xAI rejecting a Grok OAuth access token as if it were a bad API key.
+// Typical body: {"code":"invalid-argument","error":"Incorrect API key provided. You can obtain an API key from https://console.x.ai."}
+func isGrokInvalidCredentialError(statusCode int, responseBody []byte) bool {
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusUnauthorized && statusCode != http.StatusForbidden {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	body := strings.ToLower(string(responseBody))
+	combined := msg + " " + body
+	return strings.Contains(combined, "incorrect api key") ||
+		strings.Contains(combined, "invalid api key") ||
+		(strings.Contains(combined, "invalid-argument") && strings.Contains(combined, "api key"))
 }

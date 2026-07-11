@@ -310,10 +310,24 @@ func TestIsClientRequestParameterValidationError_OpenAIEffortMax(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, http.StatusBadRequest, []byte(`{"error":{"message":"`+msg+`"}}`)))
 }
 
-func TestNormalizeOpenAIReasoningEffort_MaxPreservedForGPT56Only(t *testing.T) {
-	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6"))
+func TestNormalizeOpenAIReasoningEffort_MaxPreservedForGPT56FamilyOnly(t *testing.T) {
+	// Actual upstream model IDs only.
 	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-sol"))
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-terra"))
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-luna"))
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "openai/gpt-5.6-sol-max"))
+	// Bare gpt-5.6 is NOT a real upstream model ID.
+	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6"))
 	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.5"))
 	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.4"))
 	require.Equal(t, "high", normalizeOpenAIReasoningEffortForModel("high", "gpt-5.5"))
+}
+
+func TestOpenAIBaseModelIDForEffortSupport(t *testing.T) {
+	require.Equal(t, "gpt-5.6-sol", openAIBaseModelIDForEffortSupport("gpt-5.6-sol"))
+	require.Equal(t, "gpt-5.6-sol", openAIBaseModelIDForEffortSupport("openai/gpt-5.6-sol-max"))
+	require.Equal(t, "gpt-5.6-terra", openAIBaseModelIDForEffortSupport("gpt-5.6-terra-xhigh"))
+	require.Equal(t, "gpt-5.5", openAIBaseModelIDForEffortSupport("gpt-5.5"))
+	require.False(t, openAIModelSupportsMaxReasoning("gpt-5.6"))
+	require.True(t, openAIModelSupportsMaxReasoning("gpt-5.6-sol"))
 }

@@ -177,7 +177,7 @@ func TestSanitizeGrokImportTokenStripsSSOPrefixAndNoise(t *testing.T) {
 }
 
 func TestParseGrokImportTokenLinesDetectsKinds(t *testing.T) {
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"at+jwt"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"a@x.ai","exp":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + `}`))
 	jwt := header + "." + payload + ".sig"
 
@@ -211,7 +211,7 @@ func TestGrokImportAccessTokensCreatesAccounts(t *testing.T) {
 	router := gin.New()
 	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
 
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"at+jwt"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"user@x.ai","exp":` + strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10) + `}`))
 	jwt := header + "." + payload + ".sig"
 
@@ -250,5 +250,62 @@ func TestGrokImportAccessTokensCreatesAccounts(t *testing.T) {
 	}
 	if !strings.Contains(envelope.Data.Results[0].Warning, "access_token only") {
 		t.Fatalf("warning = %q", envelope.Data.Results[0].Warning)
+	}
+}
+
+func TestIsGrokAPIAccessTokenJWT(t *testing.T) {
+	h := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"at+jwt","alg":"ES256"}`))
+	if !isGrokAPIAccessTokenJWT(h + ".payload.sig") {
+		t.Fatal("expected at+jwt to be accepted")
+	}
+	h2 := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"JWT","alg":"HS256"}`))
+	if isGrokAPIAccessTokenJWT(h2 + ".payload.sig") {
+		t.Fatal("expected SSO JWT to be rejected")
+	}
+}
+
+
+func TestGrokImportRejectsSSOCookieJWT(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	oauthSvc := service.NewGrokOAuthService(nil, grokOAuthClientStub{
+		refresh: func(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error) {
+			return nil, errors.New("should not refresh for SSO cookie import")
+		},
+	})
+	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, nil)
+	router := gin.New()
+	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"JWT","alg":"HS256"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"sso@x.ai","exp":` + strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10) + `}`))
+	jwt := header + "." + payload + ".sig"
+
+	body, _ := json.Marshal(map[string]any{
+		"raw_text":    "sso=" + jwt,
+		"name_prefix": "sso-test",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/grok/oauth/import-refresh-tokens", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Data GrokImportRefreshTokensResult `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+	}
+	if envelope.Data.Created != 0 || envelope.Data.Failed != 1 {
+		t.Fatalf("created=%d failed=%d want created=0 failed=1 body=%s", envelope.Data.Created, envelope.Data.Failed, rec.Body.String())
+	}
+	if len(adminSvc.createdAccounts) != 0 {
+		t.Fatalf("should not create accounts for SSO cookies, got %d", len(adminSvc.createdAccounts))
+	}
+	if envelope.Data.Results[0].Error == "" || !strings.Contains(envelope.Data.Results[0].Error, "typ=at+jwt") {
+		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
 	}
 }

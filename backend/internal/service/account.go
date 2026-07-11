@@ -128,7 +128,26 @@ func (a *Account) IsSchedulable() bool {
 	if a.IsGrok() && a.IsGrokRequestQuotaExhausted(now) {
 		return false
 	}
+	if a.IsGrokOAuth() && a.IsGrokAccessTokenExpiredWithoutRefresh(now) {
+		return false
+	}
 	return true
+}
+
+// IsGrokAccessTokenExpiredWithoutRefresh reports AT-only Grok OAuth accounts whose
+// credentials.expires_at is already past (cannot refresh).
+func (a *Account) IsGrokAccessTokenExpiredWithoutRefresh(now time.Time) bool {
+	if a == nil || !a.IsGrokOAuth() {
+		return false
+	}
+	if strings.TrimSpace(a.GetGrokRefreshToken()) != "" {
+		return false
+	}
+	expiresAt := a.GetCredentialAsTime("expires_at")
+	if expiresAt == nil {
+		return false
+	}
+	return !now.Before(*expiresAt)
 }
 
 // IsGrokRequestQuotaExhausted reports whether the last observed Grok request

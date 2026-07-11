@@ -1926,11 +1926,18 @@ func (s *OpenAIGatewayService) getGrokOAuthAccessToken(ctx context.Context, acco
 	}
 	accessToken := account.GetOpenAIAccessToken()
 	expiresAt := account.GetCredentialAsTime("expires_at")
+	refreshToken := strings.TrimSpace(account.GetOpenAIRefreshToken())
 	if accessToken != "" && expiresAt != nil && time.Until(*expiresAt) > 5*time.Minute {
 		return accessToken, nil
 	}
-	refreshToken := strings.TrimSpace(account.GetOpenAIRefreshToken())
 	if refreshToken == "" {
+		// Access-token-only: never return an expired token.
+		if expiresAt != nil && !time.Now().Before(*expiresAt) {
+			return "", errors.New("grok access_token expired and refresh_token is missing")
+		}
+		if strings.TrimSpace(accessToken) == "" {
+			return "", errors.New("access_token not found in credentials")
+		}
 		return accessToken, nil
 	}
 	if s == nil || s.httpUpstream == nil {
@@ -2245,8 +2252,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// 规范化 reasoning.effort / reasoning_effort，与上游允许值对齐。
 	// - minimal -> none
-	// - max 仅 gpt-5.6* 保留；其他模型映射为 xhigh（gpt-5.5 等不接受 max）
-	// 注意：绝不能把 gpt-5.6 的 max 改掉。
+	// - max 仅实际上游模型 gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna 保留
+	// - 其他模型（如 gpt-5.5）将 max 映射为 xhigh
 	{
 		modelForEffort := upstreamModel
 		if modelForEffort == "" {
@@ -6916,15 +6923,50 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 	}
 }
 
+// openAIModelsSupportingMaxReasoning is the allowlist of *actual* upstream
+// model IDs that accept reasoning.effort="max". There is no bare "gpt-5.6".
+var openAIModelsSupportingMaxReasoning = map[string]struct{}{
+	"gpt-5.6-sol":   {},
+	"gpt-5.6-terra": {},
+	"gpt-5.6-luna":  {},
+}
+
 func openAIModelSupportsMaxReasoning(model string) bool {
-	modelID := strings.ToLower(strings.TrimSpace(model))
-	if modelID == "" {
+	base := openAIBaseModelIDForEffortSupport(model)
+	if base == "" {
 		return false
 	}
-	if strings.Contains(modelID, "/") {
-		parts := strings.Split(modelID, "/")
-		modelID = parts[len(parts)-1]
+	_, ok := openAIModelsSupportingMaxReasoning[base]
+	return ok
+}
+
+// openAIBaseModelIDForEffortSupport resolves the canonical upstream model id
+// used to decide supported reasoning effort levels (e.g. max).
+// Examples:
+//
+//	gpt-5.6-sol            -> gpt-5.6-sol
+//	openai/gpt-5.6-sol-max -> gpt-5.6-sol
+//	gpt-5.5                -> gpt-5.5
+func openAIBaseModelIDForEffortSupport(model string) string {
+	modelID := codexModelLookupKey(model)
+	if modelID == "" {
+		return ""
 	}
-	modelID = strings.ReplaceAll(modelID, "_", "-")
-	return modelID == "gpt-5.6" || strings.HasPrefix(modelID, "gpt-5.6-")
+	// Prefer codex/official alias normalization first.
+	if mapped := normalizeCodexModel(modelID); mapped != "" {
+		modelID = codexModelLookupKey(mapped)
+	}
+	// Strip trailing effort suffixes so "gpt-5.6-sol-max" checks as "gpt-5.6-sol".
+	modelID = stripOpenAIReasoningEffortModelSuffix(modelID)
+	return modelID
+}
+
+func stripOpenAIReasoningEffortModelSuffix(modelID string) string {
+	for _, suf := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "extrahigh"} {
+		suffix := "-" + suf
+		if strings.HasSuffix(modelID, suffix) {
+			return strings.TrimSuffix(modelID, suffix)
+		}
+	}
+	return modelID
 }

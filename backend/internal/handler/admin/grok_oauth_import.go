@@ -121,7 +121,8 @@ func (h *GrokOAuthHandler) ImportRefreshTokens(c *gin.Context) {
 		Results: make([]GrokImportRefreshTokenLineResult, len(lines)),
 	}
 
-	g, gctx := errgroup.WithContext(c.Request.Context())
+	ctx := c.Request.Context()
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(importConcurrency)
 	var mu sync.Mutex
 
@@ -132,7 +133,7 @@ func (h *GrokOAuthHandler) ImportRefreshTokens(c *gin.Context) {
 			if err := gctx.Err(); err != nil {
 				return nil
 			}
-			lineResult := h.importGrokTokenLine(c.Request.Context(), req, jobLine, proxyURL, index+1, len(lines) > 1)
+			lineResult := h.importGrokTokenLine(ctx, req, jobLine, proxyURL, index+1, len(lines) > 1)
 			mu.Lock()
 			result.Results[index] = lineResult
 			if lineResult.Created {
@@ -198,6 +199,8 @@ func parseGrokImportTokenLines(req GrokImportRefreshTokensRequest) []grokImportT
 
 func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string) {
 	lower := strings.ToLower(token)
+	// Explicit SSO cookie prefixes are accepted only so import can return a clear
+	// rejection; Sub2API only supports xAI OAuth RT / at+jwt against api.x.ai.
 	for _, prefix := range []string{
 		"refresh_token:", "refresh_token=", "rt:", "rt=",
 		"access_token:", "access_token=", "at:", "at=",
@@ -209,6 +212,8 @@ func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string)
 			case strings.HasPrefix(prefix, "refresh") || strings.HasPrefix(prefix, "rt"):
 				return grokImportKindRefresh, value
 			default:
+				// access_token / at / sso prefixes all enter the access-token path;
+				// SSO cookies are rejected later by isGrokAPIAccessTokenJWT.
 				return grokImportKindAccess, value
 			}
 		}
@@ -217,7 +222,10 @@ func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string)
 	switch mode {
 	case "refresh_token", "refresh", "rt":
 		return grokImportKindRefresh, token
-	case "access_token", "access", "at", "sso":
+	case "access_token", "access", "at":
+		return grokImportKindAccess, token
+	case "sso":
+		// Legacy mode name: still route to access path so rejection message is consistent.
 		return grokImportKindAccess, token
 	default:
 		if looksLikeJWT(token) {
@@ -351,6 +359,10 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 	result GrokImportRefreshTokenLineResult,
 ) GrokImportRefreshTokenLineResult {
 	now := time.Now().UTC()
+	if !isGrokAPIAccessTokenJWT(line.token) {
+		result.Error = "only xAI OAuth credentials are accepted: refresh_token or access_token with JWT header typ=at+jwt (console/web SSO cookies are not supported for api.x.ai)"
+		return result
+	}
 	email, expUnix, warning := parseGrokAccessTokenClaims(line.token, now)
 	if warning != "" && strings.Contains(strings.ToLower(warning), "expired") {
 		result.Error = warning
@@ -393,6 +405,13 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 		ClientID:    fmt.Sprint(credentials["client_id"]),
 	}
 
+	// Drive account-level ExpiresAt from JWT exp so AutoPauseOnExpired works for AT-only accounts.
+	accountExpiresAt := req.ExpiresAt
+	if accountExpiresAt == nil && expUnix > 0 {
+		v := expUnix
+		accountExpiresAt = &v
+	}
+
 	account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
 		Name: grokImportAccountName(grokImportAccountNameInput{
 			prefix: req.NamePrefix,
@@ -411,7 +430,7 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 		RateMultiplier:        req.RateMultiplier,
 		LoadFactor:            req.LoadFactor,
 		GroupIDs:              req.GroupIDs,
-		ExpiresAt:             req.ExpiresAt,
+		ExpiresAt:             accountExpiresAt,
 		AutoPauseOnExpired:    &autoPause,
 		SkipMixedChannelCheck: req.ConfirmMixedChannelRisk,
 	})
@@ -514,4 +533,35 @@ func (h *GrokOAuthHandler) scheduleGrokQuotaProbe(accountID int64) {
 		defer cancel()
 		_, _ = h.quotaService.ProbeUsage(ctx, id)
 	}(accountID)
+}
+
+// isGrokAPIAccessTokenJWT reports whether token looks like an xAI OAuth access token
+// (JWT header typ=at+jwt). Console/web SSO cookies use typ=JWT + HS256 and cannot
+// authenticate against api.x.ai as Bearer tokens.
+func isGrokAPIAccessTokenJWT(token string) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 || parts[0] == "" {
+		return false
+	}
+	raw := parts[0]
+	header, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		switch len(raw) % 4 {
+		case 2:
+			raw += "=="
+		case 3:
+			raw += "="
+		}
+		header, err = base64.URLEncoding.DecodeString(raw)
+		if err != nil {
+			return false
+		}
+	}
+	var obj struct {
+		Typ string `json:"typ"`
+	}
+	if err := json.Unmarshal(header, &obj); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(obj.Typ), "at+jwt")
 }

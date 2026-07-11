@@ -107,6 +107,35 @@ func TestAccountIsSchedulable_QuotaExceeded(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "grok access-token-only expired is unschedulable",
+			account: &Account{
+				Status:      StatusActive,
+				Schedulable: true,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Credentials: map[string]any{
+					"access_token": "expired-at",
+					"expires_at":   now.Add(-time.Minute).UTC().Format(time.RFC3339),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "grok oauth with refresh token remains schedulable even if access near expiry",
+			account: &Account{
+				Status:      StatusActive,
+				Schedulable: true,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Credentials: map[string]any{
+					"access_token":  "at",
+					"refresh_token": "rt",
+					"expires_at":    now.Add(-time.Minute).UTC().Format(time.RFC3339),
+				},
+			},
+			want: true,
+		},
+		{
 			name: "grok request quota recovered after reset",
 			account: &Account{
 				Status:      StatusActive,
