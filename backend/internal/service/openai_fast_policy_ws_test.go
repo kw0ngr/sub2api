@@ -125,16 +125,24 @@ func TestWSResponseCreate_NonResponseCreateFrameUntouched(t *testing.T) {
 
 func TestOpenAIWSPassthroughUsageMetaTracksReasoningEffort(t *testing.T) {
 	meta := newOpenAIWSPassthroughUsageMeta("gpt-5.4-xhigh", []byte(`{"type":"response.create","model":"gpt-5.4"}`))
-	meta.initFromFirstFrame([]byte(`{"type":"response.create","model":"gpt-5.4","service_tier":"flex"}`))
+	meta.initFromFirstFrame([]byte(`{"type":"response.create","model":"gpt-5.4","service_tier":"flex"}`), "gpt-5.4")
 
 	require.NotNil(t, meta.serviceTier.Load())
 	require.Equal(t, "flex", *meta.serviceTier.Load())
 	require.NotNil(t, meta.reasoningEffort.Load())
 	require.Equal(t, "xhigh", *meta.reasoningEffort.Load())
 
-	meta.updateFromResponseCreate([]byte(`{"type":"response.create","model":"gpt-5.4","reasoning":{"effort":"high"}}`), "gpt-5.4")
+	meta.updateFromResponseCreate([]byte(`{"type":"response.create","model":"gpt-5.4","reasoning":{"effort":"high"}}`), "gpt-5.4", "gpt-5.4")
 	require.NotNil(t, meta.reasoningEffort.Load())
 	require.Equal(t, "high", *meta.reasoningEffort.Load())
+}
+
+func TestOpenAIWSPassthroughUsageMetaUsesMappedModelForMax(t *testing.T) {
+	meta := newOpenAIWSPassthroughUsageMeta("sol", []byte(`{"type":"response.create","model":"sol"}`))
+	meta.initFromFirstFrame([]byte(`{"type":"response.create","model":"sol","reasoning":{"effort":"max"}}`), "gpt-5.6-sol")
+
+	require.NotNil(t, meta.reasoningEffort.Load())
+	require.Equal(t, "max", *meta.reasoningEffort.Load())
 }
 
 func TestOpenAIWSPassthroughUsageMetaSessionModelFallback(t *testing.T) {

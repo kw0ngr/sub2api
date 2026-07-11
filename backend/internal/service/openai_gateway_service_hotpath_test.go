@@ -131,6 +131,24 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 	}
 }
 
+func TestExtractOpenAIReasoningEffortFromBodyModelCandidates(t *testing.T) {
+	got := extractOpenAIReasoningEffortFromBody(
+		[]byte(`{"model":"gpt-5.4","input":"hi"}`),
+		"gpt-5.4",
+		"gpt-5.4-xhigh",
+	)
+	require.NotNil(t, got)
+	require.Equal(t, "xhigh", *got)
+
+	got = extractOpenAIReasoningEffortFromBody(
+		[]byte(`{"model":"sol","reasoning":{"effort":"max"}}`),
+		"gpt-5.6-sol",
+		"sol",
+	)
+	require.NotNil(t, got)
+	require.Equal(t, "max", *got)
+}
+
 func TestGetOpenAIRequestBodyMap_UsesContextCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
