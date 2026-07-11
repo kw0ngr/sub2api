@@ -4837,56 +4837,71 @@ const handleAntigravityExchange = async (authCode: string) => {
 
 
 const handleGrokValidateRT = async (refreshTokenInput: string) => {
-  const refreshTokens = refreshTokenInput
-    .split('\n')
-    .map((rt) => rt.trim())
-    .filter((rt) => rt)
-  if (refreshTokens.length === 0) {
+  const rawText = refreshTokenInput.trim()
+  if (!rawText) {
     grokOAuth.error.value = t('admin.accounts.oauth.grok.pleaseEnterRefreshToken')
     return
   }
 
   grokOAuth.loading.value = true
   grokOAuth.error.value = ''
-  let successCount = 0
-  const errors: string[] = []
   try {
-    for (let i = 0; i < refreshTokens.length; i++) {
-      const tokenInfo = await grokOAuth.validateRefreshToken(refreshTokens[i], form.proxy_id)
-      if (!tokenInfo) {
-        errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
-        grokOAuth.error.value = ''
-        continue
+    const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    const result = await adminAPI.grok.importRefreshTokens({
+      raw_text: rawText,
+      import_mode: 'auto',
+      proxy_id: form.proxy_id,
+      name_prefix: form.name,
+      notes: form.notes || null,
+      group_ids: form.group_ids,
+      concurrency: form.concurrency,
+      load_factor: form.load_factor,
+      priority: form.priority,
+      rate_multiplier: form.rate_multiplier,
+      model_mapping: modelMapping ?? undefined,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value
+    })
+    const warnings = result.results
+      .filter((item) => item.created && item.warning)
+      .map((item) => `#${item.line}: ${item.warning}`)
+    if (result.created > 0 && result.failed === 0) {
+      const msg =
+        result.total > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: result.created })
+          : t('admin.accounts.accountCreated')
+      if (warnings.length > 0) {
+        appStore.showWarning(`${msg}\n${warnings.join('\n')}`)
+      } else {
+        appStore.showSuccess(msg)
       }
-      const credentials = grokOAuth.buildCredentials(tokenInfo)
-      const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-      if (modelMapping) credentials.model_mapping = modelMapping
-      await adminAPI.accounts.create({
-        name: refreshTokens.length > 1 ? `${form.name} #${i + 1}` : form.name,
-        notes: form.notes,
-        platform: 'grok',
-        type: 'oauth',
-        credentials,
-        extra: grokOAuth.buildExtraInfo(tokenInfo),
-        proxy_id: form.proxy_id,
-        concurrency: form.concurrency,
-        load_factor: form.load_factor ?? undefined,
-        priority: form.priority,
-        rate_multiplier: form.rate_multiplier,
-        group_ids: form.group_ids,
-        expires_at: form.expires_at,
-        auto_pause_on_expired: autoPauseOnExpired.value
-      })
-      successCount++
-    }
-    if (successCount > 0) {
-      appStore.showSuccess(t('admin.accounts.oauth.batchCreated', { count: successCount }))
       emit('created')
       handleClose()
       return
     }
-    grokOAuth.error.value = errors.join('\n')
+    if (result.created > 0 && result.failed > 0) {
+      appStore.showWarning(
+        t('admin.accounts.oauth.batchPartialSuccess', {
+          success: result.created,
+          failed: result.failed
+        })
+      )
+      grokOAuth.error.value = result.results
+        .filter((item) => !item.created)
+        .map((item) => `#${item.line} [${item.kind || 'token'}]: ${item.error || 'Validation failed'}`)
+        .concat(warnings)
+        .join('\n')
+      emit('created')
+      return
+    }
+    grokOAuth.error.value = result.results
+      .filter((item) => !item.created)
+      .map((item) => `#${item.line} [${item.kind || 'token'}]: ${item.error || 'Validation failed'}`)
+      .join('\n')
     appStore.showError(t('admin.accounts.oauth.batchFailed'))
+  } catch (err: any) {
+    grokOAuth.error.value = err.response?.data?.detail || err.message || t('admin.accounts.oauth.grok.failedToValidateRT')
+    appStore.showError(grokOAuth.error.value)
   } finally {
     grokOAuth.loading.value = false
   }

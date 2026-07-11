@@ -183,9 +183,21 @@ func TestNormalizeOpenAIModelForUpstream(t *testing.T) {
 		},
 		{
 			name:    "oauth normalizes known codex alias",
-			account: &Account{Type: AccountTypeOAuth},
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
 			model:   "gpt-5.4-high",
 			want:    "gpt-5.4",
+		},
+		{
+			name:    "grok oauth preserves native grok model",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth},
+			model:   "grok-4.5",
+			want:    "grok-4.5",
+		},
+		{
+			name:    "grok oauth preserves composer alias",
+			account: &Account{Platform: PlatformGrok, Type: AccountTypeOAuth},
+			model:   "composer-2.5",
+			want:    "composer-2.5",
 		},
 		{
 			name:    "apikey preserves custom compatible model",

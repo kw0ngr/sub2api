@@ -91,6 +91,49 @@ export interface GrokQuotaResetResult {
   message: string
 }
 
+export interface GrokImportRefreshTokensRequest {
+  refresh_tokens?: string[]
+  access_tokens?: string[]
+  raw_text?: string
+  client_id?: string
+  proxy_id?: number | null
+  name_prefix?: string
+  notes?: string | null
+  group_ids?: number[]
+  concurrency?: number
+  import_concurrency?: number
+  priority?: number
+  rate_multiplier?: number
+  load_factor?: number | null
+  model_mapping?: Record<string, string>
+  extra?: Record<string, unknown>
+  expires_at?: number | null
+  auto_pause_on_expired?: boolean
+  confirm_mixed_channel_risk?: boolean
+  /** auto | refresh_token | access_token */
+  import_mode?: 'auto' | 'refresh_token' | 'access_token' | string
+}
+
+export interface GrokImportRefreshTokenLineResult {
+  line: number
+  token_preview?: string
+  kind?: string
+  account_id?: number
+  email?: string
+  created: boolean
+  skipped?: boolean
+  warning?: string
+  error?: string
+}
+
+export interface GrokImportRefreshTokensResult {
+  total: number
+  created: number
+  failed: number
+  skipped?: number
+  results: GrokImportRefreshTokenLineResult[]
+}
+
 export async function generateAuthUrl(
   payload: GrokAuthUrlRequest
 ): Promise<GrokAuthUrlResponse> {
@@ -133,4 +176,21 @@ export async function resetQuota(id: number): Promise<GrokQuotaResetResult> {
   return data
 }
 
-export default { generateAuthUrl, exchangeCode, refreshGrokToken, queryQuota, resetQuota }
+export async function importRefreshTokens(
+  payload: GrokImportRefreshTokensRequest
+): Promise<GrokImportRefreshTokensResult> {
+  const { data } = await apiClient.post<GrokImportRefreshTokensResult>(
+    '/admin/grok/oauth/import-refresh-tokens',
+    payload
+  )
+  return data
+}
+
+export default {
+  generateAuthUrl,
+  exchangeCode,
+  refreshGrokToken,
+  importRefreshTokens,
+  queryQuota,
+  resetQuota
+}

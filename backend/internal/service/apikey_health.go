@@ -40,14 +40,17 @@ const (
 
 func DetectAPIKeyPlatform(rawKey string) (string, bool) {
 	key := strings.TrimSpace(rawKey)
+	lower := strings.ToLower(key)
 	switch {
 	case strings.HasPrefix(key, "sk-ant-"):
 		return PlatformAnthropic, true
 	case strings.HasPrefix(key, "AIza"):
 		return PlatformGemini, true
-	case strings.HasPrefix(strings.ToLower(key), "sk-or-"):
+	case strings.HasPrefix(lower, "sk-or-"):
 		return PlatformOpenRouter, true
-	case strings.HasPrefix(strings.ToLower(key), "sk-"):
+	case strings.HasPrefix(lower, "xai-"):
+		return PlatformGrok, true
+	case strings.HasPrefix(lower, "sk-"):
 		return PlatformOpenAI, true
 	default:
 		return "", false

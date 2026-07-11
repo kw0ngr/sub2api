@@ -20,6 +20,7 @@ func TestDetectAPIKeyPlatform(t *testing.T) {
 		{key: "AIzaSyD-example", platform: PlatformGemini, ok: true},
 		{key: "sk-or-v1-example", platform: PlatformOpenRouter, ok: true},
 		{key: "sk-proj-123", platform: PlatformOpenAI, ok: true},
+		{key: "xai-abc123", platform: PlatformGrok, ok: true},
 		{key: "unknown-key", platform: "", ok: false},
 	}
 

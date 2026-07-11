@@ -2414,6 +2414,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			requestView = newOpenAIRequestView(body)
 		}
 	}
+	if account.Platform == PlatformGrok {
+		sanitizedBody, changed, sanitizeErr := sanitizeGrokResponsesBody(body, upstreamModel)
+		if sanitizeErr != nil {
+			return nil, sanitizeErr
+		}
+		if changed {
+			body = sanitizedBody
+			requestView = newOpenAIRequestView(body)
+			reqBody = nil
+			if _, decodeErr := ensureReqBody(); decodeErr != nil {
+				return nil, decodeErr
+			}
+		}
+	}
 
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -2850,7 +2864,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			}
 		}
 	}
-
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {

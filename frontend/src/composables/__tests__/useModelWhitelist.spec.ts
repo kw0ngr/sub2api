@@ -74,7 +74,22 @@ describe('useModelWhitelist', () => {
 
     expect(models.slice(0, 3)).toEqual(['grok-4.5', 'grok-4.3', 'grok-build-0.1'])
     expect(models).toContain('grok-composer-2.5-fast')
+    expect(models).toContain('composer-2.5')
+    expect(models).toContain('grok-imagine-video-1.5')
     expect(models).toContain('grok-4.20-0309-reasoning')
+  })
+
+  it('grok 预设映射包含官方 composer 和 imagine 映射', () => {
+    const presets = getPresetMappingsByPlatform('grok')
+
+    expect(presets).toContainEqual(expect.objectContaining({
+      from: 'composer-2.5',
+      to: 'grok-composer-2.5-fast'
+    }))
+    expect(presets).toContainEqual(expect.objectContaining({
+      from: 'grok-imagine',
+      to: 'grok-imagine-image-quality'
+    }))
   })
 
   it('anthropic/antigravity 模型列表包含新发布的 Claude 模型', () => {

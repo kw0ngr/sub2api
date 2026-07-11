@@ -16,20 +16,21 @@ func TestAccountHandler_Create_AnthropicAPIKeyPassthroughExtraForwarded(t *testi
 
 	adminSvc := newStubAdminService()
 	handler := NewAccountHandler(
-		adminSvc,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+	adminSvc,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+	nil,
+)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts", handler.Create)

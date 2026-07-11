@@ -76,7 +76,7 @@ func TestAccountHandlerApplyOAuthCredentials_MergesExtraAndInvalidatesCachedToke
 		},
 	}
 	invalidator := &reauthTokenInvalidator{}
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, invalidator)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts/:id/apply-oauth-credentials", handler.ApplyOAuthCredentials)

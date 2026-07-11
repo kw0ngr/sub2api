@@ -134,7 +134,7 @@ func TestAccountIsModelSupported(t *testing.T) {
 	tests := []struct {
 		name           string
 		platform       string
-		accountType    AccountType
+		accountType    string
 		credentials    map[string]any
 		requestedModel string
 		expected       bool

@@ -52,3 +52,11 @@ func TestDefaultModelsExposeReasoningEffortForGrokCLI(t *testing.T) {
 		t.Fatalf("mapped grok-latest alias metadata = %+v, want supports=true effort=high", mapped[3])
 	}
 }
+
+func TestDefaultModelMappingIncludesComposerLegacyAlias(t *testing.T) {
+	mapping := DefaultModelMapping()
+
+	if got := mapping["composer-2.5"]; got != "grok-composer-2.5-fast" {
+		t.Fatalf("composer-2.5 mapping = %q, want grok-composer-2.5-fast", got)
+	}
+}
