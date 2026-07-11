@@ -98,7 +98,7 @@
               v-if="platform === 'grok'"
               class="mb-3 rounded-md border border-dashed border-blue-300/70 bg-blue-50/70 px-3 py-2 text-xs text-blue-800 dark:border-blue-600/60 dark:bg-blue-900/20 dark:text-blue-200"
             >
-              仅支持：每行一个 Refresh Token，或 OAuth Access Token（JWT header typ=at+jwt）。网页 SSO Cookie 会被拒绝。
+              支持：每行一个 RT / OAuth AT（typ=at+jwt）/ SSO。卡密格式 email|password|sso 也可直接粘贴；SSO 会在服务端自动换成 RT。
             </div>
 
             <!-- Token list -->
@@ -109,7 +109,7 @@
                 <Icon name="key" size="sm" class="text-blue-500" />
                 {{
                   platform === 'grok'
-                    ? t('admin.accounts.oauth.grok.tokenListLabel', 'Token 列表（RT / OAuth AT）')
+                    ? t('admin.accounts.oauth.grok.tokenListLabel', 'Token 列表（RT / OAuth AT / SSO）')
                     : 'Refresh Token'
                 }}
                 <span
@@ -732,7 +732,7 @@ const oauthImportantNotice = computed(() => {
 
 // Local state
 const resolveDefaultInputMethod = (): AuthInputMethod => {
-  // Grok bulk import is the primary path (RT / OAuth access_token).
+  // Grok bulk import is the primary path (RT / OAuth AT / SSO dump).
   if (props.platform === 'grok' && props.showRefreshTokenOption) return 'refresh_token'
   if (props.showAccessTokenOption && props.platform === 'openai') return 'manual'
   return 'manual'

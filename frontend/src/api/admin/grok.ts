@@ -110,8 +110,8 @@ export interface GrokImportRefreshTokensRequest {
   expires_at?: number | null
   auto_pause_on_expired?: boolean
   confirm_mixed_channel_risk?: boolean
-  /** auto | refresh_token | access_token */
-  import_mode?: 'auto' | 'refresh_token' | 'access_token' | string
+  /** auto | refresh_token | access_token | sso */
+  import_mode?: 'auto' | 'refresh_token' | 'access_token' | 'sso' | string
 }
 
 export interface GrokImportRefreshTokenLineResult {

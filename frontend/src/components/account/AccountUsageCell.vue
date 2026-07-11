@@ -326,7 +326,7 @@
 
         <!-- Source: local rolling budget -->
         <div v-if="grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-emerald-500/15 bg-emerald-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">本地估算</div>
+          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">本地 40m 估算（备用，非官方窗口）</div>
           <div v-for="row in grokLocalBudgetRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
             <span>{{ row.label }}</span>
             <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
@@ -1186,7 +1186,7 @@ const loadActiveUsage = async () => {
     usageInfo.value = result
     _usageCache.set(props.account.id, { data: result, ts: Date.now() })
   } catch (e: any) {
-    error.value = props.account.platform === 'grok' ? `刷新 40m 窗口失败：${extractProbeErrorMessage(e)}` : error.value
+    error.value = props.account.platform === 'grok' ? `刷新本地 40m 窗口失败：${extractProbeErrorMessage(e)}` : error.value
     console.error('Failed to load active usage:', e)
   } finally {
     activeQueryLoading.value = false
@@ -1288,9 +1288,9 @@ const grokOfficialRows = computed(() => {
 const grokQuotaStateLabel = computed(() => {
   if (usageInfo.value?.error_code === 'rate_limited') return '限流'
   if (usageInfo.value?.needs_reauth) return '需重授权'
-  if (grokHeaderRows.value.length) return '已观测'
-  if (grokLocalBudgetRows.value.length) return '本地估算'
-  if (grokOfficialRows.value.length) return '官方'
+  if (grokHeaderRows.value.length) return '上游响应头'
+  if (grokOfficialRows.value.length) return '官方 Management'
+  if (grokLocalBudgetRows.value.length) return '本地估算(备用)'
   return '未知'
 })
 

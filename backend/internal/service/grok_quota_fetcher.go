@@ -40,7 +40,7 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 	if err != nil || snapshot == nil {
 		if usage.GrokOfficialUsage == nil {
 			usage.ErrorCode = "quota_unknown"
-			usage.Error = "Grok quota is estimated from local 40m usage until xAI rate-limit headers are observed"
+			usage.Error = "No upstream Grok rate-limit headers yet; local 40m token window is a fallback estimate. Click 探测上游额度."
 		}
 		return usage
 	}
@@ -63,7 +63,7 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		usage.GrokQuotaSnapshotState = "no_headers"
 		if usage.GrokOfficialUsage == nil {
 			usage.ErrorCode = "quota_unknown"
-			usage.Error = "No xAI quota headers observed on the latest Grok probe"
+			usage.Error = "Latest probe saw no xAI rate-limit headers; local 40m window is fallback only. Retry 探测上游额度."
 		}
 	}
 

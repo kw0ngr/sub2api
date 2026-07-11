@@ -210,7 +210,7 @@ func TestSanitizeGrokImportTokenStripsSSOPrefixAndNoise(t *testing.T) {
 		t.Fatalf("sanitize = %q, want sso=rt-one", got)
 	}
 	kind, token := detectGrokImportTokenKind(got, "auto")
-	if kind != grokImportKindAccess || token != "rt-one" {
+	if kind != grokImportKindSSO || token != "rt-one" {
 		t.Fatalf("detect = %s/%q", kind, token)
 	}
 }
@@ -233,7 +233,7 @@ func TestParseGrokImportTokenLinesDetectsKinds(t *testing.T) {
 	if lines[1].kind != grokImportKindAccess {
 		t.Fatalf("line1 kind = %s", lines[1].kind)
 	}
-	if lines[2].kind != grokImportKindAccess || lines[2].token != "cookie-token" {
+	if lines[2].kind != grokImportKindSSO || lines[2].token != "cookie-token" {
 		t.Fatalf("line2 = %+v", lines[2])
 	}
 }
@@ -311,7 +311,7 @@ func TestIsGrokAPIAccessTokenJWT(t *testing.T) {
 }
 
 
-func TestGrokImportRejectsSSOCookieJWT(t *testing.T) {
+func TestGrokImportInvalidSSODoesNotCreateAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
 	oauthSvc := service.NewGrokOAuthService(nil, grokOAuthClientStub{
@@ -351,8 +351,13 @@ func TestGrokImportRejectsSSOCookieJWT(t *testing.T) {
 	if len(adminSvc.createdAccounts) != 0 {
 		t.Fatalf("should not create accounts for SSO cookies, got %d", len(adminSvc.createdAccounts))
 	}
-	if envelope.Data.Results[0].Error == "" || !strings.Contains(envelope.Data.Results[0].Error, "typ=at+jwt") {
-		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
+	errMsg := envelope.Data.Results[0].Error
+	if errMsg == "" {
+		t.Fatal("expected error for invalid SSO cookie")
+	}
+	// Invalid SSO may fail conversion or still be rejected; never create accounts.
+	if !strings.Contains(errMsg, "sso convert failed") && !strings.Contains(errMsg, "typ=at+jwt") {
+		t.Fatalf("error = %q", errMsg)
 	}
 }
 

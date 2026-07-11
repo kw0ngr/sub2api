@@ -73,6 +73,7 @@ type grokImportTokenKind string
 const (
 	grokImportKindRefresh grokImportTokenKind = "refresh_token"
 	grokImportKindAccess  grokImportTokenKind = "access_token"
+	grokImportKindSSO     grokImportTokenKind = "sso"
 )
 
 type grokImportTokenLine struct {
@@ -96,7 +97,7 @@ func (h *GrokOAuthHandler) ImportRefreshTokens(c *gin.Context) {
 	}
 	lines := parseGrokImportTokenLines(req)
 	if len(lines) == 0 {
-		response.BadRequest(c, "refresh_tokens, access_tokens or raw_text is required")
+		response.BadRequest(c, "refresh_tokens, access_tokens, sso tokens or raw_text is required")
 		return
 	}
 
@@ -199,8 +200,25 @@ func parseGrokImportTokenLines(req GrokImportRefreshTokensRequest) []grokImportT
 
 func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string) {
 	lower := strings.ToLower(token)
-	// Explicit SSO cookie prefixes are accepted only so import can return a clear
-	// rejection; Sub2API only supports xAI OAuth RT / at+jwt against api.x.ai.
+	// Support email|password|sso dump lines: take 3rd field as SSO when present.
+	if strings.Count(token, "|") >= 2 {
+		parts := strings.Split(token, "|")
+		if len(parts) >= 3 {
+			sso := strings.TrimSpace(parts[2])
+			if sso != "" {
+				return grokImportKindSSO, sso
+			}
+		}
+	}
+	if strings.Count(token, "----") >= 2 {
+		parts := strings.Split(token, "----")
+		if len(parts) >= 3 {
+			sso := strings.TrimSpace(parts[2])
+			if sso != "" {
+				return grokImportKindSSO, sso
+			}
+		}
+	}
 	for _, prefix := range []string{
 		"refresh_token:", "refresh_token=", "rt:", "rt=",
 		"access_token:", "access_token=", "at:", "at=",
@@ -211,9 +229,9 @@ func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string)
 			switch {
 			case strings.HasPrefix(prefix, "refresh") || strings.HasPrefix(prefix, "rt"):
 				return grokImportKindRefresh, value
+			case strings.HasPrefix(prefix, "sso"):
+				return grokImportKindSSO, value
 			default:
-				// access_token / at / sso prefixes all enter the access-token path;
-				// SSO cookies are rejected later by isGrokAPIAccessTokenJWT.
 				return grokImportKindAccess, value
 			}
 		}
@@ -225,11 +243,15 @@ func detectGrokImportTokenKind(token, mode string) (grokImportTokenKind, string)
 	case "access_token", "access", "at":
 		return grokImportKindAccess, token
 	case "sso":
-		// Legacy mode name: still route to access path so rejection message is consistent.
-		return grokImportKindAccess, token
+		return grokImportKindSSO, token
 	default:
+		// HS256 typ=JWT web SSO cookies look like JWTs but are not OAuth ATs.
 		if looksLikeJWT(token) {
-			return grokImportKindAccess, token
+			if isGrokAPIAccessTokenJWT(token) {
+				return grokImportKindAccess, token
+			}
+			// Non-at+jwt JWT: treat as SSO candidate (will convert or fail clearly).
+			return grokImportKindSSO, token
 		}
 		return grokImportKindRefresh, token
 	}
@@ -293,6 +315,8 @@ func (h *GrokOAuthHandler) importGrokTokenLine(
 	switch line.kind {
 	case grokImportKindAccess:
 		return h.importGrokAccessToken(ctx, req, line, proxyURL, index, multi, result)
+	case grokImportKindSSO:
+		return h.importGrokSSOToken(ctx, req, line, proxyURL, index, multi, result)
 	default:
 		return h.importGrokRefreshToken(ctx, req, line, proxyURL, index, multi, result)
 	}
@@ -316,6 +340,10 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 	if len(req.ModelMapping) > 0 {
 		credentials["model_mapping"] = req.ModelMapping
 	}
+	concurrency := req.Concurrency
+	if concurrency <= 0 {
+		concurrency = 3
+	}
 	account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
 		Name: grokImportAccountName(grokImportAccountNameInput{
 			prefix: req.NamePrefix,
@@ -329,7 +357,7 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 		Credentials:           credentials,
 		Extra:                 mergeGrokImportExtra(req.Extra, tokenInfo),
 		ProxyID:               req.ProxyID,
-		Concurrency:           req.Concurrency,
+		Concurrency:           concurrency,
 		Priority:              req.Priority,
 		RateMultiplier:        req.RateMultiplier,
 		LoadFactor:            req.LoadFactor,
@@ -348,6 +376,59 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 	result.Email = tokenInfo.Email
 	h.scheduleGrokQuotaProbe(account.ID)
 	return result
+}
+
+
+func (h *GrokOAuthHandler) importGrokSSOToken(
+	ctx context.Context,
+	req GrokImportRefreshTokensRequest,
+	line grokImportTokenLine,
+	proxyURL string,
+	index int,
+	multi bool,
+	result GrokImportRefreshTokenLineResult,
+) GrokImportRefreshTokenLineResult {
+	// Convert web SSO cookie -> official OAuth RT/AT, then reuse RT import path.
+	tokenInfo, webQuota, err := service.ConvertGrokSSOToOAuth(ctx, line.token, req.ClientID, proxyURL)
+	if err != nil {
+		result.Error = "sso convert failed: " + err.Error()
+		return result
+	}
+	if strings.TrimSpace(tokenInfo.RefreshToken) == "" {
+		result.Error = "sso convert produced no refresh_token"
+		return result
+	}
+	// Re-run as refresh_token import using converted RT.
+	line.token = tokenInfo.RefreshToken
+	line.kind = grokImportKindRefresh
+	result.Kind = string(grokImportKindSSO)
+	out := h.importGrokRefreshToken(ctx, req, line, proxyURL, index, multi, result)
+	if out.Created && webQuota != nil {
+		out.Warning = strings.TrimSpace(strings.Join([]string{
+			out.Warning,
+			fmt.Sprintf("converted from SSO; web rate-limits remaining=%s/%s window=%ss",
+				int64PtrValue(webQuota.RemainingQueries),
+				int64PtrValue(webQuota.TotalQueries),
+				int64PtrValue(webQuota.WindowSizeSeconds),
+			),
+		}, "; "))
+		// Persist web rate-limits snapshot into account extra when possible.
+		if out.AccountID > 0 && h.adminService != nil {
+			// Best-effort via Create already done; schedule probe still runs.
+			_ = webQuota
+		}
+	}
+	if out.Email == "" && tokenInfo.Email != "" {
+		out.Email = tokenInfo.Email
+	}
+	return out
+}
+
+func int64PtrValue(p *int64) string {
+	if p == nil {
+		return "?"
+	}
+	return fmt.Sprintf("%d", *p)
 }
 
 func (h *GrokOAuthHandler) importGrokAccessToken(

@@ -301,7 +301,7 @@
               <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
               <span class="text-xs text-gray-500 dark:text-gray-400">{{
                 form.platform === 'grok'
-                  ? t('admin.accounts.types.grokOauthBulk', '浏览器授权 / 批量导入 RT·AT')
+                  ? t('admin.accounts.types.grokOauthBulk', '浏览器授权 / 批量导入 RT·AT·SSO')
                   : t('admin.accounts.types.chatgptOauth')
               }}</span>
             </div>
@@ -337,7 +337,7 @@
           v-if="form.platform === 'grok' && accountCategory === 'oauth-based'"
           class="mt-2 rounded-md border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-900/20 dark:text-emerald-200"
         >
-          下一步可直接批量粘贴 <strong>Refresh Token</strong> 或 <strong>OAuth Access Token（typ=at+jwt）</strong>（每行一个）。不支持网页 SSO Cookie。也支持浏览器 OAuth 授权。
+          下一步可直接批量粘贴 <strong>RT</strong> / <strong>OAuth AT</strong> / <strong>SSO 卡密</strong>（email|password|sso，每行一个）。SSO 会服务端自动换成 RT。也支持浏览器 OAuth。
         </p>
       </div>
 

@@ -3355,10 +3355,10 @@ export default {
           failedToGenerateUrl: '生成 Grok 授权链接失败',
           missingExchangeParams: '缺少 code / session_id / state',
           failedToExchangeCode: 'Grok 授权码兑换失败',
-          refreshTokenAuth: '批量导入 RT / AT',
-          tokenListLabel: 'Token 列表（RT / OAuth AT）',
-          refreshTokenDesc: '支持批量导入 xAI OAuth Refresh Token 或 Access Token（JWT header typ=at+jwt）。不支持 console/web SSO Cookie。',
-          refreshTokenPlaceholder: 'rt-xxxx\naccess_token:eyJhbGciOi...\n# 注释行',
+          refreshTokenAuth: '批量导入 RT / AT / SSO',
+          tokenListLabel: 'Token 列表（RT / OAuth AT / SSO）',
+          refreshTokenDesc: '支持批量导入：1) OAuth RT  2) OAuth AT（typ=at+jwt） 3) 网页 SSO / 卡密行 email|password|sso。SSO 会在服务端自动换成 RT 再入库。',
+          refreshTokenPlaceholder: 'rt-xxxx\naccess_token:eyJ...\nemail|password|sso\nsso=eyJ...\n# 注释行',
           validating: '验证中...',
           validateAndCreate: '验证并创建账号',
           pleaseEnterRefreshToken: '请输入 Refresh Token',
@@ -4089,6 +4089,21 @@ export default {
       clickToViewBalance: '点击查看充值记录',
       failedToLoadUser: '加载用户信息失败',
       userDeletedBadge: '已删除',
+      tokenRanking: {
+        title: '用户 Token 排行',
+        subtitle: '按当前筛选与时间范围统计每个用户的 Token 用量，点击行可下钻到该用户',
+        rowHint: '点击按该用户筛选用量明细',
+        userCount: '共 {count} 位用户',
+        columns: {
+          user: '用户',
+          requests: '请求数',
+          inputTokens: '输入 Token',
+          outputTokens: '输出 Token',
+          cacheTokens: '缓存 Token',
+          totalTokens: '总 Token',
+          cost: '费用'
+        }
+      },
       cleanup: {
         button: '清理',
         title: '清理使用记录',

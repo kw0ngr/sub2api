@@ -3226,10 +3226,10 @@ export default {
                     failedToGenerateUrl: 'Failed to generate Grok auth URL',
                     missingExchangeParams: 'Missing code, session ID, or state',
                     failedToExchangeCode: 'Failed to exchange Grok auth code',
-                    refreshTokenAuth: 'Bulk Import RT / AT',
-                    tokenListLabel: 'Token list (RT / OAuth AT)',
-                    refreshTokenDesc: 'Bulk-import xAI OAuth refresh tokens or access tokens (JWT header typ=at+jwt). Console/web SSO cookies are not accepted.',
-                    refreshTokenPlaceholder: 'rt-xxxx\naccess_token:eyJhbGciOi...\n# comments',
+                    refreshTokenAuth: 'Bulk Import RT / AT / SSO',
+                    tokenListLabel: 'Token list (RT / OAuth AT / SSO)',
+                    refreshTokenDesc: 'Bulk-import: 1) OAuth RT  2) OAuth AT (typ=at+jwt)  3) web SSO / card lines email|password|sso. SSO is converted server-side to RT before account creation.',
+                    refreshTokenPlaceholder: 'rt-xxxx\naccess_token:eyJ...\nemail|password|sso\nsso=eyJ...\n# comments',
                     validating: 'Validating...',
                     validateAndCreate: 'Validate & Create',
                     pleaseEnterRefreshToken: 'Please enter Refresh Token',
@@ -3935,6 +3935,21 @@ export default {
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',
       userDeletedBadge: 'Deleted',
+      tokenRanking: {
+        title: 'User Token Ranking',
+        subtitle: 'Token usage by user for the current filters and time range; click a row to drill down.',
+        rowHint: 'Click to filter usage logs by this user',
+        userCount: '{count} users',
+        columns: {
+          user: 'User',
+          requests: 'Requests',
+          inputTokens: 'Input Tokens',
+          outputTokens: 'Output Tokens',
+          cacheTokens: 'Cache Tokens',
+          totalTokens: 'Total Tokens',
+          cost: 'Cost'
+        }
+      },
       cleanup: {
         button: 'Cleanup',
         title: 'Cleanup Usage Records',
