@@ -60,7 +60,6 @@
                 type="search"
                 placeholder="Search account / model / error"
               />
-              <kbd>⌘ K</kbd>
             </label>
           </div>
         </div>
@@ -403,7 +402,7 @@
               </div>
               <div v-else class="account-map-table-footnote">
                 <span class="account-map-status-info-dot">i</span>
-                No disabled accounts in this group
+                已显示全部账号
               </div>
             </div>
           </section>
@@ -512,7 +511,7 @@
 
             <div v-if="selectedAccount.error_message || selectedAccount.temp_unschedulable_reason" class="inspector-alert">
               <p class="font-semibold">最近问题</p>
-              <p class="mt-1 line-clamp-4 text-xs">{{ selectedAccount.temp_unschedulable_reason || selectedAccount.error_message }}</p>
+              <p class="mt-1 line-clamp-4 text-xs" :title="selectedAccount.temp_unschedulable_reason || selectedAccount.error_message || ''">{{ selectedAccount.temp_unschedulable_reason || selectedAccount.error_message }}</p>
             </div>
 
             <div class="inspector-actions">
@@ -573,13 +572,13 @@
                 {{ checkingHealth ? '重试健康检查中' : '重试健康检查' }}
               </button>
               <button type="button" class="inspector-action" @click="goAccounts">
-                降权高风险账号
+                打开账号管理
               </button>
               <button type="button" class="inspector-action" @click="goPoolUsage(selectedPoolForDetail)">
                 查看请求记录
               </button>
               <button type="button" class="inspector-action" @click="goFingerprints">
-                复制配置
+                查看指纹策略
               </button>
             </div>
 
@@ -916,7 +915,7 @@ const selectedPoolForDetail = computed(() => {
   return visiblePools.value.find((pool) => pool.key === selectedPoolKey.value) || null
 })
 
-const activeDetailPool = computed(() => selectedPoolForDetail.value || visiblePools.value[0] || null)
+const activeDetailPool = computed(() => selectedPoolForDetail.value)
 
 const detailDrawerOpen = computed(() => Boolean(selectedAccount.value || selectedPoolForDetail.value))
 

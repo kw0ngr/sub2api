@@ -231,6 +231,18 @@ describe('useAppStore', () => {
     })
   })
 
+  // --- Sidebar UI state ---
+
+  describe('sidebar UI state', () => {
+    it('keeps sidebar scroll position in the app store', () => {
+      const store = useAppStore()
+
+      expect(store.sidebarScrollTop).toBe(0)
+      store.sidebarScrollTop = 256
+      expect(store.sidebarScrollTop).toBe(256)
+    })
+  })
+
   // --- reset ---
 
   describe('reset', () => {
