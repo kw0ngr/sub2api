@@ -106,6 +106,21 @@
         :stats="usageStats"
         :endpoint-stats="upstreamEndpointStats"
       />
+      <div class="card overflow-hidden">
+        <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700/50 sm:px-6">
+          <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+            {{ t('admin.usage.tokenRanking.title') }}
+          </h2>
+        </div>
+        <UserTokenRanking
+          ref="userTokenRankingRef"
+          :start-date="startDate"
+          :end-date="endDate"
+          :filters="breakdownFilters"
+          :model="filters.model"
+          @select-user="handleRankingSelectUser"
+        />
+      </div>
       <UsageTable
         :data="usageLogs"
         :loading="loading"
@@ -279,6 +294,7 @@ import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usag
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
+import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import GatewaySignalPreview from '@/components/admin/usage/GatewaySignalPreview.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
@@ -404,6 +420,11 @@ const handleUserClick = async (userId: number) => {
   } catch {
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
+}
+
+const handleRankingSelectUser = (userId: number) => {
+  filters.value = { ...filters.value, user_id: userId }
+  applyFilters()
 }
 
 async function openReplayLab(row: AdminUsageLog) {
@@ -694,12 +715,15 @@ const applyFilters = () => {
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
 }
+const userTokenRankingRef = ref<{ reload: () => void } | null>(null)
+
 const refreshData = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats(true)
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
+  userTokenRankingRef.value?.reload()
 }
 const resetFilters = () => {
   const range = getLast24HoursRangeDates()

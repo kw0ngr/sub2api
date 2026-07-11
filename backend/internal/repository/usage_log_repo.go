@@ -4011,6 +4011,9 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 			COALESCE(ul.user_id, 0) as user_id,
 			COALESCE(u.email, '') as email,
 			COUNT(*) as requests,
+			COALESCE(SUM(ul.input_tokens), 0) as input_tokens,
+			COALESCE(SUM(ul.output_tokens), 0) as output_tokens,
+			COALESCE(SUM(ul.cache_creation_tokens + ul.cache_read_tokens), 0) as cache_tokens,
 			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(ul.total_cost), 0) as cost,
 			COALESCE(SUM(ul.actual_cost), 0) as actual_cost,
@@ -4047,8 +4050,9 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		args = append(args, dim.AccountID)
 	}
 	if dim.RequestType != nil {
-		query += fmt.Sprintf(" AND ul.request_type = $%d", len(args)+1)
-		args = append(args, *dim.RequestType)
+		condition, conditionArgs := buildRequestTypeFilterConditionWithAlias(len(args)+1, *dim.RequestType, "ul")
+		query += " AND " + condition
+		args = append(args, conditionArgs...)
 	}
 	if dim.Stream != nil {
 		query += fmt.Sprintf(" AND ul.stream = $%d", len(args)+1)
@@ -4059,7 +4063,12 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		args = append(args, *dim.BillingType)
 	}
 
-	query += " GROUP BY ul.user_id, u.email ORDER BY actual_cost DESC"
+	orderBy := "actual_cost"
+	switch dim.SortBy {
+	case "total_tokens", "input_tokens", "output_tokens", "cache_tokens", "requests", "cost", "actual_cost":
+		orderBy = dim.SortBy
+	}
+	query += " GROUP BY ul.user_id, u.email ORDER BY " + orderBy + " DESC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
@@ -4082,6 +4091,9 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 			&row.UserID,
 			&row.Email,
 			&row.Requests,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheTokens,
 			&row.TotalTokens,
 			&row.Cost,
 			&row.ActualCost,
@@ -5247,18 +5259,43 @@ func appendRequestTypeOrStreamQueryFilter(query string, args []any, requestType 
 }
 
 // buildRequestTypeFilterCondition 在 request_type 过滤时兼容 legacy 字段，避免历史数据漏查。
+// tableAlias 为空时使用裸列名；非空时自动加 "alias." 前缀（如 "ul"）。
 func buildRequestTypeFilterCondition(startArgIndex int, requestType int16) (string, []any) {
+	return buildRequestTypeFilterConditionWithAlias(startArgIndex, requestType, "")
+}
+
+func buildRequestTypeFilterConditionWithAlias(startArgIndex int, requestType int16, tableAlias string) (string, []any) {
+	col := func(name string) string {
+		if tableAlias == "" {
+			return name
+		}
+		return tableAlias + "." + name
+	}
 	normalized := service.RequestTypeFromInt16(requestType)
 	requestTypeArg := int16(normalized)
 	switch normalized {
 	case service.RequestTypeSync:
-		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND stream = FALSE AND openai_ws_mode = FALSE))", startArgIndex, int16(service.RequestTypeUnknown)), []any{requestTypeArg}
+		return fmt.Sprintf("(%s = $%d OR (%s = %d AND %s = FALSE AND %s = FALSE))",
+			col("request_type"), startArgIndex,
+			col("request_type"), int16(service.RequestTypeUnknown),
+			col("stream"),
+			col("openai_ws_mode"),
+		), []any{requestTypeArg}
 	case service.RequestTypeStream:
-		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND stream = TRUE AND openai_ws_mode = FALSE))", startArgIndex, int16(service.RequestTypeUnknown)), []any{requestTypeArg}
+		return fmt.Sprintf("(%s = $%d OR (%s = %d AND %s = TRUE AND %s = FALSE))",
+			col("request_type"), startArgIndex,
+			col("request_type"), int16(service.RequestTypeUnknown),
+			col("stream"),
+			col("openai_ws_mode"),
+		), []any{requestTypeArg}
 	case service.RequestTypeWSV2:
-		return fmt.Sprintf("(request_type = $%d OR (request_type = %d AND openai_ws_mode = TRUE))", startArgIndex, int16(service.RequestTypeUnknown)), []any{requestTypeArg}
+		return fmt.Sprintf("(%s = $%d OR (%s = %d AND %s = TRUE))",
+			col("request_type"), startArgIndex,
+			col("request_type"), int16(service.RequestTypeUnknown),
+			col("openai_ws_mode"),
+		), []any{requestTypeArg}
 	default:
-		return fmt.Sprintf("request_type = $%d", startArgIndex), []any{requestTypeArg}
+		return fmt.Sprintf("%s = $%d", col("request_type"), startArgIndex), []any{requestTypeArg}
 	}
 }
 
