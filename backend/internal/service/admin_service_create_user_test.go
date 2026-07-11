@@ -93,6 +93,50 @@ func TestAdminService_CreateUser_ExplicitZeroBalanceOverridesDefault(t *testing.
 	require.Equal(t, 0.0, repo.created[0].Balance)
 }
 
+func TestAdminService_CreateUser_HonorsRole(t *testing.T) {
+	repo := &userRepoStub{nextID: 13}
+	svc := &adminServiceImpl{userRepo: repo}
+
+	user, err := svc.CreateUser(context.Background(), &CreateUserInput{
+		Email:    "admin@test.com",
+		Password: "strong-pass",
+		Role:     RoleAdmin,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, RoleAdmin, user.Role)
+	require.Len(t, repo.created, 1)
+	require.Equal(t, RoleAdmin, repo.created[0].Role)
+}
+
+func TestAdminService_UpdateUser_UpdatesRoleAndInvalidatesAuthCache(t *testing.T) {
+	baseRepo := &userRepoStub{user: &User{ID: 7, Role: RoleUser, Status: StatusActive, Concurrency: 1}}
+	repo := &balanceUserRepoStub{userRepoStub: baseRepo}
+	invalidator := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{userRepo: repo, authCacheInvalidator: invalidator}
+
+	user, err := svc.UpdateUser(context.Background(), 7, &UpdateUserInput{Role: RoleAdmin})
+
+	require.NoError(t, err)
+	require.Equal(t, RoleAdmin, user.Role)
+	require.Len(t, repo.updated, 1)
+	require.Equal(t, RoleAdmin, repo.updated[0].Role)
+	require.Equal(t, []int64{7}, invalidator.userIDs)
+}
+
+func TestAdminService_UpdateUser_RejectsDisabledAdminFinalState(t *testing.T) {
+	baseRepo := &userRepoStub{user: &User{ID: 8, Role: RoleUser, Status: StatusActive, Concurrency: 1}}
+	repo := &balanceUserRepoStub{userRepoStub: baseRepo}
+	status := StatusDisabled
+	svc := &adminServiceImpl{userRepo: repo}
+
+	_, err := svc.UpdateUser(context.Background(), 8, &UpdateUserInput{Role: RoleAdmin, Status: status})
+
+	require.ErrorContains(t, err, "cannot disable admin user")
+	require.Empty(t, repo.updated)
+}
+
 func TestAdminService_CreateUser_EmailExists(t *testing.T) {
 	repo := &userRepoStub{createErr: ErrEmailExists}
 	svc := &adminServiceImpl{userRepo: repo}

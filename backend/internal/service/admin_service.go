@@ -114,6 +114,7 @@ type CreateUserInput struct {
 	Password      string
 	Username      string
 	Notes         string
+	Role          string
 	Balance       *float64
 	Concurrency   int
 	AllowedGroups []int64
@@ -124,6 +125,7 @@ type UpdateUserInput struct {
 	Password      string
 	Username      *string
 	Notes         *string
+	Role          string
 	Balance       *float64 // 使用指针区分"未提供"和"设置为0"
 	Concurrency   *int     // 使用指针区分"未提供"和"设置为0"
 	Status        string
@@ -598,11 +600,16 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		balance = s.settingService.GetDefaultBalance(ctx)
 	}
 
+	role := input.Role
+	if role == "" {
+		role = RoleUser
+	}
+
 	user := &User{
 		Email:         input.Email,
 		Username:      input.Username,
 		Notes:         input.Notes,
-		Role:          RoleUser, // Always create as regular user, never admin
+		Role:          role,
 		Balance:       balance,
 		Concurrency:   input.Concurrency,
 		Status:        StatusActive,
@@ -669,6 +676,12 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if input.Status != "" {
 		user.Status = input.Status
+	}
+	if input.Role != "" {
+		user.Role = input.Role
+	}
+	if user.Role == RoleAdmin && user.Status == StatusDisabled {
+		return nil, errors.New("cannot disable admin user")
 	}
 
 	if input.Concurrency != nil {
