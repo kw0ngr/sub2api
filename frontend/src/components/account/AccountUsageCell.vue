@@ -1218,12 +1218,6 @@ function formatDurationSeconds(seconds: number): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`
 }
 
-function formatGrokRateLimitWindow(label: string, window?: { limit?: number | null; remaining?: number | null; reset_at?: string | null } | null) {
-  if (!window || window.limit == null || window.remaining == null) return null
-  const remaining = Math.max(0, window.remaining)
-  const reset = window.reset_at ? ` · ${formatGLMResetText(window.reset_at)}` : ''
-  return `${label} ${formatCompactNumber(remaining)} / ${formatCompactNumber(window.limit)}${reset}`
-}
 
 interface GrokQuotaSummaryRow {
   label: string
@@ -1251,7 +1245,7 @@ const grokHeaderRows = computed(() => {
       value: `${formatCompactNumber(Math.max(0, tok.remaining))} / ${formatCompactNumber(tok.limit)}${reset}`
     })
   }
-  const tier = usageInfo.value?.subscription_tiers || (usageInfo.value as any)?.subscription_tier
+  const tier = usageInfo.value?.subscription_tiers || usageInfo.value?.subscription_tier
   if (tier) rows.push({ label: '等级', value: String(tier) })
   const entitlement = usageInfo.value?.grok_entitlement_status
   if (entitlement) rows.push({ label: '权益', value: entitlement })
