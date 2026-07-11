@@ -144,6 +144,9 @@ type GeminiTierQuotaConfig struct {
 }
 
 type UpdateConfig struct {
+	// GitHubRepo is the owner/name repository used by admin "Check for Updates".
+	// Example: "kw0ngr/sub2api"
+	GitHubRepo string `mapstructure:"github_repo"`
 	// ProxyURL 用于访问 GitHub 的代理地址
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
@@ -1038,6 +1041,8 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.OIDC.UserInfoIDPath = strings.TrimSpace(cfg.OIDC.UserInfoIDPath)
 	cfg.OIDC.UserInfoUsernamePath = strings.TrimSpace(cfg.OIDC.UserInfoUsernamePath)
 	cfg.Dashboard.KeyPrefix = strings.TrimSpace(cfg.Dashboard.KeyPrefix)
+	cfg.Update.GitHubRepo = normalizeGitHubRepo(cfg.Update.GitHubRepo)
+	cfg.Update.ProxyURL = strings.TrimSpace(cfg.Update.ProxyURL)
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
@@ -1307,6 +1312,10 @@ func setDefaults() {
 	viper.SetDefault("pricing.data_dir", "./data")
 	viper.SetDefault("pricing.fallback_file", "./resources/model-pricing/model_prices_and_context_window.json")
 	viper.SetDefault("pricing.update_interval_hours", 24)
+
+	// Update - admin online update source
+	viper.SetDefault("update.github_repo", "kw0ngr/sub2api")
+	viper.SetDefault("update.proxy_url", "")
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
@@ -1515,6 +1524,9 @@ func (c *Config) Validate() error {
 	// 选择 bytes 而不是 rune 计数，确保二进制/随机串的长度语义更接近“熵”而非“字符数”。
 	if len([]byte(jwtSecret)) < 32 {
 		return fmt.Errorf("jwt.secret must be at least 32 bytes")
+	}
+	if err := validateGitHubRepo(c.Update.GitHubRepo); err != nil {
+		return fmt.Errorf("update.github_repo: %w", err)
 	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":
@@ -2332,6 +2344,49 @@ func GetServerAddress() string {
 	host := v.GetString("server.host")
 	port := v.GetInt("server.port")
 	return fmt.Sprintf("%s:%d", host, port)
+}
+
+// DefaultUpdateGitHubRepo is the default release source for admin online updates.
+const DefaultUpdateGitHubRepo = "kw0ngr/sub2api"
+
+func normalizeGitHubRepo(value string) string {
+	repo := strings.TrimSpace(value)
+	if repo == "" {
+		return DefaultUpdateGitHubRepo
+	}
+	// Accept full GitHub URLs and normalize to owner/name.
+	repo = strings.TrimPrefix(repo, "https://github.com/")
+	repo = strings.TrimPrefix(repo, "http://github.com/")
+	repo = strings.TrimPrefix(repo, "github.com/")
+	repo = strings.TrimSuffix(repo, ".git")
+	repo = strings.Trim(repo, "/")
+	if strings.Count(repo, "/") >= 1 {
+		parts := strings.Split(repo, "/")
+		if len(parts) >= 2 {
+			repo = parts[0] + "/" + parts[1]
+		}
+	}
+	return repo
+}
+
+func validateGitHubRepo(value string) error {
+	repo := strings.TrimSpace(value)
+	if repo == "" {
+		return fmt.Errorf("is required")
+	}
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("must be in owner/name format")
+	}
+	for _, part := range parts {
+		for _, r := range part {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+				continue
+			}
+			return fmt.Errorf("contains invalid characters")
+		}
+	}
+	return nil
 }
 
 // ValidateAbsoluteHTTPURL 验证是否为有效的绝对 HTTP(S) URL

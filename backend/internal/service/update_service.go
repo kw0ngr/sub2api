@@ -26,7 +26,7 @@ var ErrNoUpdateAvailable = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	defaultGitHubRepo = "kw0ngr/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -53,18 +53,29 @@ type GitHubReleaseClient interface {
 type UpdateService struct {
 	cache          UpdateCache
 	githubClient   GitHubReleaseClient
+	githubRepo     string
 	currentVersion string
 	buildType      string // "source" for manual builds, "release" for CI builds
 }
 
 // NewUpdateService creates a new UpdateService
-func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType string) *UpdateService {
+func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType, githubRepo string) *UpdateService {
+	repo := strings.TrimSpace(githubRepo)
+	if repo == "" {
+		repo = defaultGitHubRepo
+	}
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
+		githubRepo:     repo,
 		currentVersion: version,
 		buildType:      buildType,
 	}
+}
+
+// GitHubRepo returns the configured release repository (owner/name).
+func (s *UpdateService) GitHubRepo() string {
+	return s.githubRepo
 }
 
 // UpdateInfo contains update information
@@ -76,6 +87,7 @@ type UpdateInfo struct {
 	Cached         bool         `json:"cached"`
 	Warning        string       `json:"warning,omitempty"`
 	BuildType      string       `json:"build_type"` // "source" or "release"
+	GitHubRepo     string       `json:"github_repo,omitempty"`
 }
 
 // ReleaseInfo contains GitHub release details
@@ -133,6 +145,7 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 			HasUpdate:      false,
 			Warning:        err.Error(),
 			BuildType:      s.buildType,
+			GitHubRepo:     s.githubRepo,
 		}, nil
 	}
 
@@ -278,7 +291,7 @@ func (s *UpdateService) Rollback() error {
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
-	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
+	release, err := s.githubClient.FetchLatestRelease(ctx, s.githubRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -305,8 +318,9 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 			HTMLURL:     release.HTMLURL,
 			Assets:      assets,
 		},
-		Cached:    false,
-		BuildType: s.buildType,
+		Cached:     false,
+		BuildType:  s.buildType,
+		GitHubRepo: s.githubRepo,
 	}, nil
 }
 
@@ -497,6 +511,7 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 		ReleaseInfo:    cached.ReleaseInfo,
 		Cached:         true,
 		BuildType:      s.buildType,
+		GitHubRepo:     s.githubRepo,
 	}, nil
 }
 

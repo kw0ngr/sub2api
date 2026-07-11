@@ -178,6 +178,15 @@ The Setup Wizard will guide you through:
 
 You can upgrade directly from the **Admin Dashboard** by clicking the **Check for Updates** button in the top-left corner.
 
+By default the dashboard checks releases from `kw0ngr/sub2api`. Override with:
+
+```yaml
+update:
+  github_repo: "kw0ngr/sub2api"
+```
+
+or env `UPDATE_GITHUB_REPO=owner/name`.
+
 The web interface will:
 - Check for new versions automatically
 - Download and apply updates with one click

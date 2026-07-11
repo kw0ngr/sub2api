@@ -41,9 +41,46 @@ func TestUpdateService_PerformUpdateReturnsTypedNoUpdateError(t *testing.T) {
 			TagName: "v1.2.3",
 			Name:    "v1.2.3",
 		},
-	}, "1.2.3", "release")
+	}, "1.2.3", "release", "kw0ngr/sub2api")
 
 	err := svc.PerformUpdate(context.Background())
 
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
+
+
+type updateServiceRepoCaptureClient struct {
+	repo string
+}
+
+func (c *updateServiceRepoCaptureClient) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	c.repo = repo
+	return &GitHubRelease{TagName: "v9.9.9", Name: "v9.9.9"}, nil
+}
+
+func (updateServiceRepoCaptureClient) DownloadFile(context.Context, string, string, int64) error {
+	return nil
+}
+
+func (updateServiceRepoCaptureClient) FetchChecksumFile(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+
+func TestUpdateService_UsesConfiguredGitHubRepo(t *testing.T) {
+	client := &updateServiceRepoCaptureClient{}
+	svc := NewUpdateService(updateServiceNoopCache{}, client, "1.0.0", "release", "kw0ngr/sub2api")
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.Equal(t, "kw0ngr/sub2api", client.repo)
+	require.Equal(t, "kw0ngr/sub2api", info.GitHubRepo)
+	require.True(t, info.HasUpdate)
+}
+
+func TestUpdateService_DefaultsGitHubRepoWhenEmpty(t *testing.T) {
+	svc := NewUpdateService(updateServiceNoopCache{}, updateServiceFakeGitHubClient{
+		release: &GitHubRelease{TagName: "v1.0.0"},
+	}, "1.0.0", "release", "  ")
+	require.Equal(t, defaultGitHubRepo, svc.GitHubRepo())
+}
+

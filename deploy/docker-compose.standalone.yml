@@ -77,6 +77,12 @@ services:
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
 
       # =======================================================================
+      # Update Configuration
+      # =======================================================================
+      - UPDATE_GITHUB_REPO=${UPDATE_GITHUB_REPO:-kw0ngr/sub2api}
+      - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
+
+      # =======================================================================
       # Timezone Configuration
       # =======================================================================
       - TZ=${TZ:-Asia/Shanghai}

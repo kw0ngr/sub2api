@@ -177,6 +177,15 @@ sudo systemctl enable sub2api
 
 可以直接在 **管理后台** 左上角点击 **检测更新** 按钮进行在线升级。
 
+默认检查 `kw0ngr/sub2api` 的 GitHub Releases。如需切换仓库：
+
+```yaml
+update:
+  github_repo: "kw0ngr/sub2api"
+```
+
+或设置环境变量 `UPDATE_GITHUB_REPO=owner/name`。
+
 网页升级功能支持：
 - 自动检测新版本
 - 一键下载并应用更新
