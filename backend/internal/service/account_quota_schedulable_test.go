@@ -85,6 +85,48 @@ func TestAccountIsSchedulable_QuotaExceeded(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "grok request quota exhausted before reset",
+			account: &Account{
+				Status:      StatusActive,
+				Schedulable: true,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Extra: map[string]any{
+					"grok_usage_snapshot": map[string]any{
+						"requests": map[string]any{
+							"remaining":  0,
+							"limit":      60,
+							"reset_unix": now.Add(30 * time.Minute).Unix(),
+						},
+						"headers_observed": true,
+						"updated_at":       now.Format(time.RFC3339),
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "grok request quota recovered after reset",
+			account: &Account{
+				Status:      StatusActive,
+				Schedulable: true,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Extra: map[string]any{
+					"grok_usage_snapshot": map[string]any{
+						"requests": map[string]any{
+							"remaining":  0,
+							"limit":      60,
+							"reset_unix": now.Add(-5 * time.Minute).Unix(),
+						},
+						"headers_observed": true,
+						"updated_at":       now.Format(time.RFC3339),
+					},
+				},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {

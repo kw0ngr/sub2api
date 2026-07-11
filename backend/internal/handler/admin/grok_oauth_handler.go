@@ -241,6 +241,27 @@ func (h *GrokOAuthHandler) ResetQuota(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *GrokOAuthHandler) BatchProbeQuota(c *gin.Context) {
+	var req struct {
+		AccountIDs  []int64 `json:"account_ids"`
+		Concurrency int     `json:"concurrency"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.AccountIDs) == 0 {
+		response.BadRequest(c, "account_ids is required")
+		return
+	}
+	if h.quotaService == nil {
+		response.BadRequest(c, "grok quota service is not enabled")
+		return
+	}
+	result := h.quotaService.BatchProbe(c.Request.Context(), req.AccountIDs, req.Concurrency)
+	response.Success(c, result)
+}
+
 func (h *GrokOAuthHandler) RuntimeSanity(c *gin.Context) {
 	response.Success(c, xai.RuntimeSanity())
 }

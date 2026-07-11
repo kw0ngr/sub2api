@@ -15,8 +15,11 @@ import (
 
 type grokQuotaAccountRepoStub struct {
 	AccountRepository
-	account      *Account
-	extraUpdates map[string]any
+	account           *Account
+	extraUpdates      map[string]any
+	rateLimitedUntil  *time.Time
+	tempUnschedUntil  *time.Time
+	tempUnschedReason string
 }
 
 func (r *grokQuotaAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -27,7 +30,23 @@ func (r *grokQuotaAccountRepoStub) GetByID(_ context.Context, id int64) (*Accoun
 }
 
 func (r *grokQuotaAccountRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
-	r.extraUpdates = updates
+	if r.extraUpdates == nil {
+		r.extraUpdates = map[string]any{}
+	}
+	for k, v := range updates {
+		r.extraUpdates[k] = v
+	}
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
+	r.rateLimitedUntil = &resetAt
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) SetTempUnschedulable(_ context.Context, _ int64, until time.Time, reason string) error {
+	r.tempUnschedUntil = &until
+	r.tempUnschedReason = reason
 	return nil
 }
 
@@ -62,7 +81,7 @@ func (u *grokQuotaHTTPUpstreamStub) DoWithTLS(req *http.Request, proxyURL string
 }
 
 func TestGrokQuotaService_ProbeUsage_requiresManagementCredentials(t *testing.T) {
-	// Given
+	// Given: no management credentials, but header probe still runs.
 	account := &Account{
 		ID:          1894,
 		Platform:    PlatformGrok,
@@ -71,7 +90,18 @@ func TestGrokQuotaService_ProbeUsage_requiresManagementCredentials(t *testing.T)
 		Concurrency: 1,
 	}
 	repo := &grokQuotaAccountRepoStub{account: account}
-	upstream := &grokQuotaHTTPUpstreamStub{}
+	headers := http.Header{}
+	headers.Set("x-ratelimit-limit-requests", "60")
+	headers.Set("x-ratelimit-remaining-requests", "42")
+	headers.Set("x-ratelimit-reset-requests", "120")
+	headers.Set("xai-subscription-tier", "super")
+	upstream := &grokQuotaHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     headers,
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+	}
 	svc := NewGrokQuotaService(repo, nil, nil, upstream)
 
 	// When
@@ -79,9 +109,14 @@ func TestGrokQuotaService_ProbeUsage_requiresManagementCredentials(t *testing.T)
 
 	// Then
 	require.NoError(t, err)
-	require.Equal(t, "management_api_unconfigured", result.Source)
-	require.Contains(t, result.ErrorMessage, "Management API")
-	require.Equal(t, 0, upstream.calls)
+	require.Equal(t, "header_probe", result.Source)
+	require.True(t, result.HeadersObserved)
+	require.NotNil(t, result.Snapshot)
+	require.NotNil(t, result.Snapshot.Requests)
+	require.Equal(t, int64(42), *result.Snapshot.Requests.Remaining)
+	require.Equal(t, 1, upstream.calls)
+	require.Contains(t, repo.extraUpdates, "grok_usage_snapshot")
+	require.Equal(t, "super", repo.extraUpdates["subscription_tier"])
 }
 
 func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T) {
@@ -91,23 +126,34 @@ func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T
 		Platform: PlatformGrok,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
+			"access_token":       "token",
 			"management_api_key": "mgmt-key",
 			"team_id":            "team-123",
 		},
 		Concurrency: 1,
 	}
 	repo := &grokQuotaAccountRepoStub{account: account}
+	modelHeaders := http.Header{}
+	modelHeaders.Set("x-ratelimit-limit-requests", "60")
+	modelHeaders.Set("x-ratelimit-remaining-requests", "50")
 	upstream := &grokQuotaHTTPUpstreamStub{
-		response: &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(`{
-				"timeSeries":[
-					{"dataPoints":[{"values":[1.25,1000]},{"values":[2.5,2500]}]},
-					{"dataPoints":[{"values":[0.75,750]}]}
-				],
-				"limitReached":false
-			}`)),
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusOK,
+				Header:     modelHeaders,
+				Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(`{
+"timeSeries":[
+{"dataPoints":[{"values":[1.25,1000]},{"values":[2.5,2500]}]},
+{"dataPoints":[{"values":[0.75,750]}]}
+],
+"limitReached":false
+}`)),
+			},
 		},
 	}
 	svc := NewGrokQuotaService(repo, nil, nil, upstream)
@@ -117,7 +163,8 @@ func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T
 
 	// Then
 	require.NoError(t, err)
-	require.Equal(t, "management_api", result.Source)
+	require.Equal(t, "combined", result.Source)
+	require.True(t, result.HeadersObserved)
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	require.NotNil(t, result.OfficialUsage)
 	require.InDelta(t, 4.5, result.OfficialUsage.USD, 0.0001)
@@ -130,6 +177,7 @@ func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T
 	require.Contains(t, upstream.requestBody, `"usd"`)
 	require.Contains(t, upstream.requestBody, `"usage"`)
 	require.Contains(t, repo.extraUpdates, grokOfficialUsageExtraKey)
+	require.Contains(t, repo.extraUpdates, "grok_usage_snapshot")
 }
 
 func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupported(t *testing.T) {
@@ -139,6 +187,7 @@ func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupporte
 		Platform: PlatformGrok,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
+			"access_token":       "token",
 			"management_api_key": "mgmt-key",
 			"team_id":            "team-123",
 		},
@@ -148,15 +197,20 @@ func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupporte
 	upstream := &grokQuotaHTTPUpstreamStub{
 		responses: []*http.Response{
 			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			},
+			{
 				StatusCode: http.StatusBadRequest,
 				Body:       io.NopCloser(strings.NewReader(`{"error":"unknown field usage"}`)),
 			},
 			{
 				StatusCode: http.StatusOK,
 				Body: io.NopCloser(strings.NewReader(`{
-					"timeSeries":[{"dataPoints":[{"values":[1.25]}]}],
-					"limitReached":false
-				}`)),
+"timeSeries":[{"dataPoints":[{"values":[1.25]}]}],
+"limitReached":false
+}`)),
 			},
 		},
 	}
@@ -167,7 +221,7 @@ func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupporte
 
 	// Then
 	require.NoError(t, err)
-	require.Equal(t, 2, upstream.calls)
+	require.Equal(t, 3, upstream.calls)
 	require.NotNil(t, result.OfficialUsage)
 	require.InDelta(t, 1.25, result.OfficialUsage.USD, 0.0001)
 	require.Nil(t, result.OfficialUsage.Usage)
@@ -242,4 +296,35 @@ func TestBuildGrokOfficialUsageBody_usesUtcDayWindow(t *testing.T) {
 	require.Contains(t, string(body), `"TIME_UNIT_DAY"`)
 	require.Contains(t, string(body), `"Etc/GMT"`)
 	require.Contains(t, string(body), `"usage"`)
+}
+
+func TestGrokQuotaService_ProbeHeaders_marksUnauthorizedAsSideEffect(t *testing.T) {
+	account := &Account{
+		ID:          42,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "bad"},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	upstream := &grokQuotaHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"error":"unauthorized"}`)),
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+	result, err := svc.ProbeHeaders(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, result.StatusCode)
+	require.NotNil(t, repo.tempUnschedUntil)
+	require.Contains(t, repo.tempUnschedReason, "unauthorized")
+}
+
+func TestClassifyGrokProbeResult(t *testing.T) {
+	require.Equal(t, "expired", classifyGrokProbeResult(&GrokQuotaProbeResult{StatusCode: 401}))
+	require.Equal(t, "transient", classifyGrokProbeResult(&GrokQuotaProbeResult{StatusCode: 429}))
+	require.Equal(t, "ok", classifyGrokProbeResult(&GrokQuotaProbeResult{HeadersObserved: true}))
+	require.Equal(t, "ok_partial", classifyGrokProbeResult(&GrokQuotaProbeResult{HeadersObserved: true, ErrorMessage: "no mgmt"}))
 }

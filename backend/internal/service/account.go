@@ -125,6 +125,33 @@ func (a *Account) IsSchedulable() bool {
 	if a.IsAPIKeyOrBedrock() && a.IsQuotaExceeded() {
 		return false
 	}
+	if a.IsGrok() && a.IsGrokRequestQuotaExhausted(now) {
+		return false
+	}
+	return true
+}
+
+// IsGrokRequestQuotaExhausted reports whether the last observed Grok request
+// quota window still has zero remaining before its reset time.
+func (a *Account) IsGrokRequestQuotaExhausted(now time.Time) bool {
+	if a == nil || !a.IsGrok() || a.Extra == nil {
+		return false
+	}
+	raw, ok := a.Extra[grokQuotaSnapshotExtraKey]
+	if !ok || raw == nil {
+		return false
+	}
+	snapshot, err := grokQuotaSnapshotFromExtra(a.Extra)
+	if err != nil || snapshot == nil || snapshot.Requests == nil || snapshot.Requests.Remaining == nil {
+		return false
+	}
+	if *snapshot.Requests.Remaining > 0 {
+		return false
+	}
+	// remaining == 0: honor reset if present; otherwise treat as exhausted.
+	if snapshot.Requests.ResetUnix != nil && *snapshot.Requests.ResetUnix > 0 {
+		return now.Unix() < *snapshot.Requests.ResetUnix
+	}
 	return true
 }
 

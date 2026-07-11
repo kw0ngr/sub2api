@@ -153,6 +153,7 @@
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
+          @probe-quota="handleBatchProbeGrokQuota"
           @check-health="handleCheckSelectedAPIKeys"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
@@ -1142,6 +1143,30 @@ const handleBulkRefreshToken = async () => {
     appStore.showError(String(error))
   }
 }
+const handleBatchProbeGrokQuota = async () => {
+  const grokIds = accounts.value
+    .filter((a) => selIds.value.includes(a.id) && a.platform === 'grok')
+    .map((a) => a.id)
+  if (grokIds.length === 0) {
+    appStore.showError('请先选择 Grok 账号')
+    return
+  }
+  try {
+    const result = await adminAPI.grok.batchProbeQuota(grokIds)
+    const msg = `探测完成：成功 ${result.ok}，失效 ${result.expired}，临时失败 ${result.transient}`
+    if (result.failed > 0) {
+      appStore.showWarning(msg)
+    } else {
+      appStore.showSuccess(msg)
+    }
+    usageManualRefreshToken.value++
+    reload()
+  } catch (error) {
+    console.error('Failed to bulk probe grok quota:', error)
+    appStore.showError(String(error))
+  }
+}
+
 const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
   if (accountIds.length === 0) return
   const idSet = new Set(accountIds)

@@ -338,6 +338,7 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 	result.AccountID = account.ID
 	result.Account = dto.AccountFromService(account)
 	result.Email = tokenInfo.Email
+	h.scheduleGrokQuotaProbe(account.ID)
 	return result
 }
 
@@ -422,6 +423,7 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 	result.AccountID = account.ID
 	result.Account = dto.AccountFromService(account)
 	result.Email = email
+	h.scheduleGrokQuotaProbe(account.ID)
 	if warning != "" {
 		result.Warning = warning
 	} else {
@@ -500,4 +502,16 @@ func previewGrokRefreshToken(token string) string {
 		return "***"
 	}
 	return token[:6] + "…" + token[len(token)-4:]
+}
+
+func (h *GrokOAuthHandler) scheduleGrokQuotaProbe(accountID int64) {
+	if h == nil || h.quotaService == nil || accountID <= 0 {
+		return
+	}
+	go func(id int64) {
+		defer func() { _ = recover() }()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = h.quotaService.ProbeUsage(ctx, id)
+	}(accountID)
 }

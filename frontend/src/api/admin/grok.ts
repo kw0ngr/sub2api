@@ -176,6 +176,34 @@ export async function resetQuota(id: number): Promise<GrokQuotaResetResult> {
   return data
 }
 
+export interface GrokBatchProbeItem {
+  account_id: number
+  ok: boolean
+  class: 'ok' | 'ok_partial' | 'expired' | 'transient' | string
+  error?: string
+  result?: GrokQuotaProbeResult
+}
+
+export interface GrokBatchProbeResult {
+  total: number
+  ok: number
+  failed: number
+  expired: number
+  transient: number
+  results: GrokBatchProbeItem[]
+}
+
+export async function batchProbeQuota(
+  accountIds: number[],
+  concurrency = 5
+): Promise<GrokBatchProbeResult> {
+  const { data } = await apiClient.post<GrokBatchProbeResult>('/admin/grok/accounts/batch-probe-quota', {
+    account_ids: accountIds,
+    concurrency
+  })
+  return data
+}
+
 export async function importRefreshTokens(
   payload: GrokImportRefreshTokensRequest
 ): Promise<GrokImportRefreshTokensResult> {
@@ -192,5 +220,6 @@ export default {
   refreshGrokToken,
   importRefreshTokens,
   queryQuota,
-  resetQuota
+  resetQuota,
+  batchProbeQuota
 }
