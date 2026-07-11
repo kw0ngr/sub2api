@@ -292,7 +292,7 @@ func sanitizeGrokImportToken(value string) string {
 	b.Grow(len(tok))
 	for _, r := range tok {
 		if r <= unicode.MaxASCII && r >= 32 {
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 	return b.String()
@@ -377,7 +377,6 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 	h.scheduleGrokQuotaProbe(account.ID)
 	return result
 }
-
 
 func (h *GrokOAuthHandler) importGrokSSOToken(
 	ctx context.Context,

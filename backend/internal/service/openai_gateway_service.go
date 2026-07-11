@@ -6892,10 +6892,6 @@ func isOpenAIMinimalOrNoneEffort(raw string) bool {
 	return value == "minimal" || value == "none"
 }
 
-func normalizeOpenAIReasoningEffort(raw string) string {
-	return normalizeOpenAIReasoningEffortForModel(raw, "")
-}
-
 func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	if value == "" {

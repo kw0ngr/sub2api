@@ -269,7 +269,7 @@ func (s *AccountTestService) buildAntigravityAPIKeyModelsRequest(ctx context.Con
 }
 
 func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	if account.Type != AccountTypeAPIKey && !(account.Platform == PlatformGrok && account.Type == AccountTypeOAuth) {
+	if account.Type != AccountTypeAPIKey && (account.Platform != PlatformGrok || account.Type != AccountTypeOAuth) {
 		return nil, newUpstreamModelSyncUnsupportedError(
 			fmt.Sprintf("Unsupported OpenAI account type for upstream model sync: %s", account.Type), nil,
 		)

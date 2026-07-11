@@ -194,11 +194,16 @@ func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupporte
 		Concurrency: 1,
 	}
 	repo := &grokQuotaAccountRepoStub{account: account}
+	// Provide rate-limit headers on /models so chat fallback is skipped and the
+	// remaining stub responses map to management usage (usd+usage -> usd-only).
+	modelHeaders := http.Header{}
+	modelHeaders.Set("x-ratelimit-limit-requests", "60")
+	modelHeaders.Set("x-ratelimit-remaining-requests", "50")
 	upstream := &grokQuotaHTTPUpstreamStub{
 		responses: []*http.Response{
 			{
 				StatusCode: http.StatusOK,
-				Header:     http.Header{},
+				Header:     modelHeaders,
 				Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
 			},
 			{
@@ -208,9 +213,9 @@ func TestGrokQuotaService_ProbeUsage_fallsBackToUsdOnlyWhenUsageMetricUnsupporte
 			{
 				StatusCode: http.StatusOK,
 				Body: io.NopCloser(strings.NewReader(`{
-"timeSeries":[{"dataPoints":[{"values":[1.25]}]}],
-"limitReached":false
-}`)),
+					"timeSeries":[{"dataPoints":[{"values":[1.25]}]}],
+					"limitReached":false
+				}`)),
 			},
 		},
 	}
@@ -380,4 +385,3 @@ func TestGrokQuotaService_ValidateAccessToken(t *testing.T) {
 		require.Contains(t, err.Error(), "not configured")
 	})
 }
-
