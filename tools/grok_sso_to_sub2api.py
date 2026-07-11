@@ -1,33 +1,21 @@
 #!/usr/bin/env python3
-"""Convert bulk Grok account lines into Sub2API OAuth imports.
+"""Convert bulk Grok account lines into Sub2API OAuth refresh tokens.
 
-Input line format (pipe-separated):
+Input line format (pipe or ---- separated):
   email|password|sso_token|optional_timestamp
 
-Example:
-  user@outlook.com|pass123|eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9....|2026-07-11 15:21:40 (GMT+7)
+Core capability
+---------------
+Pure HTTP SSO -> OAuth RT (no browser required):
 
-Important protocol note
------------------------
-grok2api uses the SSO cookie against grok.com / console.x.ai (web reverse):
+  1. Cookie: sso=<token>; sso-rw=<token>  (same shape as grok2api)
+  2. GET  accounts.x.ai/sign-in?redirect=grok-com&email=true   # warm session
+  3. GET  auth.x.ai/oauth2/authorize?...PKCE...               # consent HTML
+  4. POST auth.x.ai/oauth2/authorize  fields + decision=allow # -> ?code=
+  5. POST auth.x.ai/oauth2/token      authorization_code      # -> refresh_token
 
-  Cookie: sso=<token>; sso-rw=<token>
-
-Sub2API only accepts official xAI OAuth credentials against api.x.ai:
-
-  Authorization: Bearer <refresh_token or typ=at+jwt access_token>
-
-There is no supported public grant that turns a grok.com SSO cookie into an
-OAuth refresh_token. This script therefore:
-
-1. Parses the account dump
-2. Probes each SSO against grok.com (same idea as grok2api rate-limits)
-3. Optionally tries a headed browser OAuth flow (SSO cookie + password login)
-   to capture a PKCE authorization code and exchange it for RT/AT
-4. Imports only obtained refresh_tokens into Sub2API admin API
-
-If OAuth cannot be completed automatically, the script still emits a report
-and can write SSO inventory for grok2api-style tools (not Sub2API).
+Then optionally import RTs into Sub2API admin:
+  POST /api/v1/admin/grok/oauth/import-refresh-tokens
 """
 
 from __future__ import annotations
@@ -35,6 +23,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.cookiejar
 import json
 import os
 import re
@@ -46,9 +35,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-# Official Sub2API / xAI CLI OAuth client (see backend/internal/pkg/xai/oauth.go)
 DEFAULT_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 DEFAULT_SCOPE = "openid profile email offline_access grok-cli:access api:access"
 DEFAULT_AUTHORIZE_URL = "https://auth.x.ai/oauth2/authorize"
@@ -119,7 +107,6 @@ def strip_sso_prefix(token: str) -> str:
     for prefix in ("sso=", "sso:", "cookie:sso=", "cookie: sso="):
         if lower.startswith(prefix):
             return tok[len(prefix) :].strip()
-    # full cookie header paste: "sso=xxx; sso-rw=xxx"
     m = re.search(r"(?:^|[;\s])sso=([^;]+)", tok, flags=re.I)
     if m:
         return m.group(1).strip()
@@ -133,17 +120,20 @@ def parse_account_lines(text: str) -> list[AccountLine]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        parts = [p.strip() for p in line.split("|")]
+        # support both | and ---- separators used by card sellers
+        if "----" in line and "|" not in line:
+            parts = [p.strip() for p in line.split("----")]
+        else:
+            parts = [p.strip() for p in line.split("|")]
         if len(parts) < 3:
             raise ValueError(f"line {idx}: expected email|password|sso|..., got {line!r}")
         email, password, sso = parts[0], parts[1], strip_sso_prefix(parts[2])
         timestamp = parts[3] if len(parts) >= 4 else ""
         if not email or not sso:
             raise ValueError(f"line {idx}: email and sso are required")
-        key = sso
-        if key in seen:
+        if sso in seen:
             continue
-        seen.add(key)
+        seen.add(sso)
         accounts.append(
             AccountLine(
                 line_no=idx,
@@ -179,43 +169,47 @@ def http_json(
     req = urllib.request.Request(url, data=data, method=method.upper(), headers=req_headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
-            return resp.status, {k: v for k, v in resp.headers.items()}, body
+            return resp.status, {k: v for k, v in resp.headers.items()}, resp.read()
     except urllib.error.HTTPError as err:
         body = err.read() if err.fp is not None else b""
         return err.code, {k: v for k, v in err.headers.items()}, body
 
 
-def probe_sso(sso: str, timeout: float = 20.0) -> tuple[bool, str]:
-    """Probe SSO the way grok2api does: Cookie on grok.com rate-limits."""
-    status, _, body = http_json(
-        "POST",
-        "https://grok.com/rest/rate-limits",
-        headers={
-            "Content-Type": "application/json",
-            "Origin": "https://grok.com",
-            "Referer": "https://grok.com/",
-            "Cookie": f"sso={sso}; sso-rw={sso}",
-            "User-Agent": DEFAULT_UA,
-        },
-        json_body={"modelName": "fast"},
-        timeout=timeout,
-    )
-    text = body.decode("utf-8", errors="replace")
-    if status == 200:
+def probe_sso(sso: str, timeout: float = 20.0) -> tuple[bool | None, str]:
+    last_err = ""
+    for attempt in range(1, 4):
         try:
-            obj = json.loads(text)
-            remaining = obj.get("remainingQueries")
-            total = obj.get("totalQueries")
-            return True, f"ok remaining={remaining}/{total}"
-        except Exception:
-            return True, "ok"
-    if status in (401, 403):
-        return False, f"auth failed HTTP {status}: {text[:180]}"
-    # Cloudflare / transient
-    if status in (429, 502, 503, 520, 521, 522, 523, 524):
-        return None, f"transient HTTP {status}: {text[:180]}"  # type: ignore[return-value]
-    return False, f"unexpected HTTP {status}: {text[:180]}"
+            status, _, body = http_json(
+                "POST",
+                "https://grok.com/rest/rate-limits",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://grok.com",
+                    "Referer": "https://grok.com/",
+                    "Cookie": f"sso={sso}; sso-rw={sso}",
+                },
+                json_body={"modelName": "fast"},
+                timeout=timeout,
+            )
+        except Exception as exc:
+            last_err = str(exc)
+            time.sleep(0.6 * attempt)
+            continue
+        text = body.decode("utf-8", errors="replace")
+        if status == 200:
+            try:
+                obj = json.loads(text)
+                return True, f"ok remaining={obj.get('remainingQueries')}/{obj.get('totalQueries')}"
+            except Exception:
+                return True, "ok"
+        if status in (401, 403):
+            return False, f"auth failed HTTP {status}: {text[:180]}"
+        if status in (429, 502, 503, 520, 521, 522, 523, 524):
+            last_err = f"transient HTTP {status}: {text[:180]}"
+            time.sleep(0.6 * attempt)
+            continue
+        return False, f"unexpected HTTP {status}: {text[:180]}"
+    return None, f"probe failed after retries: {last_err[:200]}"
 
 
 def exchange_code_for_tokens(
@@ -248,31 +242,98 @@ def exchange_code_for_tokens(
     return obj
 
 
-def try_oauth_with_browser(
-    account: AccountLine,
+def sso_to_oauth_tokens_http(
+    sso: str,
     *,
-    client_id: str,
-    redirect_uri: str,
-    authorize_url: str,
-    headless: bool,
-    timeout_ms: int = 120_000,
-) -> tuple[str, str, str]:
-    """Best-effort browser OAuth. Returns (status, detail, refresh_or_empty).
-
-    status:
-      - ok: got refresh_token (returned in third value as 'rt\\tcode_verifier' no —
-        we return refresh_token directly in third field when ok, and pack access too via detail json)
-    Simplified: returns (status, detail, refresh_token)
-    """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        return "unavailable", f"playwright not installed: {exc}", ""
+    client_id: str = DEFAULT_CLIENT_ID,
+    redirect_uri: str = DEFAULT_REDIRECT_URI,
+    authorize_url: str = DEFAULT_AUTHORIZE_URL,
+    timeout: float = 30.0,
+) -> tuple[str, str, dict[str, Any]]:
+    """Pure HTTP SSO cookie -> refresh_token (+ access_token)."""
+    sso = strip_sso_prefix(sso)
+    if not sso:
+        raise RuntimeError("empty sso")
 
     code_verifier = b64url(secrets.token_bytes(32))
     code_challenge = b64url(hashlib.sha256(code_verifier.encode("ascii")).digest())
     state = secrets.token_urlsafe(16)
     nonce = secrets.token_hex(8)
+
+    jar = http.cookiejar.CookieJar()
+    for name in ("sso", "sso-rw"):
+        jar.set_cookie(
+            http.cookiejar.Cookie(
+                version=0,
+                name=name,
+                value=sso,
+                port=None,
+                port_specified=False,
+                domain=".x.ai",
+                domain_specified=True,
+                domain_initial_dot=True,
+                path="/",
+                path_specified=True,
+                secure=True,
+                expires=None,
+                discard=True,
+                comment=None,
+                comment_url=None,
+                rest={},
+                rfc2109=False,
+            )
+        )
+
+    captured: dict[str, str | None] = {"url": None}
+
+    class _StopLocalRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+            if newurl.startswith("http://127.0.0.1") or newurl.startswith("http://localhost"):
+                captured["url"] = newurl
+                return None
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar),
+        _StopLocalRedirect,
+    )
+
+    def _open(
+        method: str,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        h = {
+            "User-Agent": DEFAULT_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        if headers:
+            h.update(headers)
+        req = urllib.request.Request(url, data=data, method=method, headers=h)
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                return resp.status, {k: v for k, v in resp.headers.items()}, resp.read(), resp.geturl()
+        except urllib.error.HTTPError as err:
+            body = err.read() if err.fp is not None else b""
+            if captured["url"]:
+                return err.code, {k: v for k, v in err.headers.items()}, body, captured["url"]
+            loc = err.headers.get("Location") if err.headers is not None else None
+            return (
+                err.code,
+                {k: v for k, v in err.headers.items()} if err.headers else {},
+                body,
+                loc or "",
+            )
+        except Exception:
+            if captured["url"]:
+                return 302, {}, b"", captured["url"]
+            raise
+
+    # 1) warm SSO session on accounts.x.ai
+    _open("GET", "https://accounts.x.ai/sign-in?redirect=grok-com&email=true")
+
+    # 2) PKCE authorize -> consent HTML
     params = {
         "response_type": "code",
         "client_id": client_id,
@@ -285,175 +346,78 @@ def try_oauth_with_browser(
         "referrer": "sub2api",
         "nonce": nonce,
     }
-    auth_url = f"{authorize_url}?{urllib.parse.urlencode(params)}"
+    auth_get_url = f"{authorize_url}?{urllib.parse.urlencode(params)}"
+    status, _, body, final_url = _open(
+        "GET",
+        auth_get_url,
+        headers={"Referer": "https://grok.com/"},
+    )
+    html = body.decode("utf-8", errors="replace")
 
-    captured: list[str] = []
+    if captured["url"] and "code=" in captured["url"]:
+        cb = captured["url"]
+    else:
+        fields: dict[str, str] = {}
+        for m in re.finditer(r'<input[^>]+type="hidden"[^>]*>', html, flags=re.I):
+            tag = m.group(0)
+            name_m = re.search(r'name="([^"]+)"', tag)
+            val_m = re.search(r'value="([^"]*)"', tag)
+            if name_m:
+                fields[name_m.group(1)] = val_m.group(1) if val_m else ""
+        if not fields.get("client_id"):
+            raise RuntimeError(
+                f"consent form not found (status={status}, url={str(final_url)[:120]}, head={html[:160]!r})"
+            )
 
-    def on_request(request: Any) -> None:
-        url = request.url
-        if "code=" in url and ("callback" in url or redirect_uri.split("://", 1)[-1] in url):
-            captured.append(url)
+        action_m = re.search(r'<form[^>]+action="([^"]+)"', html, flags=re.I)
+        action = action_m.group(1) if action_m else "https://auth.x.ai/oauth2/authorize"
+        payload = dict(fields)
+        payload.setdefault("response_type", "code")
+        payload.setdefault("plan", "generic")
+        payload["decision"] = "allow"
 
-    try:
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(channel="chrome", headless=headless)
-            except Exception:
-                browser = p.chromium.launch(headless=headless)
-            context = browser.new_context(user_agent=DEFAULT_UA)
-            # Seed SSO cookies on xAI hosts (same cookie shape as grok2api).
-            for domain in (".x.ai", "accounts.x.ai", "auth.x.ai", "console.x.ai", "grok.com"):
-                try:
-                    context.add_cookies(
-                        [
-                            {
-                                "name": "sso",
-                                "value": account.sso,
-                                "domain": domain,
-                                "path": "/",
-                                "secure": True,
-                                "httpOnly": False,
-                            },
-                            {
-                                "name": "sso-rw",
-                                "value": account.sso,
-                                "domain": domain,
-                                "path": "/",
-                                "secure": True,
-                                "httpOnly": False,
-                            },
-                        ]
-                    )
-                except Exception:
-                    continue
-
-            page = context.new_page()
-            page.on("request", on_request)
-            page.goto(auth_url, wait_until="domcontentloaded", timeout=timeout_ms)
-            page.wait_for_timeout(2500)
-
-            # Cloudflare / blocked page
-            body_text = ""
-            try:
-                body_text = page.inner_text("body")
-            except Exception:
-                pass
-            if "you have been blocked" in body_text.lower() or "cf-error" in body_text.lower():
-                browser.close()
-                return "blocked", "Cloudflare blocked headless/browser access to auth.x.ai", ""
-
-            # If redirected to sign-in, attempt password login.
-            if "sign-in" in page.url or page.locator("input[type=password]").count() > 0:
-                for sel in (
-                    "input[type=email]",
-                    "input[name=email]",
-                    "input[name=username]",
-                    "input[autocomplete=username]",
-                    "input[type=text]",
-                ):
-                    if page.locator(sel).count():
-                        page.fill(sel, account.email)
-                        break
-                if page.locator("input[type=password]").count():
-                    page.fill("input[type=password]", account.password)
-                clicked = False
-                for sel in (
-                    "button[type=submit]",
-                    "button:has-text('Sign in')",
-                    "button:has-text('Log in')",
-                    "button:has-text('Continue')",
-                    "button:has-text('Next')",
-                ):
-                    if page.locator(sel).count():
-                        page.click(sel)
-                        clicked = True
-                        break
-                if not clicked:
-                    browser.close()
-                    return (
-                        "login_required",
-                        f"sign-in page needs manual interaction; current url={page.url}",
-                        "",
-                    )
-                page.wait_for_timeout(4000)
-
-            # Consent / authorize buttons if present
-            for sel in (
-                "button:has-text('Allow')",
-                "button:has-text('Authorize')",
-                "button:has-text('Continue')",
-                "button:has-text('Accept')",
-                "button[type=submit]",
-            ):
-                try:
-                    if page.locator(sel).count():
-                        page.click(sel, timeout=2000)
-                        page.wait_for_timeout(1500)
-                except Exception:
-                    pass
-
-            # Wait for redirect capture
-            deadline = time.time() + max(5.0, timeout_ms / 1000.0)
-            while time.time() < deadline and not captured:
-                # also inspect current URL
-                if "code=" in page.url and "callback" in page.url:
-                    captured.append(page.url)
-                    break
-                page.wait_for_timeout(500)
-
-            browser.close()
-    except Exception as exc:
-        return "error", f"browser oauth failed: {exc}", ""
-
-    if not captured:
-        return (
-            "no_code",
-            "OAuth code not captured. SSO cookie alone usually cannot complete "
-            "api.x.ai OAuth (accounts.x.ai session is separate from grok.com SSO).",
-            "",
+        referer = final_url if isinstance(final_url, str) and final_url.startswith("http") else auth_get_url
+        captured["url"] = None
+        status2, headers2, body2, final2 = _open(
+            "POST",
+            action,
+            data=urllib.parse.urlencode(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://accounts.x.ai",
+                "Referer": referer,
+            },
         )
+        cb = captured["url"] or (final2 if isinstance(final2, str) and "code=" in final2 else "")
+        if not cb:
+            loc = headers2.get("Location") or headers2.get("location") or ""
+            if "code=" in loc:
+                cb = loc
+        if not cb:
+            raise RuntimeError(
+                f"consent POST did not return code (status={status2}, final={final2!r}, body={body2[:180]!r})"
+            )
 
-    cb = captured[0]
-    qs = urllib.parse.urlparse(cb).query
-    values = urllib.parse.parse_qs(qs)
+    values = urllib.parse.parse_qs(urllib.parse.urlparse(cb).query)
     code = (values.get("code") or [""])[0]
     got_state = (values.get("state") or [""])[0]
     if not code:
-        return "no_code", f"callback without code: {cb[:200]}", ""
+        raise RuntimeError(f"callback missing code: {cb[:200]}")
     if got_state and got_state != state:
-        return "error", "oauth state mismatch", ""
+        raise RuntimeError("oauth state mismatch")
 
-    try:
-        token = exchange_code_for_tokens(
-            code,
-            code_verifier,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-        )
-    except Exception as exc:
-        return "exchange_failed", str(exc), ""
-
+    token = exchange_code_for_tokens(
+        code,
+        code_verifier,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        timeout=timeout,
+    )
     rt = str(token.get("refresh_token") or "").strip()
     at = str(token.get("access_token") or "").strip()
     if not rt and not at:
-        return "exchange_failed", f"token response missing credentials: {token}", ""
-    # stash access token in detail json for caller
-    detail = json.dumps(
-        {
-            "has_refresh_token": bool(rt),
-            "has_access_token": bool(at),
-            "expires_in": token.get("expires_in"),
-            "token_type": token.get("token_type"),
-            "access_token_preview": preview_token(at) if at else "",
-        },
-        ensure_ascii=False,
-    )
-    # encode access token after detail using a reserved field via result extras by caller
-    # We return refresh_token primarily; access token appended with \x1e separator if needed.
-    packed = rt if rt else ""
-    if at:
-        packed = f"{packed}\x1e{at}" if packed else f"\x1e{at}"
-    return "ok", detail, packed
+        raise RuntimeError(f"token response missing credentials: {token}")
+    return rt, at, token
 
 
 def import_refresh_tokens(
@@ -468,7 +432,7 @@ def import_refresh_tokens(
     timeout: float = 120.0,
 ) -> dict[str, Any]:
     url = base_url.rstrip("/") + "/api/v1/admin/grok/oauth/import-refresh-tokens"
-    payload = {
+    payload: dict[str, Any] = {
         "refresh_tokens": refresh_tokens,
         "import_mode": "refresh_token",
         "name_prefix": name_prefix,
@@ -491,8 +455,7 @@ def import_refresh_tokens(
     if status >= 400:
         raise RuntimeError(f"Sub2API import HTTP {status}: {text[:400]}")
     obj = json.loads(text)
-    # envelope may be {data: ...} or direct
-    if isinstance(obj, dict) and "data" in obj and isinstance(obj["data"], dict):
+    if isinstance(obj, dict) and isinstance(obj.get("data"), dict):
         return obj["data"]
     if isinstance(obj, dict):
         return obj
@@ -502,6 +465,10 @@ def import_refresh_tokens(
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def load_input_text(path: str | None) -> str:
@@ -514,34 +481,24 @@ def load_input_text(path: str | None) -> str:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Parse email|password|sso lines, probe SSO, optionally OAuth to RT, import to Sub2API",
+        description="SSO dump -> pure HTTP OAuth RT -> optional Sub2API import",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     p.add_argument("--input", "-i", help="account dump file (default: stdin)")
     p.add_argument("--out-dir", default="tmp/grok_sso_import", help="report output directory")
-    p.add_argument(
-        "--probe-sso",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="probe SSO against grok.com/rest/rate-limits (default: true)",
-    )
+    p.add_argument("--probe-sso", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument(
         "--oauth",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="attempt browser OAuth to obtain refresh_token (default: false)",
-    )
-    p.add_argument(
-        "--headed",
-        action="store_true",
-        help="run browser OAuth headed (recommended; headless often CF-blocked)",
+        default=True,
+        help="convert SSO to RT via pure HTTP (default: true)",
     )
     p.add_argument(
         "--import-sub2api",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="import obtained refresh_tokens into Sub2API (default: false)",
+        help="import obtained RTs into Sub2API (default: false)",
     )
     p.add_argument(
         "--base-url",
@@ -551,31 +508,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--admin-token",
         default=os.environ.get("SUB2API_ADMIN_TOKEN", ""),
-        help="Sub2API admin JWT/API token (env SUB2API_ADMIN_TOKEN)",
+        help="Sub2API admin token (env SUB2API_ADMIN_TOKEN)",
     )
     p.add_argument("--name-prefix", default="Grok SSO→RT")
-    p.add_argument(
-        "--group-ids",
-        default="",
-        help="comma-separated group ids for import, e.g. 18",
-    )
+    p.add_argument("--group-ids", default="", help="comma-separated group ids, e.g. 18")
     p.add_argument("--client-id", default=DEFAULT_CLIENT_ID)
     p.add_argument("--redirect-uri", default=DEFAULT_REDIRECT_URI)
     p.add_argument("--authorize-url", default=DEFAULT_AUTHORIZE_URL)
-    p.add_argument("--limit", type=int, default=0, help="only process first N accounts")
-    p.add_argument("--sleep", type=float, default=0.4, help="delay between accounts")
+    p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--sleep", type=float, default=0.5)
     p.add_argument(
         "--write-sso-inventory",
         action="store_true",
-        help="also write valid SSO list for grok2api-style tools (not importable to Sub2API)",
+        help="also write valid SSO list for grok2api-style tools",
     )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    text = load_input_text(args.input)
-    accounts = parse_account_lines(text)
+    accounts = parse_account_lines(load_input_text(args.input))
     if args.limit and args.limit > 0:
         accounts = accounts[: args.limit]
     if not accounts:
@@ -591,10 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     token_email: dict[str, str] = {}
 
     print(f"parsed {len(accounts)} account(s)")
-    print(
-        "note: SSO cookie ≠ OAuth RT. Sub2API only imports RT/at+jwt. "
-        "This script probes SSO (grok2api-style) and optionally tries browser OAuth."
-    )
+    print("mode: pure HTTP SSO -> OAuth RT (no browser)")
 
     for acc in accounts:
         result = AccountResult(
@@ -608,7 +557,10 @@ def main(argv: list[str] | None = None) -> int:
             result.extras["sso_jwt_alg"] = header.get("alg")
 
         if args.probe_sso:
-            ok, detail = probe_sso(acc.sso)
+            try:
+                ok, detail = probe_sso(acc.sso)
+            except Exception as exc:
+                ok, detail = None, f"probe exception: {exc}"
             result.sso_valid = ok
             result.sso_probe_detail = detail
             print(f"[{acc.line_no}] {acc.email} sso_probe={ok} {detail}")
@@ -620,21 +572,35 @@ def main(argv: list[str] | None = None) -> int:
                 result.oauth_status = "skipped"
                 result.oauth_detail = "SSO probe failed; skip OAuth"
             else:
-                status, detail, packed = try_oauth_with_browser(
-                    acc,
-                    client_id=args.client_id,
-                    redirect_uri=args.redirect_uri,
-                    authorize_url=args.authorize_url,
-                    headless=not args.headed,
-                )
+                status, detail = "error", ""
+                rt = at = ""
+                for attempt in range(1, 3):
+                    try:
+                        rt, at, token = sso_to_oauth_tokens_http(
+                            acc.sso,
+                            client_id=args.client_id,
+                            redirect_uri=args.redirect_uri,
+                            authorize_url=args.authorize_url,
+                        )
+                        status = "ok"
+                        detail = json.dumps(
+                            {
+                                "mode": "http",
+                                "expires_in": token.get("expires_in"),
+                                "scope": token.get("scope"),
+                                "has_refresh_token": bool(rt),
+                                "has_access_token": bool(at),
+                            },
+                            ensure_ascii=False,
+                        )
+                        break
+                    except Exception as exc:
+                        status, detail = "error", f"http oauth failed: {exc}"
+                        if attempt < 2:
+                            print(f"[{acc.line_no}] {acc.email} oauth retry after error: {str(exc)[:120]}")
+                            time.sleep(1.2)
                 result.oauth_status = status
                 result.oauth_detail = detail
-                rt, at = "", ""
-                if packed:
-                    if "\x1e" in packed:
-                        rt, at = packed.split("\x1e", 1)
-                    else:
-                        rt = packed
                 result.refresh_token = rt
                 result.access_token = at
                 if status == "ok" and rt:
@@ -642,10 +608,10 @@ def main(argv: list[str] | None = None) -> int:
                     token_email[rt] = acc.email
                     print(f"[{acc.line_no}] {acc.email} oauth=ok rt={preview_token(rt)}")
                 else:
-                    print(f"[{acc.line_no}] {acc.email} oauth={status} {detail[:160]}")
+                    print(f"[{acc.line_no}] {acc.email} oauth={status} {detail[:180]}")
         else:
             result.oauth_status = "skipped"
-            result.oauth_detail = "pass --oauth to attempt browser OAuth for RT"
+            result.oauth_detail = "pass --oauth to convert SSO to RT"
 
         results.append(result)
         if args.sleep > 0:
@@ -668,15 +634,6 @@ def main(argv: list[str] | None = None) -> int:
                     name_prefix=args.name_prefix,
                     group_ids=group_ids,
                 )
-                # map line results
-                by_preview = {
-                    preview_token(rt): rt for rt in refresh_tokens
-                }
-                for item in import_summary.get("results") or []:
-                    if not isinstance(item, dict):
-                        continue
-                    # best-effort match by order if previews unavailable
-                # Map by order of successful oauth results
                 oauth_ok = [r for r in results if r.refresh_token]
                 line_results = import_summary.get("results") or []
                 for idx, r in enumerate(oauth_ok):
@@ -705,7 +662,6 @@ def main(argv: list[str] | None = None) -> int:
                         r.import_status = "failed"
                         r.import_detail = str(exc)
 
-    # Write reports (never dump full passwords/sso by default; keep redacted)
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "counts": {
@@ -717,9 +673,8 @@ def main(argv: list[str] | None = None) -> int:
             "imported_created": sum(1 for r in results if r.import_status == "created"),
         },
         "notes": [
-            "SSO cookies work for grok2api (Cookie sso=... on grok.com/console.x.ai).",
-            "Sub2API requires OAuth RT / typ=at+jwt against api.x.ai.",
-            "There is no stable public SSO→RT exchange; --oauth is best-effort browser automation.",
+            "SSO is converted to OAuth RT via pure HTTP consent POST (decision=allow).",
+            "Sub2API import only accepts RT / typ=at+jwt; never import raw SSO as Bearer.",
         ],
         "results": [
             {
@@ -734,15 +689,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_json(out_dir / "report.json", report)
 
-    # Full secrets file for operator reuse (chmod advice)
     secrets_payload = {
-        "refresh_tokens": [
-            {
-                "email": token_email.get(rt, ""),
-                "refresh_token": rt,
-            }
-            for rt in refresh_tokens
-        ],
+        "refresh_tokens": [{"email": token_email.get(rt, ""), "refresh_token": rt} for rt in refresh_tokens],
         "accounts": [
             {
                 "email": r.email,
@@ -754,48 +702,31 @@ def main(argv: list[str] | None = None) -> int:
             for r in results
         ],
     }
-    secrets_path = out_dir / "secrets.json"
-    write_json(secrets_path, secrets_payload)
-    try:
-        os.chmod(secrets_path, 0o600)
-    except OSError:
-        pass
+    write_json(out_dir / "secrets.json", secrets_payload)
 
     if refresh_tokens:
-        (out_dir / "refresh_tokens.txt").write_text(
-            "\n".join(refresh_tokens) + "\n", encoding="utf-8"
-        )
+        rt_path = out_dir / "refresh_tokens.txt"
+        rt_path.write_text("\n".join(refresh_tokens) + "\n", encoding="utf-8")
         try:
-            os.chmod(out_dir / "refresh_tokens.txt", 0o600)
+            os.chmod(rt_path, 0o600)
         except OSError:
             pass
 
     if args.write_sso_inventory:
-        valid_sso = []
-        for acc, r in zip(accounts, results):
-            if r.sso_valid is False:
-                continue
-            valid_sso.append(acc.sso)
-        (out_dir / "sso_tokens_for_grok2api.txt").write_text(
-            "\n".join(valid_sso) + ("\n" if valid_sso else ""),
-            encoding="utf-8",
-        )
+        valid = [a.sso for a, r in zip(accounts, results) if r.sso_valid is not False]
+        inv = out_dir / "sso_tokens_for_grok2api.txt"
+        inv.write_text("\n".join(valid) + ("\n" if valid else ""), encoding="utf-8")
         try:
-            os.chmod(out_dir / "sso_tokens_for_grok2api.txt", 0o600)
+            os.chmod(inv, 0o600)
         except OSError:
             pass
 
     print(f"report: {out_dir / 'report.json'}")
-    print(f"secrets: {secrets_path} (contains SSO/password/RT; keep private)")
+    print(f"secrets: {out_dir / 'secrets.json'}")
     if not refresh_tokens:
-        print(
-            "\nNo OAuth refresh_tokens obtained.\n"
-            "Next options:\n"
-            "  1) Run with: --oauth --headed   (manual CF/login if needed)\n"
-            "  2) Use Sub2API browser OAuth flow to get RT, then bulk import RT only\n"
-            "  3) Keep SSO for grok2api (--write-sso-inventory); Sub2API cannot use SSO as Bearer\n"
-        )
+        print("No refresh_tokens obtained.")
         return 1
+    print(f"refresh_tokens: {out_dir / 'refresh_tokens.txt'} ({len(refresh_tokens)})")
     return 0
 
 
