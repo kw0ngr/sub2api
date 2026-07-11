@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"fmt"
 	"context"
 	"encoding/json"
 	"io"
@@ -301,6 +302,62 @@ func (s *GrokQuotaService) probeRateLimitHeaders(ctx context.Context, account *A
 		return snapshot, resp.StatusCode, infraerrors.Newf(resp.StatusCode, "GROK_PROBE_AUTH_FAILED", "xAI models probe returned %d", resp.StatusCode)
 	}
 	return snapshot, resp.StatusCode, nil
+}
+
+// ValidateAccessToken performs a minimal authenticated probe against xAI
+// (GET {baseURL}/models) before AT-only account creation. Accepts 2xx and 429
+// (auth succeeded; rate-limited). Any other status or transport error fails.
+func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken, baseURL, proxyURL string) error {
+	if s == nil || s.httpUpstream == nil {
+		return fmt.Errorf("access_token upstream validation is not configured")
+	}
+	token := strings.TrimSpace(accessToken)
+	if token == "" {
+		return fmt.Errorf("access_token is empty")
+	}
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = xai.DefaultBaseURL
+	}
+	targetURL := base + "/models"
+
+	callCtx, cancel := context.WithTimeout(ctx, grokQuotaUpstreamTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build access_token validation request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "sub2api-grok-at-validate/1.0")
+
+	resp, err := s.httpUpstream.Do(req, strings.TrimSpace(proxyURL), 0, 1)
+	if err != nil {
+		return fmt.Errorf("xAI access_token validation failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	// 2xx: accepted. 429: credential is real but rate-limited.
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil
+	}
+
+	msg := strings.TrimSpace(extractUpstreamErrorMessage(body))
+	if msg == "" {
+		msg = strings.TrimSpace(string(body))
+	}
+	if msg == "" {
+		msg = http.StatusText(resp.StatusCode)
+	}
+	// Keep message concise for import line results.
+	if len(msg) > 300 {
+		msg = msg[:300] + "..."
+	}
+	return fmt.Errorf("xAI rejected access_token (HTTP %d): %s", resp.StatusCode, msg)
 }
 
 func (s *GrokQuotaService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {

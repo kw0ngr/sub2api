@@ -328,3 +328,56 @@ func TestClassifyGrokProbeResult(t *testing.T) {
 	require.Equal(t, "ok", classifyGrokProbeResult(&GrokQuotaProbeResult{HeadersObserved: true}))
 	require.Equal(t, "ok_partial", classifyGrokProbeResult(&GrokQuotaProbeResult{HeadersObserved: true, ErrorMessage: "no mgmt"}))
 }
+
+func TestGrokQuotaService_ValidateAccessToken(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepts 200", func(t *testing.T) {
+		upstream := &grokQuotaHTTPUpstreamStub{
+			response: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			},
+		}
+		svc := NewGrokQuotaService(nil, nil, nil, upstream)
+		require.NoError(t, svc.ValidateAccessToken(context.Background(), "tok", "", ""))
+		require.Equal(t, "https://api.x.ai/v1/models", upstream.requestURL)
+		require.Equal(t, "Bearer tok", upstream.authHeader)
+	})
+
+	t.Run("accepts 429 as authenticated", func(t *testing.T) {
+		upstream := &grokQuotaHTTPUpstreamStub{
+			response: &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(`{"error":"rate limited"}`)),
+			},
+		}
+		svc := NewGrokQuotaService(nil, nil, nil, upstream)
+		require.NoError(t, svc.ValidateAccessToken(context.Background(), "tok", "", ""))
+	})
+
+	t.Run("rejects 401", func(t *testing.T) {
+		upstream := &grokQuotaHTTPUpstreamStub{
+			response: &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(`{"error":"Incorrect API key provided"}`)),
+			},
+		}
+		svc := NewGrokQuotaService(nil, nil, nil, upstream)
+		err := svc.ValidateAccessToken(context.Background(), "bad", "", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "rejected access_token")
+		require.Contains(t, err.Error(), "Incorrect API key")
+	})
+
+	t.Run("not configured", func(t *testing.T) {
+		svc := NewGrokQuotaService(nil, nil, nil, nil)
+		err := svc.ValidateAccessToken(context.Background(), "tok", "", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not configured")
+	})
+}
+

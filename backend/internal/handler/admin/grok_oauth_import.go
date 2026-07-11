@@ -292,7 +292,7 @@ func (h *GrokOAuthHandler) importGrokTokenLine(
 
 	switch line.kind {
 	case grokImportKindAccess:
-		return h.importGrokAccessToken(ctx, req, line, index, multi, result)
+		return h.importGrokAccessToken(ctx, req, line, proxyURL, index, multi, result)
 	default:
 		return h.importGrokRefreshToken(ctx, req, line, proxyURL, index, multi, result)
 	}
@@ -354,6 +354,7 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 	ctx context.Context,
 	req GrokImportRefreshTokensRequest,
 	line grokImportTokenLine,
+	proxyURL string,
 	index int,
 	multi bool,
 	result GrokImportRefreshTokenLineResult,
@@ -366,6 +367,10 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 	email, expUnix, warning := parseGrokAccessTokenClaims(line.token, now)
 	if warning != "" && strings.Contains(strings.ToLower(warning), "expired") {
 		result.Error = warning
+		return result
+	}
+	if err := h.validateGrokAccessTokenUpstream(ctx, line.token, proxyURL); err != nil {
+		result.Error = err.Error()
 		return result
 	}
 
@@ -533,6 +538,15 @@ func (h *GrokOAuthHandler) scheduleGrokQuotaProbe(accountID int64) {
 		defer cancel()
 		_, _ = h.quotaService.ProbeUsage(ctx, id)
 	}(accountID)
+}
+
+// validateGrokAccessTokenUpstream probes api.x.ai with the candidate access token
+// before creating an account. Without this, any forged typ=at+jwt JWT would import.
+func (h *GrokOAuthHandler) validateGrokAccessTokenUpstream(ctx context.Context, accessToken, proxyURL string) error {
+	if h == nil || h.quotaService == nil {
+		return fmt.Errorf("access_token upstream validation is not configured")
+	}
+	return h.quotaService.ValidateAccessToken(ctx, accessToken, xai.DefaultBaseURL, proxyURL)
 }
 
 // isGrokAPIAccessTokenJWT reports whether token looks like an xAI OAuth access token

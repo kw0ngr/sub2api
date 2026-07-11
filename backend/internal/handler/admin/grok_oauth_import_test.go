@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -28,6 +30,43 @@ func (s grokOAuthClientStub) ExchangeCode(ctx context.Context, code, codeVerifie
 
 func (s grokOAuthClientStub) RefreshToken(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error) {
 	return s.refresh(ctx, refreshToken, proxyURL, clientID)
+}
+
+
+// grokImportHTTPUpstreamStub is a minimal HTTPUpstream for AT import validation probes.
+type grokImportHTTPUpstreamStub struct {
+	status int
+	body   string
+	err    error
+	last   *http.Request
+}
+
+func (u *grokImportHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.last = req
+	if u.err != nil {
+		return nil, u.err
+	}
+	status := u.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	body := u.body
+	if body == "" {
+		body = `{"data":[]}`
+	}
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, nil
+}
+
+func (u *grokImportHTTPUpstreamStub) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
+}
+
+func newGrokImportQuotaService(upstream service.HTTPUpstream) *service.GrokQuotaService {
+	return service.NewGrokQuotaService(nil, nil, nil, upstream)
 }
 
 func TestGrokImportRefreshTokensCreatesAccounts(t *testing.T) {
@@ -207,7 +246,8 @@ func TestGrokImportAccessTokensCreatesAccounts(t *testing.T) {
 			return nil, errors.New("should not refresh for access token import")
 		},
 	})
-	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, nil)
+	upstream := &grokImportHTTPUpstreamStub{status: http.StatusOK}
+	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, newGrokImportQuotaService(upstream))
 	router := gin.New()
 	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
 
@@ -250,6 +290,12 @@ func TestGrokImportAccessTokensCreatesAccounts(t *testing.T) {
 	}
 	if !strings.Contains(envelope.Data.Results[0].Warning, "access_token only") {
 		t.Fatalf("warning = %q", envelope.Data.Results[0].Warning)
+	}
+	if upstream.last == nil || !strings.Contains(upstream.last.URL.String(), "/models") {
+		t.Fatalf("expected upstream /models validation probe, got %#v", upstream.last)
+	}
+	if auth := upstream.last.Header.Get("Authorization"); auth != "Bearer "+jwt {
+		t.Fatalf("Authorization = %q", auth)
 	}
 }
 
@@ -309,3 +355,85 @@ func TestGrokImportRejectsSSOCookieJWT(t *testing.T) {
 		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
 	}
 }
+
+func TestGrokImportAccessTokenRejectsUpstreamUnauthorized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	oauthSvc := service.NewGrokOAuthService(nil, grokOAuthClientStub{
+		refresh: func(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error) {
+			return nil, errors.New("should not refresh")
+		},
+	})
+	upstream := &grokImportHTTPUpstreamStub{
+		status: http.StatusUnauthorized,
+		body:   `{"code":"invalid-argument","error":"Incorrect API key provided"}`,
+	}
+	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, newGrokImportQuotaService(upstream))
+	router := gin.New()
+	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"at+jwt"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"fake@x.ai","exp":` + strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10) + `}`))
+	jwt := header + "." + payload + ".sig"
+
+	body, _ := json.Marshal(map[string]any{
+		"access_tokens": []string{jwt},
+		"name_prefix":   "Grok AT fake",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/grok/oauth/import-refresh-tokens", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Data GrokImportRefreshTokensResult `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if envelope.Data.Created != 0 || envelope.Data.Failed != 1 {
+		t.Fatalf("result=%+v want created=0 failed=1", envelope.Data)
+	}
+	if len(adminSvc.createdAccounts) != 0 {
+		t.Fatalf("should not create account, got %d", len(adminSvc.createdAccounts))
+	}
+	if !strings.Contains(envelope.Data.Results[0].Error, "rejected access_token") {
+		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
+	}
+}
+
+func TestGrokImportAccessTokenRequiresValidator(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	oauthSvc := service.NewGrokOAuthService(nil, grokOAuthClientStub{
+		refresh: func(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error) {
+			return nil, errors.New("should not refresh")
+		},
+	})
+	// quotaService nil => validation not configured => import fails, no account
+	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, nil)
+	router := gin.New()
+	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"at+jwt"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"user@x.ai","exp":` + strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10) + `}`))
+	jwt := header + "." + payload + ".sig"
+	body, _ := json.Marshal(map[string]any{"access_tokens": []string{jwt}})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/grok/oauth/import-refresh-tokens", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	var envelope struct {
+		Data GrokImportRefreshTokensResult `json:"data"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &envelope)
+	if envelope.Data.Created != 0 || len(adminSvc.createdAccounts) != 0 {
+		t.Fatalf("created without validator: %+v accounts=%d", envelope.Data, len(adminSvc.createdAccounts))
+	}
+	if !strings.Contains(envelope.Data.Results[0].Error, "not configured") {
+		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
+	}
+}
+
