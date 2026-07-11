@@ -15,7 +15,7 @@
             :loading="loading"
             @refresh="handleManualRefresh"
             @sync="showSync = true"
-            @create="showCreate = true"
+            @create="openCreateAccount"
           >
             <template #after>
               <!-- Auto Refresh Dropdown -->
@@ -123,6 +123,9 @@
               </button>
               <button @click="showRawKeyImport = true" class="btn btn-secondary">
                 {{ t('admin.accounts.rawKeyImport') }}
+              </button>
+              <button @click="openGrokBulkImport" class="btn btn-secondary" title="批量导入 Grok RT / AT / SSO">
+                {{ t('admin.accounts.grokBulkImport', 'Grok 批量导入') }}
               </button>
               <button @click="handleCheckAllAPIKeys" class="btn btn-secondary" :disabled="checkingAPIKeyHealth">
                 {{ checkingAPIKeyHealth ? t('admin.accounts.apiKeyHealthChecking') : t('admin.accounts.apiKeyHealthCheckAll') }}
@@ -309,7 +312,8 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
+    <CreateAccountModal
+      :preferred-platform="createPreferredPlatform" :show="showCreate" :proxies="proxies" :groups="groups" @close="handleCreateClose" @created="handleCreateCreated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
@@ -432,6 +436,7 @@ const selTypes = computed<AccountType[]>(() => {
   return [...types]
 })
 const showCreate = ref(false)
+const createPreferredPlatform = ref<'anthropic' | 'openai' | 'gemini' | 'glm' | 'grok' | 'antigravity' | null>(null)
 const showEdit = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
@@ -1321,6 +1326,27 @@ const handleBulkUpdated = () => {
   reload()
 }
 const handleDataImported = () => { showImportData.value = false; reload() }
+
+const openCreateAccount = () => {
+  createPreferredPlatform.value = null
+  showCreate.value = true
+}
+
+const openGrokBulkImport = () => {
+  createPreferredPlatform.value = 'grok'
+  showCreate.value = true
+}
+
+const handleCreateClose = () => {
+  showCreate.value = false
+  createPreferredPlatform.value = null
+}
+
+const handleCreateCreated = () => {
+  showCreate.value = false
+  createPreferredPlatform.value = null
+  reload()
+}
 const handleRawKeyImported = (result: RawAPIKeyImportResult) => {
   if (result.created > 0 || result.checked > 0 || result.invalid_disabled > 0) {
     reload()

@@ -2243,13 +2243,43 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
-	// 规范化 reasoning.effort 参数（minimal -> none），与上游允许值对齐。
-	if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
-		if effort, ok := reasoning["effort"].(string); ok && effort == "minimal" {
-			reasoning["effort"] = "none"
-			bodyModified = true
-			markPatchSet("reasoning.effort", "none")
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
+	// 规范化 reasoning.effort / reasoning_effort，与上游允许值对齐。
+	// - minimal -> none
+	// - max 仅 gpt-5.6* 保留；其他模型映射为 xhigh（gpt-5.5 等不接受 max）
+	// 注意：绝不能把 gpt-5.6 的 max 改掉。
+	{
+		modelForEffort := upstreamModel
+		if modelForEffort == "" {
+			if m, ok := reqBody["model"].(string); ok {
+				modelForEffort = m
+			}
+		}
+		if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
+			if effort, ok := reasoning["effort"].(string); ok {
+				normalized := normalizeOpenAIReasoningEffortForModel(effort, modelForEffort)
+				// normalize 对 minimal/none 返回 ""；写回 none 以兼容上游枚举。
+				if normalized == "" && isOpenAIMinimalOrNoneEffort(effort) {
+					normalized = "none"
+				}
+				if normalized != "" && normalized != effort {
+					reasoning["effort"] = normalized
+					bodyModified = true
+					markPatchSet("reasoning.effort", normalized)
+					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: %s -> %s (model: %s, account: %s)", effort, normalized, modelForEffort, account.Name)
+				}
+			}
+		}
+		if effort, ok := reqBody["reasoning_effort"].(string); ok {
+			normalized := normalizeOpenAIReasoningEffortForModel(effort, modelForEffort)
+			if normalized == "" && isOpenAIMinimalOrNoneEffort(effort) {
+				normalized = "none"
+			}
+			if normalized != "" && normalized != effort {
+				reqBody["reasoning_effort"] = normalized
+				bodyModified = true
+				markPatchSet("reasoning_effort", normalized)
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning_effort: %s -> %s (model: %s, account: %s)", effort, normalized, modelForEffort, account.Name)
+			}
 		}
 	}
 
@@ -6847,6 +6877,12 @@ func extractOpenAIReasoningEffort(reqBody map[string]any, requestedModel string)
 		return nil
 	}
 	return &value
+}
+
+func isOpenAIMinimalOrNoneEffort(raw string) bool {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+	return value == "minimal" || value == "none"
 }
 
 func normalizeOpenAIReasoningEffort(raw string) string {

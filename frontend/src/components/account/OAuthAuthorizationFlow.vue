@@ -15,6 +15,18 @@
             {{ methodLabel }}
           </label>
           <div class="flex flex-wrap gap-4">
+            <!-- Grok: bulk token import first (RT / AT / SSO) -->
+            <label v-if="showRefreshTokenOption" class="flex cursor-pointer items-center gap-2">
+              <input
+                v-model="inputMethod"
+                type="radio"
+                value="refresh_token"
+                class="text-blue-600 focus:ring-blue-500"
+              />
+              <span class="text-sm text-blue-900 dark:text-blue-200">{{
+                t(getOAuthKey('refreshTokenAuth'))
+              }}</span>
+            </label>
             <label class="flex cursor-pointer items-center gap-2">
               <input
                 v-model="inputMethod"
@@ -35,17 +47,6 @@
               />
               <span class="text-sm text-blue-900 dark:text-blue-200">{{
                 t('admin.accounts.oauth.cookieAutoAuth')
-              }}</span>
-            </label>
-            <label v-if="showRefreshTokenOption" class="flex cursor-pointer items-center gap-2">
-              <input
-                v-model="inputMethod"
-                type="radio"
-                value="refresh_token"
-                class="text-blue-600 focus:ring-blue-500"
-              />
-              <span class="text-sm text-blue-900 dark:text-blue-200">{{
-                t(getOAuthKey('refreshTokenAuth'))
               }}</span>
             </label>
             <label v-if="showMobileRefreshTokenOption" class="flex cursor-pointer items-center gap-2">
@@ -84,7 +85,7 @@
           </div>
         </div>
 
-        <!-- Refresh Token Input (OpenAI / Antigravity / Mobile RT) -->
+        <!-- Refresh Token / bulk token paste (OpenAI / Antigravity / Grok RT|AT|SSO) -->
         <div v-if="inputMethod === 'refresh_token' || inputMethod === 'mobile_refresh_token'" class="space-y-4">
           <div
             class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
@@ -93,13 +94,24 @@
               {{ t(getOAuthKey('refreshTokenDesc')) }}
             </p>
 
-            <!-- Refresh Token Input -->
+            <div
+              v-if="platform === 'grok'"
+              class="mb-3 rounded-md border border-dashed border-blue-300/70 bg-blue-50/70 px-3 py-2 text-xs text-blue-800 dark:border-blue-600/60 dark:bg-blue-900/20 dark:text-blue-200"
+            >
+              支持格式：每行一个；可用 <code>refresh_token:</code> / <code>rt:</code> / <code>access_token:</code> / <code>sso=</code> 前缀；JWT 自动识别为 access_token。
+            </div>
+
+            <!-- Token list -->
             <div class="mb-4">
               <label
                 class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
               >
                 <Icon name="key" size="sm" class="text-blue-500" />
-                Refresh Token
+                {{
+                  platform === 'grok'
+                    ? t('admin.accounts.oauth.grok.tokenListLabel', 'Token 列表（RT / AT / SSO）')
+                    : 'Refresh Token'
+                }}
                 <span
                   v-if="parsedRefreshTokenCount > 1"
                   class="rounded-full bg-blue-500 px-2 py-0.5 text-xs text-white"
@@ -109,7 +121,7 @@
               </label>
               <textarea
                 v-model="refreshTokenInput"
-                rows="3"
+                :rows="platform === 'grok' ? 8 : 3"
                 class="input w-full resize-y font-mono text-sm"
                 :placeholder="t(getOAuthKey('refreshTokenPlaceholder'))"
               ></textarea>
@@ -719,7 +731,13 @@ const oauthImportantNotice = computed(() => {
 })
 
 // Local state
-const inputMethod = ref<AuthInputMethod>(props.showCookieOption ? 'manual' : 'manual')
+const resolveDefaultInputMethod = (): AuthInputMethod => {
+  // Grok bulk import is the primary path (RT / access_token / sso paste).
+  if (props.platform === 'grok' && props.showRefreshTokenOption) return 'refresh_token'
+  if (props.showAccessTokenOption && props.platform === 'openai') return 'manual'
+  return 'manual'
+}
+const inputMethod = ref<AuthInputMethod>(resolveDefaultInputMethod())
 const authCodeInput = ref('')
 const sessionKeyInput = ref('')
 const refreshTokenInput = ref('')
@@ -762,6 +780,17 @@ const parsedAccessTokenCount = computed(() => {
 watch(inputMethod, (newVal) => {
   emit('update:inputMethod', newVal)
 })
+
+watch(
+  () => [props.platform, props.showRefreshTokenOption] as const,
+  () => {
+    const next = resolveDefaultInputMethod()
+    if (inputMethod.value !== next) {
+      inputMethod.value = next
+    }
+  },
+  { immediate: true }
+)
 
 // Auto-extract code from callback URL (OpenAI/Gemini/Antigravity/Grok)
 // e.g., http://localhost:8085/callback?code=xxx...&state=...
@@ -853,7 +882,7 @@ defineExpose({
     refreshTokenInput.value = ''
     sessionTokenInput.value = ''
     accessTokenInput.value = ''
-    inputMethod.value = 'manual'
+    inputMethod.value = resolveDefaultInputMethod()
     showHelpDialog.value = false
   }
 })

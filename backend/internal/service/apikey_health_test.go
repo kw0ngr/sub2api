@@ -303,3 +303,17 @@ func TestBuildAPIKeyHealthCheckResultFromScheduledResult_CooldownFailure(t *test
 	require.Equal(t, http.StatusTooManyRequests, health.StatusCode)
 	require.Contains(t, health.Message, "rate limited")
 }
+
+func TestIsClientRequestParameterValidationError_OpenAIEffortMax(t *testing.T) {
+	msg := "Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'."
+	require.True(t, isClientRequestParameterValidationError(msg))
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, http.StatusBadRequest, []byte(`{"error":{"message":"`+msg+`"}}`)))
+}
+
+func TestNormalizeOpenAIReasoningEffort_MaxPreservedForGPT56Only(t *testing.T) {
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6"))
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-sol"))
+	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.5"))
+	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.4"))
+	require.Equal(t, "high", normalizeOpenAIReasoningEffortForModel("high", "gpt-5.5"))
+}

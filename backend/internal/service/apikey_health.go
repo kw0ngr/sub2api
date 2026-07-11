@@ -492,6 +492,19 @@ func isClientRequestParameterValidationError(msg string) bool {
 		strings.Contains(msg, "supported levels") {
 		return true
 	}
+	// OpenAI: Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.
+	// This is a client parameter error, not an account health problem.
+	if strings.Contains(msg, "invalid value") &&
+		(strings.Contains(msg, "supported values") || strings.Contains(msg, "supported levels")) &&
+		(strings.Contains(msg, "effort") ||
+			strings.Contains(msg, "minimal") ||
+			strings.Contains(msg, "xhigh") ||
+			(strings.Contains(msg, "max") && strings.Contains(msg, "none"))) {
+		return true
+	}
+	if strings.Contains(msg, "unsupported value") && strings.Contains(msg, "effort") {
+		return true
+	}
 	if strings.Contains(msg, "thinking mode") &&
 		strings.Contains(msg, "does not support") &&
 		strings.Contains(msg, "tool_choice") {

@@ -299,7 +299,11 @@
             </div>
             <div>
               <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.chatgptOauth') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{
+                form.platform === 'grok'
+                  ? t('admin.accounts.types.grokOauthBulk', '浏览器授权 / 批量导入 RT·AT·SSO')
+                  : t('admin.accounts.types.chatgptOauth')
+              }}</span>
             </div>
           </button>
 
@@ -329,6 +333,12 @@
             </div>
           </button>
         </div>
+        <p
+          v-if="form.platform === 'grok' && accountCategory === 'oauth-based'"
+          class="mt-2 rounded-md border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-900/20 dark:text-emerald-200"
+        >
+          下一步可直接批量粘贴 <strong>Refresh Token / Access Token / SSO</strong>（每行一个）。也支持浏览器 OAuth 授权。
+        </p>
       </div>
 
 
@@ -3097,9 +3107,13 @@ interface Props {
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
+  /** Prefill platform when opening the modal (e.g. grok bulk import entry). */
+  preferredPlatform?: AccountPlatform | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  preferredPlatform: null
+})
 const emit = defineEmits<{
   close: []
   created: []
@@ -3461,6 +3475,13 @@ watch(
   () => props.show,
   (newVal) => {
     if (newVal) {
+      // Prefill platform for dedicated entry points (Grok bulk import button, etc.)
+      if (props.preferredPlatform) {
+        form.platform = props.preferredPlatform
+        accountCategory.value = 'oauth-based'
+        addMethod.value = 'oauth'
+        form.type = 'oauth'
+      }
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
