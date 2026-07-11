@@ -20,8 +20,10 @@
   python3 tools/grok_sso_to_sub2api.py -i cards.txt --group-ids 18
 
 环境变量：
-  SUB2API_BASE_URL      默认 https://ib.do
-  SUB2API_ADMIN_TOKEN   管理后台 JWT（必填，用于导入）
+  SUB2API_BASE_URL        默认 https://ib.do
+  SUB2API_ADMIN_TOKEN     管理后台 JWT（可选；未提供则用账号密码登录）
+  SUB2API_ADMIN_EMAIL     默认 admin@qyf.com
+  SUB2API_ADMIN_PASSWORD  默认 admin@qyf.com
 """
 
 from __future__ import annotations
@@ -51,6 +53,8 @@ DEFAULT_AUTHORIZE_URL = "https://auth.x.ai/oauth2/authorize"
 DEFAULT_TOKEN_URL = "https://auth.x.ai/oauth2/token"
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:56121/callback"
 DEFAULT_BASE_URL = os.environ.get("SUB2API_BASE_URL", "https://ib.do")
+DEFAULT_ADMIN_EMAIL = os.environ.get("SUB2API_ADMIN_EMAIL", "admin@qyf.com")
+DEFAULT_ADMIN_PASSWORD = os.environ.get("SUB2API_ADMIN_PASSWORD", "admin@qyf.com")
 DEFAULT_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -868,6 +872,62 @@ def probe_refresh_token_usability(
     return usable, detail_s, meta
 
 
+def login_sub2api_admin(
+    base_url: str,
+    email: str,
+    password: str,
+    *,
+    timeout: float = 30.0,
+) -> str:
+    """Login Sub2API admin and return access_token JWT."""
+    email = (email or "").strip()
+    password = password or ""
+    if not email or not password:
+        raise RuntimeError("admin email/password required")
+    url = base_url.rstrip("/") + "/api/v1/auth/login"
+    status, _, body = http_json(
+        "POST",
+        url,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        json_body={"email": email, "password": password},
+        timeout=timeout,
+    )
+    text = body.decode("utf-8", errors="replace")
+    if status >= 400:
+        raise RuntimeError(f"login HTTP {status}: {text[:240]}")
+    try:
+        obj = json.loads(text)
+    except Exception as exc:
+        raise RuntimeError(f"login invalid JSON: {exc}: {text[:160]}") from exc
+    data = obj.get("data") if isinstance(obj, dict) else None
+    if not isinstance(data, dict):
+        data = obj if isinstance(obj, dict) else {}
+    if data.get("requires_2fa"):
+        raise RuntimeError("admin account requires 2FA; provide SUB2API_ADMIN_TOKEN instead")
+    token = str(data.get("access_token") or data.get("token") or "").strip()
+    if not token and isinstance(obj, dict):
+        token = str(obj.get("access_token") or obj.get("token") or "").strip()
+    if not token:
+        raise RuntimeError(f"login response missing access_token: {text[:200]}")
+    return token
+
+
+def resolve_admin_token(args: argparse.Namespace) -> str:
+    """Prefer explicit JWT; otherwise login with default/admin credentials."""
+    token = str(getattr(args, "admin_token", "") or "").strip()
+    if token:
+        return token
+    email = str(getattr(args, "admin_email", "") or DEFAULT_ADMIN_EMAIL).strip()
+    password = str(getattr(args, "admin_password", "") or DEFAULT_ADMIN_PASSWORD)
+    base_url = str(getattr(args, "base_url", "") or DEFAULT_BASE_URL).rstrip("/")
+    detail(f"login Sub2API admin email={email} base={base_url}")
+    token = login_sub2api_admin(base_url, email, password)
+    # cache on args so later steps reuse
+    args.admin_token = token
+    ok(f"admin login ok email={email} token={preview_token(token)}")
+    return token
+
+
 def import_refresh_tokens(
     base_url: str,
     admin_token: str,
@@ -1228,15 +1288,22 @@ def run_pipeline(args: argparse.Namespace) -> int:
     log.info("input     : %s", args.input)
     log.info("accounts  : %d", len(accounts))
     log.info("base_url  : %s", args.base_url)
+    log.info("admin     : %s (%s)", args.admin_email, "token" if str(args.admin_token or "").strip() else "password-login")
     log.info("group_ids : %s", group_ids or "(none)")
     log.info("import    : %s", args.import_sub2api)
     log.info("probe_sso : %s  probe_rt: %s  probe_balance: %s  force_oauth: %s", args.probe_sso, args.probe_rt, args.probe_balance, args.force_oauth)
     log.info("import_only_chat_ok: %s", args.import_only_chat_ok)
     log.info("out_dir   : %s", out_dir)
     log.info("log_file  : %s", log_path)
-    if args.import_sub2api and not args.admin_token:
-        log.error("开启导入需要 --admin-token 或环境变量 SUB2API_ADMIN_TOKEN")
-        return 2
+    if args.import_sub2api:
+        try:
+            resolve_admin_token(args)
+        except Exception as exc:
+            log.error("获取 admin token 失败: %s", exc)
+            log.error(
+                "可设置 --admin-token / SUB2API_ADMIN_TOKEN，或检查 --admin-email/--admin-password（默认 admin@qyf.com）"
+            )
+            return 2
 
     results: list[AccountResult] = []
     import_queue: list[str] = []
@@ -1520,7 +1587,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--auto",
         action="store_true",
-        help="全自动：探测+换RT+探测RT+导入（需 SUB2API_ADMIN_TOKEN）",
+        help="全自动：探测+换RT+探测RT+导入（默认登录 ib.do admin@qyf.com）",
     )
     p.add_argument("--probe-sso", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--probe-rt", action=argparse.BooleanOptionalAction, default=True)
@@ -1545,7 +1612,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--import-sub2api",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="导入 Sub2API（默认：有 admin-token 则开；--auto 强制开）",
+        help="导入 Sub2API（默认开；可用默认 admin 账号密码登录；--balance-only 关闭）",
     )
     p.add_argument(
         "--import-only-chat-ok",
@@ -1562,7 +1629,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--admin-token",
         default=os.environ.get("SUB2API_ADMIN_TOKEN", ""),
-        help="Sub2API admin JWT（或 env SUB2API_ADMIN_TOKEN）",
+        help="Sub2API admin JWT（或 env SUB2API_ADMIN_TOKEN；未提供则用账号密码登录）",
+    )
+    p.add_argument(
+        "--admin-email",
+        default=DEFAULT_ADMIN_EMAIL,
+        help=f"Sub2API 管理员邮箱（默认 {DEFAULT_ADMIN_EMAIL} / env SUB2API_ADMIN_EMAIL）",
+    )
+    p.add_argument(
+        "--admin-password",
+        default=DEFAULT_ADMIN_PASSWORD,
+        help="Sub2API 管理员密码（默认 admin@qyf.com / env SUB2API_ADMIN_PASSWORD）",
     )
     p.add_argument("--name-prefix", default="Grok SSO→RT")
     p.add_argument("--group-ids", default=os.environ.get("SUB2API_GROUP_IDS", "18"))
@@ -1600,8 +1677,8 @@ def main(argv: list[str] | None = None) -> int:
         args.import_sub2api = False
 
     if args.import_sub2api is None:
-        # default on when token present (unless balance-only)
-        args.import_sub2api = bool(args.admin_token) and not args.balance_only
+        # default: import on when not balance-only (will login with default admin creds)
+        args.import_sub2api = not args.balance_only
 
     if not Path(args.input).is_file():
         print(f"input file not found: {args.input}", file=sys.stderr)
