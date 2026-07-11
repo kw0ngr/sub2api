@@ -2,9 +2,9 @@ package service
 
 import (
 	"bytes"
-	"fmt"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -376,7 +376,6 @@ func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken,
 	}
 	return fmt.Errorf("xAI rejected access_token (HTTP %d): %s", resp.StatusCode, msg)
 }
-
 
 // probeRateLimitHeadersViaChat tries a minimal chat completion to elicit rate-limit headers
 // when GET /models returns no quota headers.

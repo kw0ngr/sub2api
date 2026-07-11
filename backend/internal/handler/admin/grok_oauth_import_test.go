@@ -32,7 +32,6 @@ func (s grokOAuthClientStub) RefreshToken(ctx context.Context, refreshToken, pro
 	return s.refresh(ctx, refreshToken, proxyURL, clientID)
 }
 
-
 // grokImportHTTPUpstreamStub is a minimal HTTPUpstream for AT import validation probes.
 type grokImportHTTPUpstreamStub struct {
 	status int
@@ -310,7 +309,6 @@ func TestIsGrokAPIAccessTokenJWT(t *testing.T) {
 	}
 }
 
-
 func TestGrokImportInvalidSSODoesNotCreateAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
@@ -441,4 +439,3 @@ func TestGrokImportAccessTokenRequiresValidator(t *testing.T) {
 		t.Fatalf("error = %q", envelope.Data.Results[0].Error)
 	}
 }
-
