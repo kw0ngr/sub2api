@@ -24,8 +24,8 @@ import (
 var ErrNoUpdateAvailable = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 
 const (
-	updateCacheKey = "update_check_cache"
-	updateCacheTTL = 1200 // 20 minutes
+	updateCacheKey    = "update_check_cache"
+	updateCacheTTL    = 1200 // 20 minutes
 	defaultGitHubRepo = "kw0ngr/sub2api"
 
 	// Security: allowed download domains for updates

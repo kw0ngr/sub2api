@@ -48,7 +48,6 @@ func TestUpdateService_PerformUpdateReturnsTypedNoUpdateError(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
 
-
 type updateServiceRepoCaptureClient struct {
 	repo string
 }
@@ -83,4 +82,3 @@ func TestUpdateService_DefaultsGitHubRepoWhenEmpty(t *testing.T) {
 	}, "1.0.0", "release", "  ")
 	require.Equal(t, defaultGitHubRepo, svc.GitHubRepo())
 }
-
