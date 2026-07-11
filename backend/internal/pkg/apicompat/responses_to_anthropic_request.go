@@ -127,7 +127,6 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 	for _, item := range items {
 		switch {
 		case item.Role == "system" || item.Role == "developer":
-			// System prompt → Anthropic system field
 			text := extractTextFromContent(item.Content)
 			if text != "" {
 				systemParts = append(systemParts, text)
@@ -202,8 +201,9 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 
 	// Repair tool_use/tool_result pairing, then merge consecutive same-role
 	// messages (Anthropic requires alternating roles). The first merge groups
-	// parallel calls and results before the pairing pass; the second merge
-	// restores alternation after tool_results are re-emitted next to their call.
+	// parallel calls (and their results) so the pairing pass sees them together;
+	// the pairing pass may re-split a user turn (e.g. when an injected message
+	// sat between a call and its output), so a second merge restores alternation.
 	messages = mergeConsecutiveMessages(messages)
 	messages = normalizeAnthropicToolPairing(messages)
 	messages = mergeConsecutiveMessages(messages)
@@ -212,10 +212,40 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 	if len(systemParts) > 0 {
 		system, _ = json.Marshal(strings.Join(systemParts, "\n\n"))
 	}
+
 	return system, messages, nil
 }
 
+// normalizeAnthropicToolPairing rebuilds the message sequence so it satisfies
+// Anthropic's tool_use/tool_result invariants, which the naive item-by-item
+// conversion violates whenever the Responses history interleaves anything
+// between a function_call and its function_call_output:
+//
+//   - every tool_result block must have a matching tool_use in the immediately
+//     preceding assistant message ("tool_result ... must have a corresponding
+//     tool_use block in the previous message");
+//   - every tool_use block must be answered by a tool_result in the immediately
+//     following user message (Anthropic rejects unanswered tool_use ids);
+//   - user/assistant turns must alternate.
+//
+// codex (Responses, store:false) re-sends the whole history each turn and
+// frequently injects items between a call and its output — a developer/approval
+// notice, or a sibling parallel call whose output never arrived. The unrepaired
+// converter emits each function_call as its own assistant message and each
+// output as its own user message, so any such interleaving breaks
+// tool_use↔tool_result adjacency and yields an upstream 400.
+//
+// The repair indexes every tool_result by its tool_use id, then for each
+// assistant message carrying tool_use blocks keeps only the answered ones
+// (dropping unanswered/dangling calls — and the assistant message entirely if it
+// has no other content) and emits the matching tool_result blocks, in call
+// order, as the very next user message. Standalone tool_result blocks are
+// dropped from their original position (re-emitted adjacent to their call);
+// orphan tool_results with no announcing tool_use are dropped. Non-tool content
+// passes through in place. This mirrors normalizeChatMessages on the
+// Responses→Chat path.
 func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessage {
+	// Index every tool_result block by its tool_use id (last wins on dup).
 	results := make(map[string]AnthropicContentBlock)
 	for _, m := range messages {
 		if m.Role != "user" {
@@ -245,7 +275,6 @@ func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessa
 				out = append(out, m)
 				continue
 			}
-
 			kept := make([]AnthropicContentBlock, 0, len(toolUses))
 			for _, tu := range toolUses {
 				if _, ok := results[tu.ID]; ok {
@@ -253,12 +282,12 @@ func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessa
 				}
 			}
 			if len(kept) == 0 {
+				// No answered calls: keep any non-tool content, else drop.
 				if len(others) > 0 {
 					out = append(out, anthropicMessageFromBlocks("assistant", others))
 				}
 				continue
 			}
-
 			asstBlocks := make([]AnthropicContentBlock, 0, len(others)+len(kept))
 			asstBlocks = append(asstBlocks, others...)
 			asstBlocks = append(asstBlocks, kept...)
@@ -284,6 +313,8 @@ func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessa
 				out = append(out, m)
 				continue
 			}
+			// The tool_result blocks are re-emitted next to their call; keep any
+			// other content of this user turn in place, drop it if there is none.
 			if len(nonResult) > 0 {
 				out = append(out, anthropicMessageFromBlocks("user", nonResult))
 			}
@@ -295,6 +326,8 @@ func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessa
 	return out
 }
 
+// anthropicMessageFromBlocks builds an AnthropicMessage whose content is the
+// marshaled block array.
 func anthropicMessageFromBlocks(role string, blocks []AnthropicContentBlock) AnthropicMessage {
 	content, _ := json.Marshal(blocks)
 	return AnthropicMessage{Role: role, Content: content}
@@ -503,25 +536,58 @@ func convertResponsesToAnthropicTools(tools []ResponsesTool) []AnthropicTool {
 				Description: t.Description,
 				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
 			})
+		case "custom":
+			out = append(out, AnthropicTool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
+			})
 		default:
 			// Pass through unknown tool types
 			out = append(out, AnthropicTool{
 				Type:        t.Type,
 				Name:        t.Name,
 				Description: t.Description,
-				InputSchema: t.Parameters,
+				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
 			})
 		}
 	}
 	return out
 }
 
-// normalizeAnthropicInputSchema ensures the input_schema has a "type" field.
+// normalizeAnthropicInputSchema ensures input_schema is a valid object schema.
 func normalizeAnthropicInputSchema(schema json.RawMessage) json.RawMessage {
-	if len(schema) == 0 || string(schema) == "null" {
+	const emptyObjectSchema = `{"type":"object","properties":{}}`
+
+	trimmed := strings.TrimSpace(string(schema))
+	if trimmed == "" || trimmed == "null" {
+		return json.RawMessage(emptyObjectSchema)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(schema, &m); err != nil {
 		return json.RawMessage(`{"type":"object","properties":{}}`)
 	}
-	return schema
+
+	typeRaw, ok := m["type"]
+	if !ok || strings.TrimSpace(string(typeRaw)) == "" || string(typeRaw) == "null" {
+		m["type"] = json.RawMessage(`"object"`)
+	} else {
+		var typ string
+		if err := json.Unmarshal(typeRaw, &typ); err != nil || typ != "object" {
+			return json.RawMessage(emptyObjectSchema)
+		}
+	}
+
+	if _, ok := m["properties"]; !ok {
+		m["properties"] = json.RawMessage(`{}`)
+	}
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return json.RawMessage(emptyObjectSchema)
+	}
+	return out
 }
 
 // convertResponsesToAnthropicToolChoice maps Responses tool_choice to Anthropic format.

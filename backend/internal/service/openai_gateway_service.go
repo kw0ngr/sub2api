@@ -2106,6 +2106,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, reqModel)
 		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, reqStream, startTime)
 	}
+	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && shouldForwardResponsesViaChatCompletions(account) {
+		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
+	}
 
 	var reqBody map[string]any
 	ensureReqBody := func() (map[string]any, error) {
@@ -2728,6 +2731,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					continue
 				}
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			}
+			if shouldRetryResponsesViaChatCompletionsAfterHTTPError(account, resp.StatusCode, upstreamMsg, respBody) {
+				logger.L().Info("openai responses: endpoint unsupported, falling back to chat completions bridge",
+					zap.Int64("account_id", account.ID),
+					zap.Int("upstream_status", resp.StatusCode),
+					zap.String("upstream_message", upstreamMsg),
+				)
+				return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 			}
 			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 				upstreamDetail := ""

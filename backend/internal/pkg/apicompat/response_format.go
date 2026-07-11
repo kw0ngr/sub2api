@@ -47,9 +47,10 @@ func responsesTextFormatToChatResponseFormat(raw json.RawMessage) json.RawMessag
 
 	schema := make(map[string]json.RawMessage, len(obj))
 	for key, value := range obj {
-		if key != "type" {
-			schema[key] = value
+		if key == "type" {
+			continue
 		}
+		schema[key] = value
 	}
 	if len(schema) == 0 {
 		return raw

@@ -94,6 +94,10 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 		out.IncompleteDetails = &ResponsesIncompleteDetails{Reason: "max_output_tokens"}
 	}
 
+	// Usage
+	// Anthropic's input_tokens excludes cache_read/cache_creation, while OpenAI
+	// Responses' input_tokens is the total including cached tokens. Add them back
+	// when converting so downstream consumers see OpenAI semantics.
 	totalInputTokens := resp.Usage.InputTokens +
 		resp.Usage.CacheReadInputTokens +
 		resp.Usage.CacheCreationInputTokens
@@ -153,8 +157,9 @@ type AnthropicEventToResponsesState struct {
 	CurrentCallID string
 	CurrentName   string
 
-	// Usage from message_start / message_delta. Anthropic input_tokens excludes
-	// cached tokens; they are added back when emitting Responses usage.
+	// Usage from message_start / message_delta. InputTokens here follows
+	// Anthropic semantics (excludes cached tokens); they are added back when
+	// emitting the OpenAI Responses usage.
 	InputTokens              int
 	OutputTokens             int
 	CacheReadInputTokens     int
@@ -489,6 +494,8 @@ func makeResponsesCompletedEvent(
 	seq := state.SequenceNumber
 	state.SequenceNumber++
 
+	// Anthropic's input_tokens excludes cache_read/cache_creation; add them
+	// back to match OpenAI Responses semantics where input_tokens is the total.
 	totalInputTokens := state.InputTokens + state.CacheReadInputTokens + state.CacheCreationInputTokens
 	usage := &ResponsesUsage{
 		InputTokens:              totalInputTokens,

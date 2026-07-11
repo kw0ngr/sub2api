@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -66,7 +67,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 
-	if isThirdPartyOpenAICompatibleAccount(account) {
+	if shouldForwardChatCompletionsDirect(account) {
 		return s.forwardOpenAICompatibleChatCompletions(ctx, c, account, body, &chatReq, originalModel, billingModel, upstreamModel, startTime)
 	}
 
@@ -315,6 +316,23 @@ func isThirdPartyOpenAICompatibleAccount(account *Account) bool {
 		return account.Type == AccountTypeAPIKey && account.IsGLMOpenAICompatible()
 	default:
 		return false
+	}
+}
+
+func shouldForwardChatCompletionsDirect(account *Account) bool {
+	if isThirdPartyOpenAICompatibleAccount(account) {
+		return true
+	}
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	switch openai_compat.ResolveResponsesSupport(account.Extra) {
+	case openai_compat.ResponsesSupportYes:
+		return false
+	case openai_compat.ResponsesSupportNo:
+		return true
+	default:
+		return hasCustomNonOfficialOpenAIBaseURL(account)
 	}
 }
 

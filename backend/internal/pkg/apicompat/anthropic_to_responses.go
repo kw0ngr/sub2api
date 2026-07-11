@@ -28,6 +28,10 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 		Include: []string{"reasoning.encrypted_content"},
 	}
 
+	// Reasoning models (gpt-5.x) served via the Responses API do not accept
+	// sampling parameters. Sending temperature or top_p causes a 400
+	// "Unsupported parameter" error, so we only forward them for non-reasoning
+	// models.
 	if !isReasoningModel(req.Model) {
 		out.Temperature = req.Temperature
 		out.TopP = req.TopP
@@ -148,7 +152,7 @@ func convertAnthropicToResponsesInput(system json.RawMessage, msgs []AnthropicMe
 func parseAnthropicSystemContentParts(raw json.RawMessage) ([]ResponsesContentPart, error) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		if s == "" || isAnthropicBillingHeaderText(s) {
+		if isAnthropicBillingHeaderText(s) || s == "" {
 			return nil, nil
 		}
 		return []ResponsesContentPart{{Type: "input_text", Text: s}}, nil
@@ -414,10 +418,6 @@ func mapAnthropicEffortToResponses(effort string) string {
 	return effort // low→low, medium→medium, high→high, unknown→passthrough
 }
 
-func isReasoningModel(model string) bool {
-	return strings.HasPrefix(model, "gpt-5")
-}
-
 // convertAnthropicToolsToResponses maps Anthropic tool definitions to
 // Responses API tools. Server-side tools like web_search are mapped to their
 // OpenAI equivalents; regular tools become function tools.
@@ -442,6 +442,14 @@ func convertAnthropicToolsToResponses(tools []AnthropicTool) []ResponsesTool {
 
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+// isReasoningModel reports whether model is a reasoning model that does not
+// support sampling parameters (temperature, top_p) via the Responses API.
+// All gpt-5.x models are reasoning-only; the Responses API returns
+// "Unsupported parameter: temperature" if these fields are present.
+func isReasoningModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-5")
 }
 
 // normalizeToolParameters ensures the tool parameter schema is valid for
