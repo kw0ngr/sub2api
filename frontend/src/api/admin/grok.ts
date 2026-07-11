@@ -61,9 +61,23 @@ export interface GrokQuotaSnapshot {
   updated_at: string
 }
 
+export interface GrokOfficialUsageSnapshot {
+  source?: string
+  value_name?: string
+  usd: number
+  usage_name?: string
+  usage?: number | null
+  start_time?: string
+  end_time?: string
+  timezone?: string
+  limit_reached?: boolean
+  updated_at: string
+}
+
 export interface GrokQuotaProbeResult {
-  source: 'active_probe'
+  source: string
   snapshot?: GrokQuotaSnapshot | null
+  official_usage?: GrokOfficialUsageSnapshot | null
   status_code?: number
   error_message?: string
   headers_observed: boolean

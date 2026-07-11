@@ -870,6 +870,30 @@ export interface GrokQuotaWindow {
   reset_at?: string | null
 }
 
+export interface GrokOfficialUsageSnapshot {
+  source?: string
+  value_name?: string
+  usd: number
+  usage_name?: string
+  usage?: number | null
+  start_time?: string
+  end_time?: string
+  timezone?: string
+  limit_reached?: boolean
+  updated_at: string
+}
+
+export interface GrokLocalTokenBudget {
+  source: string
+  window_minutes: number
+  limit_tokens: number
+  used_tokens: number
+  remaining_tokens: number
+  utilization: number
+  window_stats?: WindowStats | null
+  updated_at: string
+}
+
 export interface AccountUsageInfo {
   source?: 'passive' | 'active'
   updated_at: string | null
@@ -892,6 +916,8 @@ export interface AccountUsageInfo {
   grok_last_headers_seen_at?: string
   grok_last_status_code?: number
   grok_local_usage?: WindowStats | null
+  grok_local_token_budget?: GrokLocalTokenBudget | null
+  grok_official_usage?: GrokOfficialUsageSnapshot | null
   ai_credits?: Array<{
     credit_type?: string
     amount?: number

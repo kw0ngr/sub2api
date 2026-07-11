@@ -28,14 +28,24 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		return usage
 	}
 
+	officialUsage, officialErr := grokOfficialUsageFromExtra(account.Extra)
+	if officialErr == nil && officialUsage != nil {
+		usage.GrokOfficialUsage = officialUsage
+		if parsedAt, err := time.Parse(time.RFC3339, officialUsage.UpdatedAt); err == nil {
+			usage.UpdatedAt = &parsedAt
+		}
+	}
+
 	snapshot, err := grokQuotaSnapshotFromExtra(account.Extra)
 	if err != nil || snapshot == nil {
-		usage.ErrorCode = "quota_unknown"
-		usage.Error = "Grok quota is unknown until the first upstream response includes xAI rate-limit headers"
+		if usage.GrokOfficialUsage == nil {
+			usage.ErrorCode = "quota_unknown"
+			usage.Error = "Grok quota is estimated from local 40m usage until xAI rate-limit headers are observed"
+		}
 		return usage
 	}
 
-	if parsedAt, err := time.Parse(time.RFC3339, snapshot.UpdatedAt); err == nil {
+	if parsedAt, err := time.Parse(time.RFC3339, snapshot.UpdatedAt); err == nil && usage.GrokOfficialUsage == nil {
 		usage.UpdatedAt = &parsedAt
 	}
 	usage.GrokRequestQuota = snapshot.Requests
@@ -51,8 +61,10 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		usage.GrokQuotaSnapshotState = "observed"
 	} else {
 		usage.GrokQuotaSnapshotState = "no_headers"
-		usage.ErrorCode = "quota_unknown"
-		usage.Error = "No xAI quota headers observed on the latest Grok probe"
+		if usage.GrokOfficialUsage == nil {
+			usage.ErrorCode = "quota_unknown"
+			usage.Error = "No xAI quota headers observed on the latest Grok probe"
+		}
 	}
 
 	switch snapshot.StatusCode {
@@ -70,6 +82,42 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		usage.ErrorCode = "rate_limited"
 	}
 	return usage
+}
+
+func grokOfficialUsageFromExtra(extra map[string]any) (*xai.UsageSnapshot, error) {
+	if extra == nil {
+		return nil, nil
+	}
+	raw, ok := extra[grokOfficialUsageExtraKey]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	switch snapshot := raw.(type) {
+	case *xai.UsageSnapshot:
+		return snapshot, nil
+	case xai.UsageSnapshot:
+		return &snapshot, nil
+	case map[string]any:
+		data, err := json.Marshal(snapshot)
+		if err != nil {
+			return nil, err
+		}
+		var out xai.UsageSnapshot
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
+	default:
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return nil, fmt.Errorf("marshal grok official usage: %w", err)
+		}
+		var out xai.UsageSnapshot
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
+	}
 }
 
 func grokQuotaSnapshotFromExtra(extra map[string]any) (*xai.QuotaSnapshot, error) {

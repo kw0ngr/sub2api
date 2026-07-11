@@ -553,10 +553,26 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
-  it('Grok OAuth 显示 xAI rate-limit 剩余额度而不是误算成已用量', async () => {
+  it('Grok OAuth 优先显示本地 40m token 预算，rate-limit 只做诊断备注', async () => {
     getUsage.mockResolvedValue({
       updated_at: '2026-07-10T16:53:45Z',
       source: 'passive',
+      grok_local_token_budget: {
+        source: 'local_usage_log',
+        window_minutes: 40,
+        limit_tokens: 40_000_000,
+        used_tokens: 25_800_000,
+        remaining_tokens: 14_200_000,
+        utilization: 64.5,
+        updated_at: '2026-07-10T16:53:45Z',
+        window_stats: {
+          requests: 29,
+          tokens: 25_800_000,
+          cost: 3.79,
+          standard_cost: 3.79,
+          user_cost: 3.79
+        }
+      },
       grok_request_quota: { limit: 480, remaining: 480 },
       grok_token_quota: { limit: 10_000_000, remaining: 10_000_000 },
       grok_quota_snapshot_state: 'observed',
@@ -588,14 +604,20 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('xAI 速率窗口')
-    expect(wrapper.text()).toContain('请求剩余')
-    expect(wrapper.text()).toContain('480 / 480')
-    expect(wrapper.text()).toContain('Token剩余')
-    expect(wrapper.text()).toContain('10.0M / 10.0M')
+    expect(wrapper.text()).toContain('Grok 40m 本地窗口')
+    expect(wrapper.text()).toContain('本地估算')
+    expect(wrapper.text()).toContain('40m 已用')
+    expect(wrapper.text()).toContain('25.8M / 40.0M')
+    expect(wrapper.text()).toContain('40m 剩余')
+    expect(wrapper.text()).toContain('14.2M')
+    expect(wrapper.text()).toContain('窗口请求')
+    expect(wrapper.text()).toContain('29 req')
+    expect(wrapper.text()).toContain('窗口成本')
+    expect(wrapper.text()).toContain('$3.79')
+    expect(wrapper.text()).toContain('已记录上游 rate-limit 头，仅作诊断，不作为可用总量。')
     expect(wrapper.text()).toContain('本地今日 204 req · 25.8M token · $16.29')
-    expect(wrapper.text()).not.toContain('请求0 / 480')
-    expect(wrapper.text()).not.toContain('Token0 / 10.0M')
+    expect(wrapper.text()).not.toContain('480 / 480')
+    expect(wrapper.text()).not.toContain('10.0M / 10.0M')
   })
 
   it('GLM Key 账号优先展示真实 5h token 窗口', async () => {

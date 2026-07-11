@@ -5,12 +5,30 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
 type accountUsageCodexProbeRepo struct {
 	stubOpenAIAccountRepo
 	updateExtraCh chan map[string]any
 	rateLimitCh   chan time.Time
+}
+
+type grokLocalBudgetUsageRepo struct {
+	UsageLogRepository
+	windowStats *usagestats.AccountStats
+	todayStats  *usagestats.AccountStats
+	windowStart time.Time
+}
+
+func (r *grokLocalBudgetUsageRepo) GetAccountWindowStats(_ context.Context, _ int64, startTime time.Time) (*usagestats.AccountStats, error) {
+	r.windowStart = startTime
+	return r.windowStats, nil
+}
+
+func (r *grokLocalBudgetUsageRepo) GetAccountTodayStats(_ context.Context, _ int64) (*usagestats.AccountStats, error) {
+	return r.todayStats, nil
 }
 
 func (r *accountUsageCodexProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -29,6 +47,62 @@ func (r *accountUsageCodexProbeRepo) SetRateLimited(_ context.Context, _ int64, 
 		r.rateLimitCh <- resetAt
 	}
 	return nil
+}
+
+func TestAccountUsageService_GetGrokUsageBuildsLocal40MinuteBudget(t *testing.T) {
+	t.Parallel()
+
+	repo := &grokLocalBudgetUsageRepo{
+		windowStats: &usagestats.AccountStats{
+			Requests:     29,
+			Tokens:       25_800_000,
+			Cost:         3.79,
+			StandardCost: 3.79,
+			UserCost:     3.79,
+		},
+		todayStats: &usagestats.AccountStats{
+			Requests: 204,
+			Tokens:   55_000_000,
+			Cost:     16.29,
+		},
+	}
+	svc := &AccountUsageService{
+		usageLogRepo:     repo,
+		grokQuotaFetcher: NewGrokQuotaFetcher(),
+	}
+
+	usage, err := svc.getGrokUsage(context.Background(), &Account{
+		ID:       42,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+	})
+	if err != nil {
+		t.Fatalf("getGrokUsage() error = %v", err)
+	}
+	if usage.GrokLocalTokenBudget == nil {
+		t.Fatal("expected local token budget")
+	}
+	if usage.GrokLocalTokenBudget.WindowMinutes != 40 {
+		t.Fatalf("WindowMinutes = %d, want 40", usage.GrokLocalTokenBudget.WindowMinutes)
+	}
+	if usage.GrokLocalTokenBudget.LimitTokens != 40_000_000 {
+		t.Fatalf("LimitTokens = %d, want 40000000", usage.GrokLocalTokenBudget.LimitTokens)
+	}
+	if usage.GrokLocalTokenBudget.UsedTokens != 25_800_000 {
+		t.Fatalf("UsedTokens = %d, want 25800000", usage.GrokLocalTokenBudget.UsedTokens)
+	}
+	if usage.GrokLocalTokenBudget.RemainingTokens != 14_200_000 {
+		t.Fatalf("RemainingTokens = %d, want 14200000", usage.GrokLocalTokenBudget.RemainingTokens)
+	}
+	if usage.GrokLocalTokenBudget.Utilization < 64.49 || usage.GrokLocalTokenBudget.Utilization > 64.51 {
+		t.Fatalf("Utilization = %v, want about 64.5", usage.GrokLocalTokenBudget.Utilization)
+	}
+	if usage.GrokLocalUsage == nil || usage.GrokLocalUsage.Tokens != 55_000_000 {
+		t.Fatalf("GrokLocalUsage = %#v, want today's stats", usage.GrokLocalUsage)
+	}
+	if age := time.Since(repo.windowStart); age < 39*time.Minute || age > 41*time.Minute {
+		t.Fatalf("window start age = %v, want about 40m", age)
+	}
 }
 
 func TestShouldRefreshOpenAICodexSnapshot(t *testing.T) {

@@ -112,6 +112,9 @@ const (
 	windowStatsCacheTTL     = 1 * time.Minute
 	openAIProbeCacheTTL     = 10 * time.Minute
 	openAICodexProbeVersion = "0.144.1"
+
+	grokLocalTokenBudgetLimit  int64 = 40_000_000
+	grokLocalTokenBudgetWindow       = 40 * time.Minute
 )
 
 // UsageCache 封装账户使用量相关的缓存
@@ -140,6 +143,21 @@ type WindowStats struct {
 	Cost         float64 `json:"cost"`
 	StandardCost float64 `json:"standard_cost"`
 	UserCost     float64 `json:"user_cost"`
+}
+
+// GrokLocalTokenBudget 是小团队自用口径的 xAI/Grok 近实时额度估算。
+//
+// xAI Management API 需要 Team ID + Management API Key，维护成本太高；
+// 这里改用本地 usage log 的滚动 40m token 窗口，作为“还能不能继续调度”的运营参考。
+type GrokLocalTokenBudget struct {
+	Source          string       `json:"source"`
+	WindowMinutes   int          `json:"window_minutes"`
+	LimitTokens     int64        `json:"limit_tokens"`
+	UsedTokens      int64        `json:"used_tokens"`
+	RemainingTokens int64        `json:"remaining_tokens"`
+	Utilization     float64      `json:"utilization"`
+	WindowStats     *WindowStats `json:"window_stats,omitempty"`
+	UpdatedAt       string       `json:"updated_at"`
 }
 
 // UsageProgress 使用量进度
@@ -195,15 +213,17 @@ type UsageInfo struct {
 	AntigravityQuota map[string]*AntigravityModelQuota `json:"antigravity_quota,omitempty"`
 
 	// Grok / xAI 被动额度快照
-	GrokRequestQuota       *xai.QuotaWindow `json:"grok_request_quota,omitempty"`
-	GrokTokenQuota         *xai.QuotaWindow `json:"grok_token_quota,omitempty"`
-	GrokRetryAfterSeconds  *int             `json:"grok_retry_after_seconds,omitempty"`
-	GrokEntitlementStatus  string           `json:"grok_entitlement_status,omitempty"`
-	GrokQuotaSnapshotState string           `json:"grok_quota_snapshot_state,omitempty"`
-	GrokLastQuotaProbeAt   string           `json:"grok_last_quota_probe_at,omitempty"`
-	GrokLastHeadersSeenAt  string           `json:"grok_last_headers_seen_at,omitempty"`
-	GrokLastStatusCode     int              `json:"grok_last_status_code,omitempty"`
-	GrokLocalUsage         *WindowStats     `json:"grok_local_usage,omitempty"`
+	GrokRequestQuota       *xai.QuotaWindow      `json:"grok_request_quota,omitempty"`
+	GrokTokenQuota         *xai.QuotaWindow      `json:"grok_token_quota,omitempty"`
+	GrokRetryAfterSeconds  *int                  `json:"grok_retry_after_seconds,omitempty"`
+	GrokEntitlementStatus  string                `json:"grok_entitlement_status,omitempty"`
+	GrokQuotaSnapshotState string                `json:"grok_quota_snapshot_state,omitempty"`
+	GrokLastQuotaProbeAt   string                `json:"grok_last_quota_probe_at,omitempty"`
+	GrokLastHeadersSeenAt  string                `json:"grok_last_headers_seen_at,omitempty"`
+	GrokLastStatusCode     int                   `json:"grok_last_status_code,omitempty"`
+	GrokLocalUsage         *WindowStats          `json:"grok_local_usage,omitempty"`
+	GrokLocalTokenBudget   *GrokLocalTokenBudget `json:"grok_local_token_budget,omitempty"`
+	GrokOfficialUsage      *xai.UsageSnapshot    `json:"grok_official_usage,omitempty"`
 
 	// Antigravity 账号级信息
 	SubscriptionTier    string `json:"subscription_tier,omitempty"`     // 归一化订阅等级: FREE/PRO/ULTRA/UNKNOWN
@@ -874,6 +894,14 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 		}
 	}
 	if s.usageLogRepo != nil && account != nil {
+		now := time.Now()
+		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, now.Add(-grokLocalTokenBudgetWindow)); err == nil && stats != nil {
+			usage.GrokLocalTokenBudget = grokLocalTokenBudgetFromStats(stats, now)
+			if usage.ErrorCode == "quota_unknown" {
+				usage.ErrorCode = ""
+				usage.Error = ""
+			}
+		}
 		if stats, err := s.usageLogRepo.GetAccountTodayStats(ctx, account.ID); err == nil && stats != nil {
 			usage.GrokLocalUsage = windowStatsFromAccountStats(stats)
 		}
@@ -1104,6 +1132,29 @@ func windowStatsFromAccountStats(stats *usagestats.AccountStats) *WindowStats {
 		Cost:         stats.Cost,
 		StandardCost: stats.StandardCost,
 		UserCost:     stats.UserCost,
+	}
+}
+
+func grokLocalTokenBudgetFromStats(stats *usagestats.AccountStats, now time.Time) *GrokLocalTokenBudget {
+	windowStats := windowStatsFromAccountStats(stats)
+	usedTokens := windowStats.Tokens
+	remainingTokens := grokLocalTokenBudgetLimit - usedTokens
+	if remainingTokens < 0 {
+		remainingTokens = 0
+	}
+	utilization := 0.0
+	if grokLocalTokenBudgetLimit > 0 {
+		utilization = float64(usedTokens) / float64(grokLocalTokenBudgetLimit) * 100
+	}
+	return &GrokLocalTokenBudget{
+		Source:          "local_usage_log",
+		WindowMinutes:   int(grokLocalTokenBudgetWindow / time.Minute),
+		LimitTokens:     grokLocalTokenBudgetLimit,
+		UsedTokens:      usedTokens,
+		RemainingTokens: remainingTokens,
+		Utilization:     utilization,
+		WindowStats:     windowStats,
+		UpdatedAt:       now.UTC().Format(time.RFC3339),
 	}
 }
 

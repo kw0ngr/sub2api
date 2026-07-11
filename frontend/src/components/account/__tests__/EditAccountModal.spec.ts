@@ -156,4 +156,69 @@ describe('EditAccountModal', () => {
       'gpt-5.2': 'gpt-5.2'
     })
   })
+
+  it('keeps optional xAI Management credentials for Grok OAuth accounts', async () => {
+    const account = {
+      ...buildAccount(),
+      id: 2,
+      name: 'Grok OAuth',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: {
+        access_token: 'oauth-token',
+        management_api_key: 'old-management-key',
+        team_id: 'old-team'
+      }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.text()).toContain('Grok 用量显示')
+    expect(wrapper.text()).toContain('不需要 Team ID 或 Management API Key')
+    expect(wrapper.text()).toContain('高级可选：xAI Management API 官方历史用量')
+    expect(wrapper.get('input[placeholder="team id"]').element).toHaveProperty('value', 'old-team')
+
+    await wrapper.get('input[placeholder="team id"]').setValue('team-new')
+    await wrapper.get('input[placeholder="留空保持原 Key"]').setValue('new-management-key')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      access_token: 'oauth-token',
+      management_api_key: 'new-management-key',
+      team_id: 'team-new'
+    })
+  })
+
+  it('preserves the existing xAI Management key when the Grok edit field is blank', async () => {
+    const account = {
+      ...buildAccount(),
+      id: 3,
+      name: 'Grok OAuth',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: {
+        access_token: 'oauth-token',
+        management_api_key: 'old-management-key',
+        team_id: 'old-team'
+      }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      access_token: 'oauth-token',
+      management_api_key: 'old-management-key',
+      team_id: 'old-team'
+    })
+  })
 })

@@ -300,7 +300,7 @@
       >
         <div class="mb-1.5 flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">xAI 速率窗口</div>
+            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">{{ grokQuotaTitle }}</div>
             <div class="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokQuotaSubtitle">
               {{ grokQuotaSubtitle }}
             </div>
@@ -348,7 +348,7 @@
           :disabled="activeQueryLoading"
           @click="loadActiveUsage"
         >
-          {{ activeQueryLoading ? '探测中...' : '主动探测速率' }}
+          {{ activeQueryLoading ? '刷新中...' : '刷新 40m 窗口' }}
         </button>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -546,7 +546,6 @@
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
@@ -1154,18 +1153,11 @@ const attachVisibilityObserver = () => {
 const loadActiveUsage = async () => {
   activeQueryLoading.value = true
   try {
-    if (props.account.platform === 'grok') {
-      const probe = await adminAPI.grok.queryQuota(props.account.id)
-      applyGrokQuotaProbe(probe)
-      if (usageInfo.value) {
-        _usageCache.set(props.account.id, { data: usageInfo.value, ts: Date.now() })
-      }
-      return
-    }
-    usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
-    _usageCache.set(props.account.id, { data: usageInfo.value, ts: Date.now() })
+    const result = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
+    usageInfo.value = result
+    _usageCache.set(props.account.id, { data: result, ts: Date.now() })
   } catch (e: any) {
-    error.value = props.account.platform === 'grok' ? `主动探测失败：${extractProbeErrorMessage(e)}` : error.value
+    error.value = props.account.platform === 'grok' ? `刷新 40m 窗口失败：${extractProbeErrorMessage(e)}` : error.value
     console.error('Failed to load active usage:', e)
   } finally {
     activeQueryLoading.value = false
@@ -1189,30 +1181,6 @@ function extractProbeErrorMessage(error: unknown): string {
   return t('common.error')
 }
 
-function applyGrokQuotaProbe(probe: GrokQuotaProbeResult): void {
-  const snapshot = probe.snapshot
-  const current = usageInfo.value ?? {
-    updated_at: null,
-    five_hour: null,
-    seven_day: null,
-    seven_day_sonnet: null
-  }
-  usageInfo.value = {
-    ...current,
-    source: 'active',
-    updated_at: snapshot?.updated_at ?? new Date(probe.fetched_at * 1000).toISOString(),
-    grok_request_quota: snapshot?.requests ?? null,
-    grok_token_quota: snapshot?.tokens ?? null,
-    grok_retry_after_seconds: snapshot?.retry_after_seconds ?? null,
-    grok_entitlement_status: snapshot?.entitlement_status ?? '',
-    grok_quota_snapshot_state: snapshot?.headers_observed ? 'observed' : 'no_headers',
-    grok_last_quota_probe_at: snapshot?.last_probe_at ?? '',
-    grok_last_headers_seen_at: snapshot?.last_headers_seen_at ?? '',
-    grok_last_status_code: snapshot?.status_code ?? probe.status_code ?? 0,
-    error: probe.error_message || (snapshot?.headers_observed ? '' : '上游本次未返回速率头，可稍后再探测。')
-  }
-}
-
 function formatDurationSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
   if (seconds < 60) return `${Math.round(seconds)}s`
@@ -1221,39 +1189,89 @@ function formatDurationSeconds(seconds: number): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`
 }
 
-function formatGrokQuotaWindow(label: string, window?: { limit?: number | null; remaining?: number | null; reset_at?: string | null } | null) {
+function formatGrokRateLimitWindow(label: string, window?: { limit?: number | null; remaining?: number | null; reset_at?: string | null } | null) {
   if (!window || window.limit == null || window.remaining == null) return null
   const remaining = Math.max(0, window.remaining)
   const reset = window.reset_at ? ` · ${formatGLMResetText(window.reset_at)}` : ''
-  return {
-    label: `${label}剩余`,
-    value: `${formatCompactNumber(remaining)} / ${formatCompactNumber(window.limit)}${reset}`
-  }
+  return `${label} ${formatCompactNumber(remaining)} / ${formatCompactNumber(window.limit)}${reset}`
 }
 
+interface GrokQuotaSummaryRow {
+  label: string
+  value: string
+}
+
+const grokLocalBudget = computed(() => usageInfo.value?.grok_local_token_budget ?? null)
+
+const grokQuotaTitle = computed(() => {
+  const budget = grokLocalBudget.value
+  if (budget) return `Grok ${budget.window_minutes}m 本地窗口`
+  if (usageInfo.value?.grok_official_usage) return 'xAI 官方用量'
+  return 'Grok 本地窗口'
+})
+
 const grokQuotaSummary = computed(() => {
-  const rows = [
-    formatGrokQuotaWindow('请求', usageInfo.value?.grok_request_quota),
-    formatGrokQuotaWindow('Token', usageInfo.value?.grok_token_quota)
-  ].filter((row): row is { label: string; value: string } => row !== null)
-  return rows.length > 0 ? rows : null
+  const budget = grokLocalBudget.value
+  if (budget) {
+    const rows: GrokQuotaSummaryRow[] = [
+      {
+        label: `${budget.window_minutes}m 已用`,
+        value: `${formatCompactNumber(budget.used_tokens)} / ${formatCompactNumber(budget.limit_tokens)}`
+      },
+      {
+        label: `${budget.window_minutes}m 剩余`,
+        value: formatCompactNumber(budget.remaining_tokens)
+      }
+    ]
+    if (budget.window_stats) {
+      rows.push({
+        label: '窗口请求',
+        value: `${formatCompactNumber(budget.window_stats.requests, { allowBillions: false })} req`
+      })
+      rows.push({
+        label: '窗口成本',
+        value: `$${budget.window_stats.cost.toFixed(2)}`
+      })
+    }
+    return rows
+  }
+  const official = usageInfo.value?.grok_official_usage
+  if (!official) return null
+  const rows: GrokQuotaSummaryRow[] = []
+  if (typeof official.usage === 'number' && Number.isFinite(official.usage)) {
+    rows.push({ label: '官方今日 Token', value: formatCompactNumber(official.usage) })
+  }
+  rows.push({ label: '官方今日 USD', value: `$${official.usd.toFixed(4)}` })
+  return rows
 })
 
 const grokQuotaStateLabel = computed(() => {
+  const budget = grokLocalBudget.value
+  if (budget) return budget.utilization >= 100 ? '超出估算' : '本地估算'
+  if (usageInfo.value?.grok_official_usage) return '官方'
   switch (usageInfo.value?.grok_quota_snapshot_state) {
     case 'observed':
-      return '已观测'
+    case 'rate_limit_headers':
+      return '仅速率头'
     case 'no_headers':
       return '无速率头'
     default:
-      return '待观测'
+      return '未配置'
   }
 })
 
 const grokQuotaStateClass = computed(() => {
+  const budget = grokLocalBudget.value
+  if (budget) {
+    if (budget.utilization >= 100) return 'bg-red-500/10 text-red-700 dark:text-red-300'
+    if (budget.utilization >= 80) return 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+  }
+  if (usageInfo.value?.grok_official_usage) return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
   switch (usageInfo.value?.grok_quota_snapshot_state) {
     case 'observed':
-      return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+    case 'rate_limit_headers':
+      return 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
     case 'no_headers':
       return 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
     default:
@@ -1262,21 +1280,39 @@ const grokQuotaStateClass = computed(() => {
 })
 
 const grokQuotaSubtitle = computed(() => {
+  const budget = grokLocalBudget.value
+  if (budget?.updated_at) {
+    return `本地 ${budget.window_minutes}m 滚动窗口 · 更新 ${formatRelativeTime(budget.updated_at)}`
+  }
+  const official = usageInfo.value?.grok_official_usage
+  if (official?.updated_at) return `官方更新 ${formatRelativeTime(official.updated_at)}`
   const lastSeen = usageInfo.value?.grok_last_headers_seen_at || usageInfo.value?.grok_last_quota_probe_at
-  if (lastSeen) return `更新 ${formatRelativeTime(lastSeen)}`
-  return '等待 xAI rate-limit headers'
+  if (lastSeen) return `速率头 ${formatRelativeTime(lastSeen)}`
+  return '暂无本地 Grok 调用记录'
 })
 
 const grokQuotaEmptyText = computed(() => {
-  if (usageInfo.value?.grok_quota_snapshot_state === 'no_headers') {
-    return '上游本次未返回速率头，可稍后再探测。'
+  if (!usageInfo.value?.grok_local_token_budget) {
+    return '暂无 40m 本地窗口；Grok 调用写入 usage log 后会自动统计。'
   }
-  return '等待首个上游速率响应，也可主动探测。'
+  if (usageInfo.value?.grok_quota_snapshot_state === 'no_headers') {
+    return '未拿到上游 rate-limit 头；当前以本地 40m usage log 估算。'
+  }
+  return '等待本地 usage log。'
 })
 
 const grokQuotaNote = computed(() => {
-  if (!grokQuotaSummary.value) return ''
-  return '上游 rate-limit 剩余，不是今日累计用量'
+  const rateRows = [
+    formatGrokRateLimitWindow('请求剩余', usageInfo.value?.grok_request_quota),
+    formatGrokRateLimitWindow('Token剩余', usageInfo.value?.grok_token_quota)
+  ].filter((row): row is string => row !== null)
+  if (grokLocalBudget.value) {
+    if (rateRows.length > 0) return '已记录上游 rate-limit 头，仅作诊断，不作为可用总量。'
+    return '按本地 usage log 估算 40m token 预算；不会依赖 Team ID / Management API Key。'
+  }
+  if (rateRows.length > 0) return '仅记录到上游 rate-limit 头，不代表累计用量。'
+  if (grokQuotaSummary.value) return '来自 xAI Management API；本地统计仅作对账参考'
+  return ''
 })
 
 const grokFriendlyError = computed(() => {

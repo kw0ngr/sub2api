@@ -554,6 +554,42 @@
         </template>
       </div>
 
+      <div v-if="account.platform === 'grok'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">Grok 用量显示</label>
+        <p class="input-hint mt-2">
+          默认使用本地 usage log 统计 40m token 窗口，作为小团队自用的可用总量估算；不需要 Team ID 或 Management API Key。
+        </p>
+        <details class="mt-3 rounded-lg border border-gray-200 bg-gray-50/70 p-3 dark:border-dark-600 dark:bg-dark-700/40">
+          <summary class="cursor-pointer text-xs font-medium text-gray-600 dark:text-gray-300">
+            高级可选：xAI Management API 官方历史用量
+          </summary>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="input-label text-xs">Team ID</label>
+              <input
+                v-model="editGrokTeamID"
+                type="text"
+                class="input font-mono"
+                placeholder="team id"
+              />
+            </div>
+            <div>
+              <label class="input-label text-xs">Management API Key</label>
+              <input
+                v-model="editGrokManagementApiKey"
+                type="password"
+                class="input font-mono"
+                autocomplete="new-password"
+                placeholder="留空保持原 Key"
+              />
+            </div>
+          </div>
+          <p class="input-hint mt-2">
+            仅在你已经有 Management API Key 和 Team ID 时使用；账号页仍会优先展示本地 40m 窗口。
+          </p>
+        </details>
+      </div>
+
       <!-- Upstream fields (only for upstream type) -->
       <div v-if="account.type === 'upstream'" class="space-y-4">
         <div>
@@ -2003,6 +2039,8 @@ const GLM_OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 const glmCompatMode = ref<'anthropic' | 'openai'>('anthropic')
+const editGrokManagementApiKey = ref('')
+const editGrokTeamID = ref('')
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2258,6 +2296,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
+  editGrokManagementApiKey.value = ''
+  editGrokTeamID.value = newAccount.platform === 'grok' ? String(credentials?.team_id || credentials?.xai_team_id || '') : ''
 
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
@@ -2708,6 +2748,21 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
   return out
 }
 
+const applyGrokManagementCredentials = (credentials: Record<string, unknown>) => {
+  if (props.account?.platform !== 'grok') return
+  const managementKey = editGrokManagementApiKey.value.trim()
+  if (managementKey) {
+    credentials.management_api_key = managementKey
+  }
+  const teamID = editGrokTeamID.value.trim()
+  if (teamID) {
+    credentials.team_id = teamID
+  } else {
+    delete credentials.team_id
+    delete credentials.xai_team_id
+  }
+}
+
 const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   if (!tempUnschedEnabled.value) {
     delete credentials.temp_unschedulable_enabled
@@ -3134,6 +3189,14 @@ const handleSubmit = async () => {
         return
       }
 
+      updatePayload.credentials = newCredentials
+    }
+
+    if (props.account.platform === 'grok') {
+      const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
+        ((props.account.credentials as Record<string, unknown>) || {})
+      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      applyGrokManagementCredentials(newCredentials)
       updatePayload.credentials = newCredentials
     }
 
