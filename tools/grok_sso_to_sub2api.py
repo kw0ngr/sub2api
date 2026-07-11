@@ -3,7 +3,12 @@
 
 从 txt 读取卖家卡密，纯 HTTP 完成：
 
-  解析卡密 → 探测 SSO → SSO 换 OAuth RT → 探测 RT 可用性 → 导入 Sub2API
+  解析卡密 → 探测 SSO/网页配额 → SSO 换 OAuth RT → 探测 RT/API 余额 → 导入 Sub2API
+
+余额查询覆盖：
+  - 网页：grok.com/rest/rate-limits（remainingQueries/totalQueries）
+  - API：refresh + /v1/models + /v1/chat/completions（spending-limit / rate-limit / 可用）
+  - JWT claim：tier / team_id / scope
 
 卡密行格式（任选一种分隔符 | 或 ----）：
   email|password|sso|optional_time
@@ -84,6 +89,17 @@ class AccountResult:
     rt_probe_status: str = "skipped"
     rt_probe_detail: str = ""
     rt_usable: bool | None = None
+    # balance / quota
+    balance_status: str = "skipped"  # ok | spending_limit | rate_limited | auth_failed | partial | error | skipped
+    balance_detail: str = ""
+    web_remaining: int | None = None
+    web_total: int | None = None
+    web_window_seconds: int | None = None
+    api_tier: Any = None
+    api_team_id: str = ""
+    api_chat_status: int | None = None
+    api_models_status: int | None = None
+    api_has_quota: bool | None = None
     import_status: str = "skipped"
     import_detail: str = ""
     account_id: int | None = None
@@ -295,8 +311,13 @@ def http_json(
 # ---------------------------------------------------------------------------
 
 
-def probe_sso(sso: str, timeout: float = 20.0) -> tuple[bool | None, str]:
+def probe_sso(sso: str, timeout: float = 20.0) -> tuple[bool | None, str, dict[str, Any]]:
+    """Probe grok.com web rate-limits with SSO cookie.
+
+    Returns (valid, detail, meta). meta may include remaining/total/window.
+    """
     last_err = ""
+    meta: dict[str, Any] = {"source": "grok_web_rate_limits", "model_name": "fast"}
     for attempt in range(1, 4):
         try:
             status, _, body = http_json(
@@ -316,20 +337,218 @@ def probe_sso(sso: str, timeout: float = 20.0) -> tuple[bool | None, str]:
             time.sleep(0.5 * attempt)
             continue
         text = body.decode("utf-8", errors="replace")
+        meta["http_status"] = status
         if status == 200:
             try:
                 obj = json.loads(text)
-                return True, f"ok remaining={obj.get('remainingQueries')}/{obj.get('totalQueries')} window={obj.get('windowSizeSeconds')}s"
             except Exception:
-                return True, "ok"
+                return True, "ok", meta
+            remaining = obj.get("remainingQueries")
+            total = obj.get("totalQueries")
+            window = obj.get("windowSizeSeconds")
+            meta.update(
+                {
+                    "remaining_queries": remaining,
+                    "total_queries": total,
+                    "window_size_seconds": window,
+                    "raw": {k: obj.get(k) for k in ("remainingQueries", "totalQueries", "windowSizeSeconds") if k in obj},
+                }
+            )
+            return (
+                True,
+                f"ok remaining={remaining}/{total} window={window}s",
+                meta,
+            )
         if status in (401, 403):
-            return False, f"auth failed HTTP {status}: {text[:160]}"
+            meta["error"] = text[:200]
+            return False, f"auth failed HTTP {status}: {text[:160]}", meta
         if status in (429, 502, 503, 520, 521, 522, 523, 524):
             last_err = f"transient HTTP {status}: {text[:160]}"
             time.sleep(0.6 * attempt)
             continue
-        return False, f"unexpected HTTP {status}: {text[:160]}"
-    return None, f"probe failed after retries: {last_err[:200]}"
+        meta["error"] = text[:200]
+        return False, f"unexpected HTTP {status}: {text[:160]}", meta
+    meta["error"] = last_err[:200]
+    return None, f"probe failed after retries: {last_err[:200]}", meta
+
+
+def _extract_rate_limit_headers(headers: dict[str, str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for k, v in (headers or {}).items():
+        lk = k.lower()
+        if any(x in lk for x in ("rate", "limit", "remaining", "reset", "retry", "xai", "subscription", "entitlement")):
+            out[lk] = v
+    return out
+
+
+def _classify_api_error(status: int | None, body: str) -> str:
+    low = (body or "").lower()
+    if status in (401, 403) and (
+        "spending-limit" in low
+        or "run out of credits" in low
+        or "need a grok subscription" in low
+        or "insufficient credits" in low
+        or "credits exhausted" in low
+    ):
+        return "spending_limit"
+    if status == 429 or "rate limit" in low or "too many requests" in low:
+        return "rate_limited"
+    if status in (401, 403) and (
+        "incorrect api key" in low
+        or "invalid api key" in low
+        or "unauthorized" in low
+        or "permission" in low
+        or "forbidden" in low
+    ):
+        return "auth_failed"
+    if status is not None and 200 <= status < 300:
+        return "ok"
+    if status is None:
+        return "error"
+    return "error"
+
+
+def probe_api_balance(
+    access_token: str,
+    *,
+    timeout: float = 30.0,
+    model: str = "grok-3",
+) -> tuple[str, str, dict[str, Any]]:
+    """Probe API-side balance/quota using an OAuth access token.
+
+    Returns (status, detail, meta) where status is one of:
+      ok | spending_limit | rate_limited | auth_failed | partial | error
+    """
+    at = (access_token or "").strip()
+    meta: dict[str, Any] = {
+        "models_ok": False,
+        "chat_ok": False,
+        "models_status": None,
+        "chat_status": None,
+        "models_error": "",
+        "chat_error": "",
+        "rate_limit_headers": {},
+        "tier": None,
+        "team_id": "",
+        "scope": "",
+        "principal_id": "",
+        "api_has_quota": None,
+    }
+    if not at:
+        return "error", "empty access_token", meta
+
+    # JWT claims (tier/team are useful even when API is blocked)
+    try:
+        claims = decode_jwt_part(at.split(".")[1]) or {}
+        meta["tier"] = claims.get("tier")
+        meta["team_id"] = str(claims.get("team_id") or "")
+        meta["scope"] = str(claims.get("scope") or "")
+        meta["principal_id"] = str(claims.get("principal_id") or claims.get("sub") or "")
+        hdr = decode_jwt_part(at.split(".")[0]) or {}
+        meta["access_token_typ"] = str(hdr.get("typ") or "")
+    except Exception:
+        pass
+
+    # /v1/models
+    try:
+        st, headers, body = http_json(
+            "GET",
+            "https://api.x.ai/v1/models",
+            headers={"Authorization": f"Bearer {at}", "Accept": "application/json"},
+            timeout=timeout,
+        )
+        meta["models_status"] = st
+        meta["models_ok"] = 200 <= st < 300
+        text = body.decode("utf-8", errors="replace")
+        if not meta["models_ok"]:
+            meta["models_error"] = text[:220]
+            meta["models_class"] = _classify_api_error(st, text)
+        rl = _extract_rate_limit_headers(headers)
+        if rl:
+            meta["rate_limit_headers"].update(rl)
+    except Exception as exc:
+        meta["models_error"] = str(exc)
+        meta["models_class"] = "error"
+
+    # /v1/chat/completions
+    try:
+        st, headers, body = http_json(
+            "POST",
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {at}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json_body={
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            },
+            timeout=timeout,
+        )
+        meta["chat_status"] = st
+        text = body.decode("utf-8", errors="replace")
+        rl = _extract_rate_limit_headers(headers)
+        if rl:
+            meta["rate_limit_headers"].update(rl)
+        if 200 <= st < 300:
+            meta["chat_ok"] = True
+            meta["chat_class"] = "ok"
+        elif st == 429:
+            # limited but still has subscription entitlement
+            meta["chat_ok"] = True
+            meta["chat_class"] = "rate_limited"
+            meta["chat_error"] = text[:220]
+        else:
+            meta["chat_error"] = text[:220]
+            meta["chat_class"] = _classify_api_error(st, text)
+            # model/param 400 still means auth/quota path accepted
+            low = text.lower()
+            if st == 400 and ("model" in low or "invalid" in low) and "permission" not in low and "incorrect api key" not in low and "spending" not in low:
+                meta["chat_ok"] = True
+                meta["chat_class"] = "ok"
+                meta["chat_note"] = "auth accepted; model/param issue"
+    except Exception as exc:
+        meta["chat_error"] = str(exc)
+        meta["chat_class"] = "error"
+
+    # overall classification prioritizes chat spending-limit signal
+    chat_class = str(meta.get("chat_class") or "")
+    models_class = str(meta.get("models_class") or "")
+    if chat_class == "spending_limit" or models_class == "spending_limit":
+        status = "spending_limit"
+        meta["api_has_quota"] = False
+    elif chat_class == "rate_limited" or models_class == "rate_limited":
+        status = "rate_limited"
+        meta["api_has_quota"] = True
+    elif meta.get("chat_ok") and meta.get("models_ok"):
+        status = "ok"
+        meta["api_has_quota"] = True
+    elif meta.get("chat_ok") or meta.get("models_ok"):
+        status = "partial"
+        meta["api_has_quota"] = True
+    elif chat_class == "auth_failed" or models_class == "auth_failed":
+        status = "auth_failed"
+        meta["api_has_quota"] = False
+    else:
+        status = "error"
+        meta["api_has_quota"] = False
+
+    detail_s = (
+        f"api={status} tier={meta.get('tier')} "
+        f"models={meta.get('models_status')} chat={meta.get('chat_status')}"
+    )
+    if meta.get("rate_limit_headers"):
+        # keep short
+        interesting = {k: v for k, v in meta["rate_limit_headers"].items() if "remaining" in k or "limit" in k or "tier" in k}
+        if interesting:
+            detail_s += f" rl={interesting}"
+    if meta.get("chat_error") and status != "ok":
+        detail_s += f" err={str(meta['chat_error'])[:100]}"
+    elif meta.get("models_error") and status != "ok":
+        detail_s += f" err={str(meta['models_error'])[:100]}"
+    return status, detail_s, meta
 
 
 def exchange_code_for_tokens(
@@ -758,41 +977,57 @@ def process_account(
     log.info("======== [%d/%d] line=%d email=%s ========", idx, total, acc.line_no, acc.email)
     detail(f"sso={result.sso_preview} typ={result.extras.get('sso_jwt_typ')} alg={result.extras.get('sso_jwt_alg')}")
 
-    # 1) SSO probe
+    # 1) SSO probe (+ web balance)
     if args.probe_sso:
-        step("1/4 探测 SSO (grok.com/rest/rate-limits)")
+        step("1/5 探测 SSO / 网页配额 (grok.com/rest/rate-limits)")
         try:
-            ok_flag, pdetail = probe_sso(acc.sso)
+            ok_flag, pdetail, smeta = probe_sso(acc.sso)
         except Exception as exc:
-            ok_flag, pdetail = None, f"probe exception: {exc}"
+            ok_flag, pdetail, smeta = None, f"probe exception: {exc}", {}
         result.sso_valid = ok_flag
         result.sso_probe_detail = pdetail
+        result.extras["web_quota"] = smeta
+        if smeta.get("remaining_queries") is not None:
+            try:
+                result.web_remaining = int(smeta["remaining_queries"])
+            except Exception:
+                result.web_remaining = None
+        if smeta.get("total_queries") is not None:
+            try:
+                result.web_total = int(smeta["total_queries"])
+            except Exception:
+                result.web_total = None
+        if smeta.get("window_size_seconds") is not None:
+            try:
+                result.web_window_seconds = int(smeta["window_size_seconds"])
+            except Exception:
+                result.web_window_seconds = None
         if ok_flag is True:
-            ok(f"SSO 有效: {pdetail}")
+            ok(f"SSO 有效 / 网页配额: {pdetail}")
         elif ok_flag is False:
             fail(f"SSO 无效: {pdetail}")
         else:
             warn(f"SSO 探测不确定: {pdetail}")
     else:
-        step("1/4 跳过 SSO 探测")
+        step("1/5 跳过 SSO 探测")
         result.sso_valid = None
         result.sso_probe_detail = "skipped"
 
     # 2) SSO -> RT
     if not args.oauth:
-        step("2/4 跳过 OAuth 转换")
+        step("2/5 跳过 OAuth 转换")
         result.oauth_status = "skipped"
         result.elapsed_ms = int((time.time() - t0) * 1000)
         return result
 
     if result.sso_valid is False and not args.force_oauth:
-        step("2/4 跳过 OAuth（SSO 无效；可用 --force-oauth 强制尝试）")
+        step("2/5 跳过 OAuth（SSO 无效；可用 --force-oauth 强制尝试）")
         result.oauth_status = "skipped"
         result.oauth_detail = "SSO probe failed"
         result.elapsed_ms = int((time.time() - t0) * 1000)
         return result
 
-    step("2/4 SSO → OAuth RT（纯 HTTP）")
+    step("2/5 SSO → OAuth RT（纯 HTTP）")
     rt = at = ""
     status, odetail = "error", ""
     for attempt in range(1, args.retries + 1):
@@ -835,7 +1070,7 @@ def process_account(
 
     # 3) RT probe
     if args.probe_rt:
-        step("3/4 探测 RT 可用性 (refresh + models + chat)")
+        step("3/5 探测 RT 可用性 (refresh + models + chat)")
         try:
             usable, pdetail, pmeta = probe_refresh_token_usability(rt, client_id=args.client_id)
         except Exception as exc:
@@ -851,9 +1086,123 @@ def process_account(
         else:
             fail(f"RT 不可用: {pdetail}")
     else:
-        step("3/4 跳过 RT 探测")
+        step("3/5 跳过 RT 探测")
         result.rt_probe_status = "skipped"
         result.rt_usable = None
+
+    # 4) API balance / quota
+    if getattr(args, "probe_balance", True):
+        step("4/5 查询 API 余额/配额 (models + chat + JWT claims)")
+        at_for_balance = result.access_token
+        if not at_for_balance and result.refresh_token:
+            try:
+                tok = refresh_oauth_token(result.refresh_token, client_id=args.client_id)
+                at_for_balance = str(tok.get("access_token") or "").strip()
+                if at_for_balance:
+                    result.access_token = at_for_balance
+            except Exception as exc:
+                result.balance_status = "error"
+                result.balance_detail = f"refresh for balance failed: {exc}"
+                fail(result.balance_detail)
+                at_for_balance = ""
+
+        bstatus, bdetail, bmeta = "skipped", "", {}
+        if at_for_balance:
+            # Reuse RT probe results when available to avoid double chat/models hits.
+            rtp = result.extras.get("rt_probe") if isinstance(result.extras.get("rt_probe"), dict) else None
+            if rtp and (rtp.get("models_status") is not None or rtp.get("chat_status") is not None):
+                models_status = rtp.get("models_status")
+                chat_status = rtp.get("chat_status")
+                models_err = str(rtp.get("models_error") or "")
+                chat_err = str(rtp.get("chat_error") or "")
+                models_class = _classify_api_error(models_status if isinstance(models_status, int) else None, models_err)
+                chat_class = _classify_api_error(chat_status if isinstance(chat_status, int) else None, chat_err)
+                if chat_status is not None and 200 <= int(chat_status) < 300:
+                    chat_class = "ok"
+                if models_status is not None and 200 <= int(models_status) < 300:
+                    models_class = "ok"
+                if chat_status == 429:
+                    chat_class = "rate_limited"
+                # JWT claims from current AT
+                try:
+                    claims = decode_jwt_part(at_for_balance.split(".")[1]) or {}
+                except Exception:
+                    claims = {}
+                if chat_class == "spending_limit" or models_class == "spending_limit":
+                    bstatus = "spending_limit"
+                    api_has = False
+                elif chat_class == "rate_limited" or models_class == "rate_limited":
+                    bstatus = "rate_limited"
+                    api_has = True
+                elif rtp.get("chat_ok") and rtp.get("models_ok"):
+                    bstatus = "ok"
+                    api_has = True
+                elif rtp.get("chat_ok") or rtp.get("models_ok"):
+                    bstatus = "partial"
+                    api_has = True
+                elif chat_class == "auth_failed" or models_class == "auth_failed":
+                    bstatus = "auth_failed"
+                    api_has = False
+                else:
+                    bstatus = "error"
+                    api_has = False
+                bmeta = {
+                    "reused_rt_probe": True,
+                    "models_ok": bool(rtp.get("models_ok")),
+                    "chat_ok": bool(rtp.get("chat_ok")),
+                    "models_status": models_status,
+                    "chat_status": chat_status,
+                    "models_error": models_err,
+                    "chat_error": chat_err,
+                    "models_class": models_class,
+                    "chat_class": chat_class,
+                    "tier": claims.get("tier"),
+                    "team_id": str(claims.get("team_id") or ""),
+                    "scope": str(claims.get("scope") or ""),
+                    "principal_id": str(claims.get("principal_id") or claims.get("sub") or ""),
+                    "api_has_quota": api_has,
+                }
+                bdetail = (
+                    f"api={bstatus} tier={bmeta.get('tier')} "
+                    f"models={models_status} chat={chat_status}"
+                )
+                if chat_err and bstatus != "ok":
+                    bdetail += f" err={chat_err[:100]}"
+            else:
+                try:
+                    bstatus, bdetail, bmeta = probe_api_balance(
+                        at_for_balance, model=getattr(args, "balance_model", "grok-3")
+                    )
+                except Exception as exc:
+                    bstatus, bdetail, bmeta = "error", f"balance probe exception: {exc}", {}
+
+            result.balance_status = bstatus
+            result.balance_detail = bdetail
+            result.extras["api_balance"] = bmeta
+            result.api_tier = bmeta.get("tier")
+            result.api_team_id = str(bmeta.get("team_id") or "")
+            result.api_chat_status = bmeta.get("chat_status")
+            result.api_models_status = bmeta.get("models_status")
+            result.api_has_quota = bmeta.get("api_has_quota")
+            if result.rt_probe_status == "skipped" and bmeta.get("chat_ok"):
+                result.rt_usable = True
+            if bstatus == "ok":
+                ok(f"API 余额可用: {bdetail}")
+            elif bstatus == "spending_limit":
+                fail(f"API 无额度/需订阅: {bdetail}")
+            elif bstatus == "rate_limited":
+                warn(f"API 被限流但仍可能有订阅: {bdetail}")
+            elif bstatus == "partial":
+                warn(f"API 部分可用: {bdetail}")
+            else:
+                fail(f"API 余额查询失败: {bdetail}")
+        else:
+            result.balance_status = "skipped"
+            result.balance_detail = "no access_token"
+            warn("无 access_token，跳过 API 余额查询")
+    else:
+        step("4/5 跳过 API 余额查询")
+        result.balance_status = "skipped"
 
     result.elapsed_ms = int((time.time() - t0) * 1000)
     detail(f"account pipeline done in {result.elapsed_ms}ms")
@@ -881,7 +1230,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     log.info("base_url  : %s", args.base_url)
     log.info("group_ids : %s", group_ids or "(none)")
     log.info("import    : %s", args.import_sub2api)
-    log.info("probe_sso : %s  probe_rt: %s  force_oauth: %s", args.probe_sso, args.probe_rt, args.force_oauth)
+    log.info("probe_sso : %s  probe_rt: %s  probe_balance: %s  force_oauth: %s", args.probe_sso, args.probe_rt, args.probe_balance, args.force_oauth)
     log.info("import_only_chat_ok: %s", args.import_only_chat_ok)
     log.info("out_dir   : %s", out_dir)
     log.info("log_file  : %s", log_path)
@@ -915,7 +1264,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     # 4) batch import
     import_summary: dict[str, Any] | None = None
     if args.import_sub2api:
-        step(f"4/4 导入 Sub2API：{len(import_queue)} 个 RT → {args.base_url}")
+        step(f"5/5 导入 Sub2API：{len(import_queue)} 个 RT → {args.base_url}")
         if not import_queue:
             warn("没有可导入的 RT")
         else:
@@ -962,7 +1311,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
                         r.import_status = "failed"
                         r.import_detail = str(exc)
     else:
-        step("4/4 跳过 Sub2API 导入（未开 --import-sub2api / --auto）")
+        step("5/5 跳过 Sub2API 导入（未开 --import-sub2api / --auto）")
 
     # summary
     counts = {
@@ -972,6 +1321,9 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "oauth_ok": sum(1 for r in results if r.oauth_status == "ok"),
         "rt_usable": sum(1 for r in results if r.rt_usable is True),
         "rt_chat_ok": sum(1 for r in results if (r.extras.get("rt_probe") or {}).get("chat_ok")),
+        "api_quota_ok": sum(1 for r in results if r.api_has_quota is True),
+        "api_spending_limit": sum(1 for r in results if r.balance_status == "spending_limit"),
+        "api_rate_limited": sum(1 for r in results if r.balance_status == "rate_limited"),
         "imported_created": sum(1 for r in results if r.import_status == "created"),
         "imported_failed": sum(1 for r in results if r.import_status == "failed"),
         "import_queue": len(import_queue),
@@ -985,19 +1337,38 @@ def run_pipeline(args: argparse.Namespace) -> int:
     log.info("  换 RT 成功      : %d", counts["oauth_ok"])
     log.info("  RT 可用(refresh): %d", counts["rt_usable"])
     log.info("  RT chat 可用    : %d", counts["rt_chat_ok"])
+    log.info("  API 有额度      : %d", counts["api_quota_ok"])
+    log.info("  API 额度耗尽    : %d", counts["api_spending_limit"])
+    log.info("  API 限流        : %d", counts["api_rate_limited"])
     log.info("  导入成功        : %d", counts["imported_created"])
     log.info("  导入失败        : %d", counts["imported_failed"])
     log.info("------------------------------------------------------------")
+    log.info(
+        "  %-3s %-28s %-5s %-10s %-10s %-8s %-8s %-8s %s",
+        "L",
+        "email",
+        "sso",
+        "web_quota",
+        "api_bal",
+        "tier",
+        "chat",
+        "import",
+        "ms",
+    )
     for r in results:
+        web_q = "-"
+        if r.web_remaining is not None or r.web_total is not None:
+            web_q = f"{r.web_remaining if r.web_remaining is not None else '?'}/{r.web_total if r.web_total is not None else '?'}"
         log.info(
-            "  L%-3d %-36s sso=%-5s oauth=%-7s chat=%-5s import=%-8s id=%s  %dms",
+            "  L%-2d %-28s %-5s %-10s %-10s %-8s %-8s %-8s %dms",
             r.line_no,
-            r.email[:36],
+            (r.email or "")[:28],
             str(r.sso_valid),
-            r.oauth_status,
-            str((r.extras.get("rt_probe") or {}).get("chat_ok")),
-            r.import_status,
-            r.account_id or "-",
+            web_q[:10],
+            (r.balance_status or "-")[:10],
+            str(r.api_tier if r.api_tier is not None else "-")[:8],
+            str(r.api_chat_status if r.api_chat_status is not None else (r.extras.get("rt_probe") or {}).get("chat_status") or "-")[:8],
+            (r.import_status or "-")[:8],
             r.elapsed_ms,
         )
 
@@ -1056,6 +1427,8 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 f"sso_valid={counts['sso_valid']}",
                 f"oauth_ok={counts['oauth_ok']}",
                 f"rt_chat_ok={counts['rt_chat_ok']}",
+                f"api_quota_ok={counts['api_quota_ok']}",
+                f"api_spending_limit={counts['api_spending_limit']}",
                 f"imported_created={counts['imported_created']}",
                 f"imported_failed={counts['imported_failed']}",
             ]
@@ -1064,9 +1437,63 @@ def run_pipeline(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
 
+    # balances.csv for quick human review
+    bal_path = out_dir / "balances.csv"
+    try:
+        import csv
+
+        with bal_path.open("w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                [
+                    "line_no",
+                    "email",
+                    "sso_valid",
+                    "web_remaining",
+                    "web_total",
+                    "web_window_seconds",
+                    "oauth_status",
+                    "balance_status",
+                    "api_has_quota",
+                    "api_tier",
+                    "api_team_id",
+                    "api_models_status",
+                    "api_chat_status",
+                    "balance_detail",
+                    "import_status",
+                    "account_id",
+                ]
+            )
+            for r in results:
+                w.writerow(
+                    [
+                        r.line_no,
+                        r.email,
+                        r.sso_valid,
+                        r.web_remaining,
+                        r.web_total,
+                        r.web_window_seconds,
+                        r.oauth_status,
+                        r.balance_status,
+                        r.api_has_quota,
+                        r.api_tier,
+                        r.api_team_id,
+                        r.api_models_status,
+                        r.api_chat_status,
+                        r.balance_detail,
+                        r.import_status,
+                        r.account_id,
+                    ]
+                )
+    except Exception as exc:
+        warn(f"write balances.csv failed: {exc}")
+        bal_path = None
+
     log.info("输出文件:")
     log.info("  report  : %s", out_dir / "report.json")
     log.info("  secrets : %s", out_dir / "secrets.json")
+    if bal_path is not None:
+        log.info("  balance : %s", bal_path)
     log.info("  log     : %s", log_path)
     if import_queue:
         log.info("  rts     : %s (%d)", out_dir / "refresh_tokens.txt", len(import_queue))
@@ -1097,6 +1524,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--probe-sso", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--probe-rt", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument(
+        "--probe-balance",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="查询网页配额 + API 余额/额度（默认开）",
+    )
+    p.add_argument(
+        "--balance-only",
+        action="store_true",
+        help="只查余额：SSO/网页配额 + 换RT + API 余额，不导入 Sub2API",
+    )
+    p.add_argument(
+        "--balance-model",
+        default="grok-3",
+        help="API 余额探测用的 chat 模型（默认 grok-3）",
+    )
     p.add_argument("--oauth", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument(
         "--import-sub2api",
@@ -1145,11 +1588,20 @@ def main(argv: list[str] | None = None) -> int:
         args.oauth = True
         args.probe_sso = True
         args.probe_rt = True
+        args.probe_balance = True
         args.import_sub2api = True
 
+    # balance-only: convert + probe, never import
+    if args.balance_only:
+        args.oauth = True
+        args.probe_sso = True
+        args.probe_rt = True
+        args.probe_balance = True
+        args.import_sub2api = False
+
     if args.import_sub2api is None:
-        # default on when token present
-        args.import_sub2api = bool(args.admin_token)
+        # default on when token present (unless balance-only)
+        args.import_sub2api = bool(args.admin_token) and not args.balance_only
 
     if not Path(args.input).is_file():
         print(f"input file not found: {args.input}", file=sys.stderr)
