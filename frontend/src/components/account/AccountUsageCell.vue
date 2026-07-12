@@ -1197,15 +1197,6 @@ function extractProbeErrorMessage(error: unknown): string {
   return t('common.error')
 }
 
-function formatDurationSeconds(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  const mins = Math.ceil(seconds / 60)
-  if (mins < 60) return `${mins}m`
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`
-}
-
-
 interface GrokQuotaSummaryRow {
   label: string
   value: string
@@ -1339,12 +1330,6 @@ const grokFriendlyError = computed(() => {
     return ''
   }
   return message
-})
-
-const grokLocalUsageText = computed(() => {
-  const local = usageInfo.value?.grok_local_usage
-  if (!local) return ''
-  return `本地今日 ${formatCompactNumber(local.requests, { allowBillions: false })} req · ${formatCompactNumber(local.tokens)} token · $${local.cost.toFixed(2)}`
 })
 
 function formatRelativeTime(raw: string): string {
