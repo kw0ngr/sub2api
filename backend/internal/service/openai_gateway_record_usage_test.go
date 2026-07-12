@@ -73,11 +73,13 @@ type openAIRecordUsageSubRepoStub struct {
 
 	incrementCalls int
 	incrementErr   error
+	lastAmount     float64
 	lastCtxErr     error
 }
 
 func (s *openAIRecordUsageSubRepoStub) IncrementUsage(ctx context.Context, id int64, costUSD float64) error {
 	s.incrementCalls++
+	s.lastAmount = costUSD
 	s.lastCtxErr = ctx.Err()
 	return s.incrementErr
 }
@@ -1236,7 +1238,7 @@ func TestOpenAIGatewayServiceRecordUsage_SubscriptionBillingSetsSubscriptionFiel
 			Model:     "gpt-5.1",
 			Duration:  time.Second,
 		},
-		APIKey:       &APIKey{ID: 100, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription}},
+		APIKey:       &APIKey{ID: 100, GroupID: i64p(88), Group: &Group{ID: 88, RateMultiplier: 2, SubscriptionType: SubscriptionTypeSubscription}},
 		User:         &User{ID: 200},
 		Account:      &Account{ID: 300},
 		Subscription: subscription,
@@ -1248,7 +1250,56 @@ func TestOpenAIGatewayServiceRecordUsage_SubscriptionBillingSetsSubscriptionFiel
 	require.NotNil(t, usageRepo.lastLog.SubscriptionID)
 	require.Equal(t, subscription.ID, *usageRepo.lastLog.SubscriptionID)
 	require.Equal(t, 1, subRepo.incrementCalls)
+	require.Equal(t, usageRepo.lastLog.ActualCost, subRepo.lastAmount)
 	require.Equal(t, 0, userRepo.deductCalls)
+}
+
+func TestBuildUsageBillingCommand_SubscriptionUsesActualCost(t *testing.T) {
+	groupID := int64(88)
+	subscriptionID := int64(99)
+
+	tests := []struct {
+		name        string
+		totalCost   float64
+		actualCost  float64
+		wantSub     float64
+		wantBalance float64
+	}{
+		{
+			name:       "subscription multiplier applies to quota",
+			totalCost:  1,
+			actualCost: 2,
+			wantSub:    2,
+		},
+		{
+			name:       "discount multiplier applies to quota",
+			totalCost:  1,
+			actualCost: 0.5,
+			wantSub:    0.5,
+		},
+		{
+			name:       "free actual cost does not consume quota",
+			totalCost:  1,
+			actualCost: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := buildUsageBillingCommand("req-sub", nil, &postUsageBillingParams{
+				Cost:               &CostBreakdown{TotalCost: tt.totalCost, ActualCost: tt.actualCost},
+				User:               &User{ID: 200},
+				APIKey:             &APIKey{ID: 100, GroupID: &groupID},
+				Account:            &Account{ID: 300},
+				Subscription:       &UserSubscription{ID: subscriptionID},
+				IsSubscriptionBill: true,
+			})
+
+			require.NotNil(t, cmd)
+			require.Equal(t, tt.wantSub, cmd.SubscriptionCost)
+			require.Equal(t, tt.wantBalance, cmd.BalanceCost)
+		})
+	}
 }
 
 func TestOpenAIGatewayServiceRecordUsage_SimpleModeSkipsBillingAfterPersist(t *testing.T) {

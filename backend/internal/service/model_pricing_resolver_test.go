@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -218,6 +219,28 @@ func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 	require.InDelta(t, 10e-6, resolved.BasePricing.InputPricePerTokenPriority, 1e-12)
 	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
 	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerTokenPriority, 1e-12)
+}
+
+func TestResolve_WithChannelOverride_DoesNotMutateBasePricing(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+		InputPrice:  testPtrFloat64(99e-6),
+	}})
+
+	withOverride := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
+	})
+	withoutOverride := r.Resolve(context.Background(), PricingInput{
+		Model: "claude-sonnet-4",
+	})
+
+	require.NotNil(t, withOverride.BasePricing)
+	require.NotNil(t, withoutOverride.BasePricing)
+	require.InDelta(t, 99e-6, withOverride.BasePricing.InputPricePerToken, 1e-12)
+	require.Greater(t, math.Abs(withoutOverride.BasePricing.InputPricePerToken-99e-6), 1e-12)
 }
 
 func TestResolve_WithChannelOverride_TokenPartialOverride(t *testing.T) {

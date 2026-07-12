@@ -20,42 +20,24 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedMo
 	return mappedModel
 }
 
-var openAIOAuthForeignModelPrefixes = []string{
-	"deepseek",
-	"glm-",
-	"kimi-",
-	"moonshot",
-	"qwen",
-	"qwq-",
-	"minimax",
-	"gemini-",
-	"gemma-",
-	"grok-",
-	"doubao-",
-	"hunyuan-",
-	"llama",
-	"meta-llama",
-	"mistral",
-	"mixtral",
-	"baichuan",
-	"ernie-",
-	"step-",
-	"seed-",
-	"yi-",
-}
-
 func isOpenAIOAuthServableModel(requestedModel string) bool {
-	model := strings.ToLower(strings.TrimSpace(requestedModel))
-	if idx := strings.LastIndex(model, "/"); idx >= 0 {
-		model = model[idx+1:]
-	}
+	model := strings.TrimSpace(requestedModel)
 	if model == "" {
 		return true
 	}
-	for _, prefix := range openAIOAuthForeignModelPrefixes {
-		if strings.HasPrefix(model, prefix) {
-			return false
+	if strings.EqualFold(model, "gpt-5.6") {
+		return true
+	}
+	if claudeMessagesDispatchFamily(model) != "" {
+		return true
+	}
+	if _, ok := normalizeKnownCodexModel(model); ok {
+		return true
+	}
+	if normalized := NormalizeOpenAICompatRequestedModel(model); normalized != model {
+		if _, ok := normalizeKnownCodexModel(normalized); ok {
+			return true
 		}
 	}
-	return true
+	return false
 }

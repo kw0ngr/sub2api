@@ -1,10 +1,14 @@
 package apicompat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+const responsesCallIDMaxLen = 64
 
 type chatMessageContent struct {
 	Text  *string
@@ -101,8 +105,9 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 // array into a Responses API input items array.
 func convertChatMessagesToResponsesInput(msgs []ChatMessage) ([]ResponsesInputItem, error) {
 	var out []ResponsesInputItem
+	callIDs := make(map[string]string)
 	for _, m := range msgs {
-		items, err := chatMessageToResponsesItems(m)
+		items, err := chatMessageToResponsesItems(m, callIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -113,18 +118,18 @@ func convertChatMessagesToResponsesInput(msgs []ChatMessage) ([]ResponsesInputIt
 
 // chatMessageToResponsesItems converts a single ChatMessage into one or more
 // ResponsesInputItem values.
-func chatMessageToResponsesItems(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatMessageToResponsesItems(m ChatMessage, callIDs map[string]string) ([]ResponsesInputItem, error) {
 	switch m.Role {
 	case "system":
 		return chatSystemToResponses(m)
 	case "user":
 		return chatUserToResponses(m)
 	case "assistant":
-		return chatAssistantToResponses(m)
+		return chatAssistantToResponses(m, callIDs)
 	case "tool":
-		return chatToolToResponses(m)
+		return chatToolToResponses(m, callIDs)
 	case "function":
-		return chatFunctionToResponses(m)
+		return chatFunctionToResponses(m, callIDs)
 	default:
 		return chatUserToResponses(m)
 	}
@@ -161,7 +166,7 @@ func chatUserToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 // text content and tool_calls, the text is emitted as an assistant message
 // first, then each tool_call becomes a function_call item. If the content is
 // empty/nil and there are tool_calls, only function_call items are emitted.
-func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatAssistantToResponses(m ChatMessage, callIDs map[string]string) ([]ResponsesInputItem, error) {
 	var items []ResponsesInputItem
 	content := ""
 
@@ -200,7 +205,7 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 		}
 		items = append(items, ResponsesInputItem{
 			Type:      "function_call",
-			CallID:    tc.ID,
+			CallID:    normalizeResponsesCallID(tc.ID, callIDs),
 			Name:      tc.Function.Name,
 			Arguments: args,
 		})
@@ -281,7 +286,7 @@ func parseAssistantContent(raw json.RawMessage) (string, error) {
 
 // chatToolToResponses converts a tool result message (role=tool) into a
 // function_call_output item.
-func chatToolToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatToolToResponses(m ChatMessage, callIDs map[string]string) ([]ResponsesInputItem, error) {
 	output, err := parseChatContent(m.Content)
 	if err != nil {
 		return nil, err
@@ -291,7 +296,7 @@ func chatToolToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	}
 	return []ResponsesInputItem{{
 		Type:   "function_call_output",
-		CallID: m.ToolCallID,
+		CallID: normalizeResponsesCallID(m.ToolCallID, callIDs),
 		Output: output,
 	}}, nil
 }
@@ -299,7 +304,7 @@ func chatToolToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 // chatFunctionToResponses converts a legacy function result message
 // (role=function) into a function_call_output item. The Name field is used as
 // call_id since legacy function calls do not carry a separate call_id.
-func chatFunctionToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
+func chatFunctionToResponses(m ChatMessage, callIDs map[string]string) ([]ResponsesInputItem, error) {
 	output, err := parseChatContent(m.Content)
 	if err != nil {
 		return nil, err
@@ -309,9 +314,29 @@ func chatFunctionToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	}
 	return []ResponsesInputItem{{
 		Type:   "function_call_output",
-		CallID: m.Name,
+		CallID: normalizeResponsesCallID(m.Name, callIDs),
 		Output: output,
 	}}, nil
+}
+
+func normalizeResponsesCallID(id string, seen map[string]string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) <= responsesCallIDMaxLen {
+		return id
+	}
+	if seen != nil {
+		if mapped, ok := seen[id]; ok {
+			return mapped
+		}
+	}
+	sum := sha256.Sum256([]byte(id))
+	suffix := hex.EncodeToString(sum[:])[:16]
+	prefixLen := responsesCallIDMaxLen - len(suffix) - 1
+	shortened := id[:prefixLen] + "_" + suffix
+	if seen != nil {
+		seen[id] = shortened
+	}
+	return shortened
 }
 
 // parseChatContent returns the string value of a ChatMessage Content field.

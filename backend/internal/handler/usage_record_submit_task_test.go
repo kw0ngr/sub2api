@@ -129,3 +129,39 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovere
 	})
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
+
+func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_ImageResultUsesSyncFallbackWhenQueueFull(t *testing.T) {
+	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
+		WorkerCount:           1,
+		QueueSize:             1,
+		TaskTimeout:           5 * time.Second,
+		OverflowPolicy:        "drop",
+		OverflowSamplePercent: 0,
+		AutoScaleEnabled:      false,
+	})
+	t.Cleanup(pool.Stop)
+	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+	block := make(chan struct{})
+	started := make(chan struct{})
+
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		close(started)
+		<-block
+	})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("first task not started")
+	}
+	h.submitUsageRecordTask(func(ctx context.Context) {
+		<-block
+	})
+
+	var called atomic.Bool
+	h.submitOpenAIUsageRecordTask(&service.OpenAIForwardResult{ImageCount: 1}, func(ctx context.Context) {
+		called.Store(true)
+	})
+	close(block)
+
+	require.True(t, called.Load())
+}

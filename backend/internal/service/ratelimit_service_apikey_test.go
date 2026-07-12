@@ -49,6 +49,52 @@ func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey403ModelAccessCooldown
 	require.Equal(t, 1, repo.tempCalls)
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAIModelNotFoundDoesNotTempUnscheduleKey(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       104,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"error":{"code":"model_not_found","message":"The model ` + "`gpt-5.6-sol`" + ` does not exist or you do not have access to it."}}`)
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusBadRequest,
+		http.Header{},
+		body,
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 0, repo.tempCalls)
+}
+
+func TestRateLimitService_HandleUpstreamError_OpenAICallIDTooLongDoesNotTempUnscheduleKey(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       104,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"error":{"code":"string_above_max_length","message":"Invalid 'input[4].call_id': string too long. Expected a string with maximum length 64, but got a string with length 87 instead.","param":"input[4].call_id","type":"invalid_request_error"}}`)
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusBadRequest,
+		http.Header{},
+		body,
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 0, repo.tempCalls)
+}
+
 func TestRateLimitService_HandleUpstreamError_GLMResettableQuotaUsesRetryAfter(t *testing.T) {
 	// Given
 	repo := &rateLimitAccountRepoStub{}

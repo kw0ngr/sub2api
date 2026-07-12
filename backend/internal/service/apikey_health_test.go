@@ -90,6 +90,21 @@ func TestClassifyAPIKeyStatusAction_OpenAIImageGenerationItemIDValidationIgnored
 	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
 }
 
+func TestClassifyAPIKeyStatusAction_OpenAIModelNotFoundIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"code":"model_not_found","message":"The model ` + "`gpt-5.6-sol`" + ` does not exist or you do not have access to it."}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusNotFound, body))
+}
+
+func TestClassifyAPIKeyStatusAction_OpenAICallIDTooLongIgnored(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"code":"string_above_max_length","message":"Invalid 'input[4].call_id': string too long. Expected a string with maximum length 64, but got a string with length 87 instead.","param":"input[4].call_id","type":"invalid_request_error"}}`)
+
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *testing.T) {
 	// Given
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}

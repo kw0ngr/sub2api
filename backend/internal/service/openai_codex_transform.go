@@ -31,6 +31,7 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-codex-spark-medium": "gpt-5.3-codex-spark",
 	"gpt-5.3-codex-spark-high":   "gpt-5.3-codex-spark",
 	"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex-spark",
+	"gpt5.3codexspark":           "gpt-5.3-codex-spark",
 	"gpt-5.3-codex-low":          "gpt-5.3-codex",
 	"gpt-5.3-codex-medium":       "gpt-5.3-codex",
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",

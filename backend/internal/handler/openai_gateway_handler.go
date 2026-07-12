@@ -379,7 +379,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err == nil && result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
-		if err != nil {
+		if err != nil && (result == nil || result.ImageCount <= 0) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
@@ -467,6 +467,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqLog.Error("openai.forward_failed", fields...)
 			return
 		}
+		if err != nil {
+			reqLog.Warn("openai.forward_partial_error_with_image_result",
+				zap.Int64("account_id", account.ID),
+				zap.Int("image_count", result.ImageCount),
+				zap.Error(err),
+			)
+		}
 		if result != nil {
 			if account.Type == service.AccountTypeOAuth {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
@@ -485,7 +492,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -824,7 +831,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if err == nil && result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
-		if err != nil {
+		if err != nil && (result == nil || result.ImageCount <= 0) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {
@@ -894,6 +901,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			)
 			return
 		}
+		if err != nil {
+			reqLog.Warn("openai_messages.forward_partial_error_with_image_result",
+				zap.Int64("account_id", account.ID),
+				zap.Int("image_count", result.ImageCount),
+				zap.Error(err),
+			)
+		}
 		if result != nil {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
 		} else {
@@ -907,7 +921,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -1457,14 +1471,24 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 				releaseTurnSlots()
-				if turnErr != nil || result == nil {
+				if turnErr != nil && (result == nil || result.ImageCount <= 0) {
 					return
+				}
+				if result == nil {
+					return
+				}
+				if turnErr != nil {
+					reqLog.Warn("openai.websocket_partial_error_with_image_result",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(turnErr),
+					)
 				}
 				if account.Type == service.AccountTypeOAuth {
 					h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-				h.submitUsageRecordTask(func(taskCtx context.Context) {
+				h.submitOpenAIUsageRecordTask(result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result: result, APIKey: apiKey, User: apiKey.User, Account: account, Subscription: subscription,
 						InboundEndpoint: inboundEndpoint, UpstreamEndpoint: upstreamEndpoint, Project: project,
@@ -1640,12 +1664,39 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTas
 		return
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
+	runOpenAIUsageRecordTaskSync("handler.openai_gateway.responses", task)
+}
+
+func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(result *service.OpenAIForwardResult, task service.UsageRecordTask) {
+	if result != nil && result.ImageCount > 0 {
+		h.submitMandatoryUsageRecordTask(task)
+		return
+	}
+	h.submitUsageRecordTask(task)
+}
+
+func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(task service.UsageRecordTask) {
+	if task == nil {
+		return
+	}
+	if h.usageRecordWorkerPool != nil {
+		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDropped {
+			return
+		}
+		logger.L().With(
+			zap.String("component", "handler.openai_gateway.usage"),
+		).Warn("openai.usage_record_task_mandatory_sync_fallback")
+	}
+	runOpenAIUsageRecordTaskSync("handler.openai_gateway.usage", task)
+}
+
+func runOpenAIUsageRecordTaskSync(component string, task service.UsageRecordTask) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			logger.L().With(
-				zap.String("component", "handler.openai_gateway.responses"),
+				zap.String("component", component),
 				zap.Any("panic", recovered),
 			).Error("openai.usage_record_task_panic_recovered")
 		}

@@ -577,6 +577,37 @@ func TestGetAvailableModels_AnthropicPlatformIncludesMappedDeepSeekModels(t *tes
 	require.Equal(t, []string{"claude-3-5-sonnet", "deepseek-v4-flash"}, models)
 }
 
+func TestGetAvailableModels_OpenAIOAuthEmptyMappingIncludesDefaultCodexModels(t *testing.T) {
+	groupID := int64(21)
+	repo := &modelsListAccountRepoStub{
+		byGroup: map[int64][]Account{
+			groupID: {
+				{
+					ID:       1,
+					Platform: PlatformOpenAI,
+					Type:     AccountTypeOAuth,
+				},
+				{
+					ID:       2,
+					Platform: PlatformOpenAI,
+					Type:     AccountTypeAPIKey,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"custom-openai-model": "custom-openai-model",
+						},
+					},
+				},
+			},
+		},
+	}
+	svc := &GatewayService{accountRepo: repo}
+
+	models := svc.GetAvailableModels(context.Background(), &groupID, PlatformOpenAI)
+
+	require.Contains(t, models, "gpt-5.6-sol")
+	require.Contains(t, models, "custom-openai-model")
+}
+
 func TestGetAvailableModels_ErrorAndGlobalListBranches(t *testing.T) {
 	resetGatewayHotpathStatsForTest()
 

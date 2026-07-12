@@ -2,6 +2,7 @@ package apicompat
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,6 +153,41 @@ func TestChatCompletionsToResponses_ToolCalls(t *testing.T) {
 	require.Len(t, resp.Tools, 1)
 	assert.Equal(t, "function", resp.Tools[0].Type)
 	assert.Equal(t, "ping", resp.Tools[0].Name)
+}
+
+func TestChatCompletionsToResponses_LongToolCallIDShortenedConsistently(t *testing.T) {
+	originalID := "call_" + strings.Repeat("x", 83)
+	req := &ChatCompletionsRequest{
+		Model: "gpt-5.6-sol",
+		Messages: []ChatMessage{
+			{
+				Role: "assistant",
+				ToolCalls: []ChatToolCall{{
+					ID:   originalID,
+					Type: "function",
+					Function: ChatFunctionCall{
+						Name:      "Shell",
+						Arguments: `{"command":"pwd"}`,
+					},
+				}},
+			},
+			{
+				Role:       "tool",
+				ToolCallID: originalID,
+				Content:    json.RawMessage(`"ok"`),
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 2)
+	require.LessOrEqual(t, len(items[0].CallID), responsesCallIDMaxLen)
+	require.NotEqual(t, originalID, items[0].CallID)
+	require.Equal(t, items[0].CallID, items[1].CallID)
 }
 
 func TestChatCompletionsToResponses_ToolStrict(t *testing.T) {

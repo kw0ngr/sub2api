@@ -973,13 +973,14 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			}
 		}
 
-		// Anthropic 平台：没有限流重置时间的 429 可能是非真实限流（如 Extra usage required），
-		// 不标记账号限流状态，直接透传错误给客户端
+		// Anthropic 平台：没有限流重置时间的 429 不适合按 5h/7d 窗口长时间封禁；
+		// 但完全不标记会导致账号永不冷却，让每个请求反复撞同一批持续 429 的账号。
 		if account.Platform == PlatformAnthropic {
-			slog.Warn("rate_limit_429_no_reset_time_skipped",
+			slog.Warn("rate_limit_429_no_reset_time",
 				"account_id", account.ID,
 				"platform", account.Platform,
 				"reason", "no rate limit reset time in headers, likely not a real rate limit")
+			s.apply429FallbackRateLimit(ctx, account, "anthropic_no_reset_time")
 			return
 		}
 
@@ -1019,6 +1020,33 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	}
 
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
+}
+
+func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, account *Account, reason string) {
+	settings := DefaultRateLimit429CooldownSettings()
+	if s.settingService != nil {
+		loaded, err := s.settingService.GetRateLimit429CooldownSettings(ctx)
+		if err != nil {
+			slog.Warn("rate_limit_429_cooldown_settings_read_failed", "account_id", account.ID, "error", err)
+		} else if loaded != nil {
+			settings = loaded
+		}
+	}
+	if !settings.Enabled {
+		slog.Info("rate_limit_429_fallback_skipped", "account_id", account.ID, "reason", reason)
+		return
+	}
+
+	cooldownSeconds := settings.CooldownSeconds
+	if cooldownSeconds <= 0 {
+		cooldownSeconds = DefaultRateLimit429CooldownSettings().CooldownSeconds
+	}
+	resetAt := time.Now().Add(time.Duration(cooldownSeconds) * time.Second)
+	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
+		slog.Warn("rate_limit_429_fallback_set_failed", "account_id", account.ID, "reason", reason, "error", err)
+		return
+	}
+	slog.Info("rate_limit_429_fallback_applied", "account_id", account.ID, "reason", reason, "reset_at", resetAt)
 }
 
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间
