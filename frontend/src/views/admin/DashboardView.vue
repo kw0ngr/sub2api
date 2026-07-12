@@ -54,29 +54,6 @@
             </div>
           </div>
 
-          <!-- Grok Pool Estimate -->
-          <div class="card dashboard-stat-card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
-                <Icon name="cube" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
-              </div>
-              <div class="min-w-0">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.grokPool') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.grok_pool_token_estimate || 0) }}
-                </p>
-                <p class="truncate text-xs text-gray-500 dark:text-gray-400" :title="t('admin.dashboard.grokPoolHint')">
-                  {{ stats.grok_available_accounts || 0 }}
-                  {{ t('admin.dashboard.grokPoolAccounts') }}
-                  ·
-                  {{ formatTokens(stats.grok_pool_token_per_account || 40000000) }}/{{ t('admin.dashboard.grokPoolPerAccount') }}
-                </p>
-              </div>
-            </div>
-          </div>
-
           <!-- Today Requests -->
           <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
@@ -886,6 +863,61 @@
                     </button>
                   </div>
                 </div>
+
+
+                <div
+                  class="card dashboard-analytics-card dashboard-grok-pool-card relative overflow-hidden p-4"
+                >
+                  <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        {{ t('admin.dashboard.grokPool') }}
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.grokPoolHint') }}
+                      </p>
+                    </div>
+                    <span :class="['shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold', grokRadarStatusClass]">
+                      {{ grokRadarStatusLabel }}
+                    </span>
+                  </div>
+
+                  <div class="dashboard-card-scroll-region space-y-3">
+                    <div class="rounded-2xl border border-teal-400/20 bg-teal-500/10 p-4 dark:border-teal-400/20 dark:bg-teal-500/10">
+                      <p class="text-xs text-teal-700 dark:text-teal-300">
+                        {{ t('admin.dashboard.grokPoolEstimate') }}
+                      </p>
+                      <p class="mt-1 text-3xl font-bold tabular-nums text-gray-900 dark:text-white">
+                        {{ formatTokens(grokPoolTokenEstimate) }}
+                      </p>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t('admin.dashboard.grokPoolFormula', {
+                          accounts: grokAvailableAccounts,
+                          tokens: formatTokens(grokPerAccountTokens)
+                        }) }}
+                      </p>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.grokPoolAccountsShort') }}</p>
+                        <p class="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">{{ grokAvailableAccounts }}</p>
+                      </div>
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.grokPoolPerAccountShort') }}</p>
+                        <p class="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">{{ formatTokens(grokPerAccountTokens) }}</p>
+                      </div>
+                      <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.grokPoolBasis') }}</p>
+                        <p class="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">40m</p>
+                      </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                      {{ t('admin.dashboard.grokPoolNotice') }}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1374,6 +1406,19 @@ const chartColors = computed(() => ({
 }))
 
 // Line chart options (for user trend chart)
+const grokAvailableAccounts = computed(() => stats.value?.grok_available_accounts ?? 0)
+const grokPerAccountTokens = computed(() => stats.value?.grok_pool_token_per_account ?? 40_000_000)
+const grokPoolTokenEstimate = computed(() => {
+  return stats.value?.grok_pool_token_estimate ?? grokAvailableAccounts.value * grokPerAccountTokens.value
+})
+const grokRadarOnline = computed(() => grokAvailableAccounts.value > 0)
+const grokRadarStatusLabel = computed(() =>
+  grokRadarOnline.value ? t('admin.dashboard.grokPoolReady') : t('admin.dashboard.grokPoolEmpty')
+)
+const grokRadarStatusClass = computed(() =>
+  grokRadarOnline.value ? 'grok-radar-status-ready' : 'grok-radar-status-empty'
+)
+
 const lineOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -2639,6 +2684,21 @@ onMounted(() => {
     0 16px 34px -28px rgb(0 0 0 / 0.62);
 }
 
+
+.dashboard-grok-pool-card {
+  --metric-accent: 20 184 166;
+}
+
+.dashboard-grok-pool-card::before {
+  background: linear-gradient(90deg, rgb(20 184 166 / 0.68), transparent 72%);
+}
+
+.dashboard-grok-pool-card::after {
+  background:
+    radial-gradient(circle at 96% 0%, rgb(20 184 166 / 0.12), transparent 34%),
+    linear-gradient(180deg, transparent, rgb(var(--dashboard-surface-muted) / 0.18));
+}
+
 .dashboard-stat-card::before {
   content: "";
   position: absolute;
@@ -3001,7 +3061,8 @@ onMounted(() => {
 .dashboard-usage-insight-card,
 .dashboard-gateway-brief-card,
 .dashboard-member-pulse-card,
-.dashboard-gateway-radar-card {
+.dashboard-gateway-radar-card,
+.dashboard-grok-pool-card {
   min-height: 0;
 }
 
@@ -3418,7 +3479,8 @@ onMounted(() => {
   .dashboard-usage-insight-card,
   .dashboard-gateway-brief-card,
   .dashboard-member-pulse-card,
-  .dashboard-gateway-radar-card {
+  .dashboard-gateway-radar-card,
+  .dashboard-grok-pool-card {
     height: clamp(25rem, 32vw, 32rem);
   }
 

@@ -604,15 +604,16 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('40m 本地估算')
-    expect(wrapper.text()).toContain('40m 已用')
-    expect(wrapper.text()).toContain('25.8M / 40.0M')
+    expect(wrapper.text()).toContain('Grok')
+    expect(wrapper.text()).toContain('可用')
     expect(wrapper.text()).toContain('40m 剩余')
     expect(wrapper.text()).toContain('14.2M')
-    // Compact diagnostics: upstream rate-limit is shown as a single summary line
-    expect(wrapper.text()).toContain('上游')
-    expect(wrapper.text()).toContain('请求 480 / 480')
-    expect(wrapper.text()).toContain('Token 10.0M / 10.0M')
+    expect(wrapper.text()).toContain('已用 25.8M / 40.0M')
+    expect(wrapper.text()).toContain('29 req')
+    expect(wrapper.text()).toContain('$3.79')
+    expect(wrapper.text()).toContain('已记录上游头，仅诊断')
+    expect(wrapper.text()).not.toContain('480 / 480')
+    expect(wrapper.text()).not.toContain('10.0M / 10.0M')
   })
 
   it('GLM Key 账号优先展示真实 5h token 窗口', async () => {

@@ -423,7 +423,8 @@ describe('admin DashboardView', () => {
 
     expect(wrapper.find('.admin-dashboard-polish').exists()).toBe(true)
     expect(wrapper.find('.dashboard-filter-panel').exists()).toBe(true)
-    expect(wrapper.findAll('.dashboard-stat-card')).toHaveLength(9)
+    expect(wrapper.findAll('.dashboard-stat-card')).toHaveLength(8)
+    expect(wrapper.find('.dashboard-grok-pool-card').exists()).toBe(true)
     expect(wrapper.findAll('.dashboard-analytics-card').length).toBeGreaterThanOrEqual(3)
   })
 

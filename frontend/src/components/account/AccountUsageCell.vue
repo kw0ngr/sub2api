@@ -295,76 +295,53 @@
       <div v-else-if="error" class="text-xs text-red-500">{{ error }}</div>
       <div
         v-else-if="usageInfo"
-        class="max-w-[240px] rounded-lg border border-slate-500/15 bg-slate-500/[0.055] px-2.5 py-2 text-[10px] shadow-sm shadow-black/5 dark:border-slate-400/10 dark:bg-slate-400/[0.06]"
+        class="max-w-[190px] rounded-md border border-slate-500/15 bg-slate-500/[0.045] px-2 py-1.5 text-[10px] dark:border-slate-400/10 dark:bg-slate-400/[0.05]"
       >
-        <div class="mb-1.5 flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <div class="font-semibold leading-none text-slate-700 dark:text-slate-200">Grok 额度</div>
-            <div class="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokQuotaSubtitle">
-              {{ grokQuotaSubtitle }}
-            </div>
-          </div>
-          <span
-            :class="[
-              'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-              grokQuotaStateClass
-            ]"
-          >
+        <div class="mb-1 flex items-center gap-1.5">
+          <span class="font-semibold leading-none text-slate-700 dark:text-slate-200">Grok</span>
+          <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-medium', grokQuotaStateClass]">
             {{ grokQuotaStateLabel }}
           </span>
-        </div>
-
-        <!-- Primary: local 40m estimate -->
-        <div v-if="grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-emerald-500/15 bg-emerald-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">40m 本地估算</div>
-          <div
-            v-for="row in grokLocalBudgetRows.slice(0, 2)"
-            :key="row.label"
-            class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300"
-          >
-            <span>{{ row.label }}</span>
-            <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
+          <div class="ml-auto flex gap-1">
+            <button
+              type="button"
+              class="rounded border border-slate-500/15 px-1 py-0.5 text-[8px] text-slate-500 hover:bg-slate-500/10 disabled:opacity-50 dark:border-slate-400/10 dark:text-slate-400"
+              :disabled="activeQueryLoading || grokProbeLoading"
+              title="探测上游 rate-limit 头，并刷新本地用量"
+              @click="probeGrokQuota"
+            >
+              {{ grokProbeLoading ? '探…' : '探' }}
+            </button>
+            <button
+              type="button"
+              class="rounded border border-slate-500/15 px-1 py-0.5 text-[8px] text-slate-500 hover:bg-slate-500/10 disabled:opacity-50 dark:border-slate-400/10 dark:text-slate-400"
+              :disabled="activeQueryLoading || grokProbeLoading"
+              title="刷新本地 40m 使用统计"
+              @click="loadActiveUsage"
+            >
+              {{ activeQueryLoading ? '刷…' : '刷' }}
+            </button>
           </div>
         </div>
 
-        <!-- Compact diagnostics: upstream / official (collapsed to one line each) -->
-        <div v-if="grokHeaderRows.length || grokOfficialRows.length" class="mb-1 space-y-0.5 text-[9px] text-slate-500 dark:text-slate-400">
-          <div v-if="grokHeaderRows.length" class="truncate" :title="grokHeaderRows.map(r => `${r.label} ${r.value}`).join(' · ')">
-            上游 · {{ grokHeaderRows.map(r => `${r.label} ${r.value}`).join(' · ') }}
+        <template v-if="grokLocalBudget">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-[9px] text-slate-500 dark:text-slate-400">40m 剩余</span>
+            <strong class="tabular-nums text-emerald-700 dark:text-emerald-300">{{ formatCompactNumber(grokLocalBudget.remaining_tokens) }}</strong>
           </div>
-          <div v-if="grokOfficialRows.length" class="truncate" :title="grokOfficialRows.map(r => `${r.label} ${r.value}`).join(' · ')">
-            官方 · {{ grokOfficialRows.map(r => `${r.label} ${r.value}`).join(' · ') }}
+          <div class="mt-0.5 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokLocalCompactTitle">
+            {{ grokLocalCompactText }}
           </div>
-        </div>
-
-        <div
-          v-if="!grokLocalBudgetRows.length && !grokHeaderRows.length && !grokOfficialRows.length"
-          class="rounded-md border border-dashed border-amber-400/30 bg-amber-400/[0.08] px-2 py-1.5 text-amber-700 dark:text-amber-300"
-        >
+        </template>
+        <div v-else class="truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokQuotaEmptyText">
           {{ grokQuotaEmptyText }}
         </div>
 
-        <div v-if="grokFriendlyError" class="mt-1 truncate text-[9px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
-          {{ grokFriendlyError }}
+        <div v-if="grokDiagnosticText" class="mt-0.5 truncate text-[8px] text-slate-400 dark:text-slate-500" :title="grokDiagnosticText">
+          {{ grokDiagnosticText }}
         </div>
-
-        <div class="mt-1.5 flex flex-wrap gap-1">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-slate-500/15 bg-white/60 px-1.5 py-1 text-[9px] font-medium text-slate-600 transition-colors hover:bg-white disabled:opacity-50 dark:border-slate-400/10 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-900/70"
-            :disabled="activeQueryLoading || grokProbeLoading"
-            @click="probeGrokQuota"
-          >
-            {{ grokProbeLoading ? '探测中...' : '探测' }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-slate-500/15 bg-white/60 px-1.5 py-1 text-[9px] font-medium text-slate-600 transition-colors hover:bg-white disabled:opacity-50 dark:border-slate-400/10 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-900/70"
-            :disabled="activeQueryLoading || grokProbeLoading"
-            @click="loadActiveUsage"
-          >
-            {{ activeQueryLoading ? '刷新中...' : '刷新' }}
-          </button>
+        <div v-if="grokFriendlyError" class="mt-0.5 truncate text-[8px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
+          {{ grokFriendlyError }}
         </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -1267,6 +1244,32 @@ const grokOfficialRows = computed(() => {
   return rows
 })
 
+const grokLocalCompactText = computed(() => {
+  const budget = grokLocalBudget.value
+  if (!budget) return ''
+  const pieces = [
+    `已用 ${formatCompactNumber(budget.used_tokens)} / ${formatCompactNumber(budget.limit_tokens)}`
+  ]
+  if (budget.window_stats) {
+    pieces.push(`${formatCompactNumber(budget.window_stats.requests, { allowBillions: false })} req`)
+    pieces.push(`$${budget.window_stats.cost.toFixed(2)}`)
+  }
+  return pieces.join(' · ')
+})
+
+const grokLocalCompactTitle = computed(() => {
+  const budget = grokLocalBudget.value
+  if (!budget) return ''
+  return `${budget.window_minutes}m 本地估算 · ${grokLocalCompactText.value}`
+})
+
+const grokDiagnosticText = computed(() => {
+  if (grokLocalBudget.value && grokHeaderRows.value.length) return '已记录上游头，仅诊断'
+  if (grokHeaderRows.value.length) return `上游 · ${grokHeaderRows.value.map(r => `${r.label} ${r.value}`).join(' · ')}`
+  if (grokOfficialRows.value.length) return `官方 · ${grokOfficialRows.value.map(r => `${r.label} ${r.value}`).join(' · ')}`
+  return ''
+})
+
 const grokQuotaStateLabel = computed(() => {
   if (usageInfo.value?.error_code === 'rate_limited') return '限流'
   if (usageInfo.value?.needs_reauth) return '需重授权'
@@ -1293,14 +1296,6 @@ const grokQuotaStateClass = computed(() => {
   }
   if (grokOfficialRows.value.length) return 'bg-violet-500/10 text-violet-700 dark:text-violet-300'
   return 'bg-slate-500/10 text-slate-600 dark:text-slate-300'
-})
-
-const grokQuotaSubtitle = computed(() => {
-  const budget = grokLocalBudget.value
-  if (budget?.updated_at) return `本地 40m · ${formatRelativeTime(budget.updated_at)}`
-  const lastSeen = usageInfo.value?.grok_last_headers_seen_at || usageInfo.value?.grok_last_quota_probe_at
-  if (lastSeen) return `上游头 · ${formatRelativeTime(lastSeen)}`
-  return '本地 40m 估算优先'
 })
 
 const grokQuotaEmptyText = computed(() => {
@@ -1332,17 +1327,6 @@ const grokFriendlyError = computed(() => {
   return message
 })
 
-function formatRelativeTime(raw: string): string {
-  const ts = new Date(raw).getTime()
-  if (!Number.isFinite(ts)) return raw
-  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000))
-  if (seconds < 60) return `${seconds}s 前`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m 前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h 前`
-  return `${Math.floor(hours / 24)}d 前`
-}
 
 // ===== API Key quota progress bars =====
 
