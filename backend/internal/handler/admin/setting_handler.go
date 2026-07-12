@@ -180,6 +180,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		RewriteMessageCacheControl:           settings.RewriteMessageCacheControl,
 		EnableGLMZCodeStrongMimic:            settings.EnableGLMZCodeStrongMimic,
 		OpenAICyberSafetyRetryEnabled:        settings.OpenAICyberSafetyRetryEnabled,
+		OpenAIGPT56SolDefaultMaxReasoning:    settings.OpenAIGPT56SolDefaultMaxReasoning,
 		WebSearchEmulationEnabled:            settings.WebSearchEmulationEnabled,
 		BalanceLowNotifyEnabled:              settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:            settings.BalanceLowNotifyThreshold,
@@ -957,6 +958,7 @@ type UpdateSettingsRequest struct {
 	RewriteMessageCacheControl         *bool `json:"rewrite_message_cache_control"`
 	EnableGLMZCodeStrongMimic          *bool `json:"enable_glm_zcode_strong_mimic"`
 	OpenAICyberSafetyRetryEnabled      *bool `json:"openai_cyber_safety_retry_enabled"`
+	OpenAIGPT56SolDefaultMaxReasoning  *bool `json:"openai_gpt56_sol_default_max_reasoning_enabled"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled              *bool                   `json:"balance_low_notify_enabled"`
@@ -1574,6 +1576,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAICyberSafetyRetryEnabled
 		}(),
+		OpenAIGPT56SolDefaultMaxReasoning: func() bool {
+			if req.OpenAIGPT56SolDefaultMaxReasoning != nil {
+				return *req.OpenAIGPT56SolDefaultMaxReasoning
+			}
+			return previousSettings.OpenAIGPT56SolDefaultMaxReasoning
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -1781,6 +1789,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableAnthropicCacheTTL1hInjection:   updatedSettings.EnableAnthropicCacheTTL1hInjection,
 		RewriteMessageCacheControl:           updatedSettings.RewriteMessageCacheControl,
 		EnableGLMZCodeStrongMimic:            updatedSettings.EnableGLMZCodeStrongMimic,
+		OpenAICyberSafetyRetryEnabled:        updatedSettings.OpenAICyberSafetyRetryEnabled,
+		OpenAIGPT56SolDefaultMaxReasoning:    updatedSettings.OpenAIGPT56SolDefaultMaxReasoning,
 		BalanceLowNotifyEnabled:              updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:            updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:          updatedSettings.BalanceLowNotifyRechargeURL,
@@ -2102,6 +2112,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAICyberSafetyRetryEnabled != after.OpenAICyberSafetyRetryEnabled {
 		changed = append(changed, "openai_cyber_safety_retry_enabled")
+	}
+	if before.OpenAIGPT56SolDefaultMaxReasoning != after.OpenAIGPT56SolDefaultMaxReasoning {
+		changed = append(changed, "openai_gpt56_sol_default_max_reasoning_enabled")
 	}
 	// Balance & quota notification
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

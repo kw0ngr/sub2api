@@ -278,6 +278,8 @@ const (
 	SettingKeyEnableGLMZCodeStrongMimic = "enable_glm_zcode_strong_mimic"
 	// SettingKeyOpenAICyberSafetyRetry 是否屏蔽 OpenAI 网络安全策略响应并换账号重试（默认 false）
 	SettingKeyOpenAICyberSafetyRetry = "openai_cyber_safety_retry_enabled"
+	// SettingKeyOpenAIGPT56SolDefaultMaxReasoning controls optional default max reasoning for gpt-5.6-sol.
+	SettingKeyOpenAIGPT56SolDefaultMaxReasoning = "openai_gpt56_sol_default_max_reasoning_enabled"
 	// SettingKeyClaudeCodeFingerprintProfiles 自动捕获的 Claude Code HTTP 指纹样本库
 	SettingKeyClaudeCodeFingerprintProfiles = "claude_code_fingerprint_profiles"
 	// SettingKeyActiveClaudeCodeFingerprintProfileID 当前全局选中的 Claude Code HTTP 指纹样本 ID，空表示按账号自动学习

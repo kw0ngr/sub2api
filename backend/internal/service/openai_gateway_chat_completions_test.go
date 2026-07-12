@@ -40,6 +40,31 @@ type openAIChatBlockingReadCloser struct {
 	closeOnce sync.Once
 }
 
+func TestOpenAIGatewayServiceApplyDefaultGPT56SolMaxReasoning(t *testing.T) {
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	})
+	settingSvc := NewSettingService(&cacheControlSettingRepoStub{values: map[string]string{
+		SettingKeyOpenAIGPT56SolDefaultMaxReasoning: "true",
+	}}, &config.Config{})
+	svc := &OpenAIGatewayService{settingService: settingSvc}
+	req := &apicompat.ResponsesRequest{Model: "gpt-5.6-sol"}
+
+	svc.applyDefaultGPT56SolMaxReasoning(context.Background(), "gpt-5.6-sol", req)
+
+	require.NotNil(t, req.Reasoning)
+	require.Equal(t, "max", req.Reasoning.Effort)
+	require.Equal(t, "auto", req.Reasoning.Summary)
+
+	existing := &apicompat.ResponsesRequest{
+		Model:     "gpt-5.6-sol",
+		Reasoning: &apicompat.ResponsesReasoning{Effort: "high"},
+	}
+	svc.applyDefaultGPT56SolMaxReasoning(context.Background(), "gpt-5.6-sol", existing)
+	require.Equal(t, "high", existing.Reasoning.Effort)
+}
+
 func newOpenAIChatBlockingReadCloser(data []byte) *openAIChatBlockingReadCloser {
 	return &openAIChatBlockingReadCloser{
 		data:   data,

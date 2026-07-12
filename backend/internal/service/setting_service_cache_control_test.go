@@ -63,6 +63,7 @@ func TestSettingServiceParseSettingsDefaultsRewriteMessageCacheControlOff(t *tes
 
 	require.False(t, settings.RewriteMessageCacheControl)
 	require.False(t, settings.EnableGLMZCodeStrongMimic)
+	require.False(t, settings.OpenAIGPT56SolDefaultMaxReasoning)
 }
 
 func TestSettingServiceUpdateSettingsPersistsRewriteMessageCacheControl(t *testing.T) {
@@ -89,6 +90,18 @@ func TestSettingServiceUpdateSettingsPersistsGLMZCodeStrongMimic(t *testing.T) {
 	require.Equal(t, "true", repo.values[SettingKeyEnableGLMZCodeStrongMimic])
 }
 
+func TestSettingServiceUpdateSettingsPersistsOpenAIGPT56SolDefaultMaxReasoning(t *testing.T) {
+	repo := &cacheControlSettingRepoStub{values: map[string]string{}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIGPT56SolDefaultMaxReasoning: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.values[SettingKeyOpenAIGPT56SolDefaultMaxReasoning])
+}
+
 func TestSettingServiceIsGLMZCodeStrongMimicEnabledUsesGatewayCache(t *testing.T) {
 	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
 	t.Cleanup(func() {
@@ -100,4 +113,17 @@ func TestSettingServiceIsGLMZCodeStrongMimicEnabledUsesGatewayCache(t *testing.T
 	svc := NewSettingService(repo, &config.Config{})
 
 	require.True(t, svc.IsGLMZCodeStrongMimicEnabled(context.Background()))
+}
+
+func TestSettingServiceIsOpenAIGPT56SolDefaultMaxReasoningEnabledUsesGatewayCache(t *testing.T) {
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	})
+	repo := &cacheControlSettingRepoStub{values: map[string]string{
+		SettingKeyOpenAIGPT56SolDefaultMaxReasoning: "true",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.True(t, svc.IsOpenAIGPT56SolDefaultMaxReasoningEnabled(context.Background()))
 }

@@ -2264,6 +2264,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				modelForEffort = m
 			}
 		}
+		if s.shouldDefaultGPT56SolMaxReasoning(ctx, modelForEffort) &&
+			strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "" &&
+			strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String()) == "" {
+			reasoning, _ := reqBody["reasoning"].(map[string]any)
+			if reasoning == nil {
+				reasoning = make(map[string]any)
+				reqBody["reasoning"] = reasoning
+			}
+			reasoning["effort"] = "max"
+			reasoning["summary"] = "auto"
+			bodyModified = true
+			markPatchSet("reasoning.effort", "max")
+		}
 		if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
 			if effort, ok := reasoning["effort"].(string); ok {
 				normalized := normalizeOpenAIReasoningEffortForModel(effort, modelForEffort)

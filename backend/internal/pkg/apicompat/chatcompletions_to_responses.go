@@ -66,7 +66,18 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 		out.MaxOutputTokens = &v
 	}
 
-	// reasoning_effort → reasoning.effort + reasoning.summary="auto"
+	// reasoning / reasoning_effort → reasoning.effort + reasoning.summary="auto".
+	// Cursor may send Responses-style `reasoning: {effort: ...}` to
+	// /v1/chat/completions; keep it instead of only honoring the flat legacy field.
+	if req.Reasoning != nil && strings.TrimSpace(req.Reasoning.Effort) != "" {
+		out.Reasoning = &ResponsesReasoning{
+			Effort:  strings.TrimSpace(req.Reasoning.Effort),
+			Summary: req.Reasoning.Summary,
+		}
+		if out.Reasoning.Summary == "" {
+			out.Reasoning.Summary = "auto"
+		}
+	}
 	if req.ReasoningEffort != "" {
 		out.Reasoning = &ResponsesReasoning{
 			Effort:  req.ReasoningEffort,

@@ -516,22 +516,23 @@ type ResponsesStreamEvent struct {
 
 // ChatCompletionsRequest is the request body for POST /v1/chat/completions.
 type ChatCompletionsRequest struct {
-	Model               string             `json:"model"`
-	Messages            []ChatMessage      `json:"messages"`
-	Instructions        string             `json:"instructions,omitempty"` // OpenAI Responses API compat
-	MaxTokens           *int               `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
-	Temperature         *float64           `json:"temperature,omitempty"`
-	TopP                *float64           `json:"top_p,omitempty"`
-	Stream              bool               `json:"stream,omitempty"`
-	StreamOptions       *ChatStreamOptions `json:"stream_options,omitempty"`
-	Tools               []ChatTool         `json:"tools,omitempty"`
-	ParallelToolCalls   *bool              `json:"parallel_tool_calls,omitempty"`
-	ToolChoice          json.RawMessage    `json:"tool_choice,omitempty"`
-	ReasoningEffort     string             `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
-	ServiceTier         string             `json:"service_tier,omitempty"`
-	Stop                json.RawMessage    `json:"stop,omitempty"` // string or []string
-	ResponseFormat      json.RawMessage    `json:"response_format,omitempty"`
+	Model               string              `json:"model"`
+	Messages            []ChatMessage       `json:"messages"`
+	Instructions        string              `json:"instructions,omitempty"` // OpenAI Responses API compat
+	MaxTokens           *int                `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int                `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64            `json:"temperature,omitempty"`
+	TopP                *float64            `json:"top_p,omitempty"`
+	Stream              bool                `json:"stream,omitempty"`
+	StreamOptions       *ChatStreamOptions  `json:"stream_options,omitempty"`
+	Tools               []ChatTool          `json:"tools,omitempty"`
+	ParallelToolCalls   *bool               `json:"parallel_tool_calls,omitempty"`
+	ToolChoice          json.RawMessage     `json:"tool_choice,omitempty"`
+	Reasoning           *ResponsesReasoning `json:"reasoning,omitempty"`
+	ReasoningEffort     string              `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
+	ServiceTier         string              `json:"service_tier,omitempty"`
+	Stop                json.RawMessage     `json:"stop,omitempty"` // string or []string
+	ResponseFormat      json.RawMessage     `json:"response_format,omitempty"`
 
 	// Legacy function calling (deprecated but still supported)
 	Functions    []ChatFunction  `json:"functions,omitempty"`

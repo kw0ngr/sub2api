@@ -12,7 +12,12 @@ import (
 )
 
 func shouldFallbackCodexModelsToV1List(fullPath string, err error) bool {
-	return fullPath == "/v1/models" && errors.Is(err, service.ErrNoAvailableAccounts)
+	switch fullPath {
+	case "/v1/models", "/backend-api/codex/models":
+		return errors.Is(err, service.ErrNoAvailableAccounts)
+	default:
+		return false
+	}
 }
 
 func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {

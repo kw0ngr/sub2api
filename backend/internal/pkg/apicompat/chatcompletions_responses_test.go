@@ -319,6 +319,21 @@ func TestChatCompletionsToResponses_ReasoningEffort(t *testing.T) {
 	assert.Equal(t, "auto", resp.Reasoning.Summary)
 }
 
+func TestChatCompletionsToResponses_ResponsesStyleReasoningEffort(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model:    "gpt-5.6-sol",
+		Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		Reasoning: &ResponsesReasoning{
+			Effort: "max",
+		},
+	}
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Reasoning)
+	assert.Equal(t, "max", resp.Reasoning.Effort)
+	assert.Equal(t, "auto", resp.Reasoning.Summary)
+}
+
 func TestChatCompletionsToResponses_ResponseFormatJsonObject(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model:          "gpt-4o",

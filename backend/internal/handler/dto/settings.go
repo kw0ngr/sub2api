@@ -127,6 +127,7 @@ type SystemSettings struct {
 	RewriteMessageCacheControl         bool `json:"rewrite_message_cache_control"`
 	EnableGLMZCodeStrongMimic          bool `json:"enable_glm_zcode_strong_mimic"`
 	OpenAICyberSafetyRetryEnabled      bool `json:"openai_cyber_safety_retry_enabled"`
+	OpenAIGPT56SolDefaultMaxReasoning  bool `json:"openai_gpt56_sol_default_max_reasoning_enabled"`
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`

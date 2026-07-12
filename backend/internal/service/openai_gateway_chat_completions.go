@@ -125,6 +125,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		if effort := gjson.GetBytes(responsesBody, "reasoning.effort").String(); effort != "" {
 			responsesReq.Reasoning = &apicompat.ResponsesReasoning{Effort: effort}
 		}
+		if s.shouldDefaultGPT56SolMaxReasoning(ctx, upstreamModel) && responsesReq.Reasoning == nil {
+			responsesReq.Reasoning = &apicompat.ResponsesReasoning{Effort: "max", Summary: "auto"}
+			responsesBody, _ = sjson.SetBytes(responsesBody, "reasoning.effort", "max")
+			responsesBody, _ = sjson.SetBytes(responsesBody, "reasoning.summary", "auto")
+		}
 	} else {
 		// Normal path: convert Chat Completions → Responses.
 		// ChatCompletionsToResponses always sets Stream=true (upstream always streams).
@@ -134,6 +139,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 		responsesReq.Model = upstreamModel
 		normalizeResponsesRequestServiceTier(responsesReq)
+		s.applyDefaultGPT56SolMaxReasoning(ctx, upstreamModel, responsesReq)
 		responsesBody, err = json.Marshal(responsesReq)
 		if err != nil {
 			return nil, fmt.Errorf("marshal responses request: %w", err)
@@ -301,6 +307,26 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	return result, handleErr
+}
+
+func (s *OpenAIGatewayService) applyDefaultGPT56SolMaxReasoning(ctx context.Context, model string, req *apicompat.ResponsesRequest) {
+	if req == nil || !s.shouldDefaultGPT56SolMaxReasoning(ctx, model) {
+		return
+	}
+	if req.Reasoning != nil && strings.TrimSpace(req.Reasoning.Effort) != "" {
+		return
+	}
+	req.Reasoning = &apicompat.ResponsesReasoning{Effort: "max", Summary: "auto"}
+}
+
+func (s *OpenAIGatewayService) shouldDefaultGPT56SolMaxReasoning(ctx context.Context, model string) bool {
+	if s == nil || s.settingService == nil {
+		return false
+	}
+	if !s.settingService.IsOpenAIGPT56SolDefaultMaxReasoningEnabled(ctx) {
+		return false
+	}
+	return strings.EqualFold(openAIBaseModelIDForEffortSupport(model), "gpt-5.6-sol")
 }
 
 func isThirdPartyOpenAICompatibleAccount(account *Account) bool {

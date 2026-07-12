@@ -10,6 +10,6 @@ import (
 
 func TestShouldFallbackCodexModelsToV1List(t *testing.T) {
 	require.True(t, shouldFallbackCodexModelsToV1List("/v1/models", service.ErrNoAvailableAccounts))
-	require.False(t, shouldFallbackCodexModelsToV1List("/backend-api/codex/models", service.ErrNoAvailableAccounts))
+	require.True(t, shouldFallbackCodexModelsToV1List("/backend-api/codex/models", service.ErrNoAvailableAccounts))
 	require.False(t, shouldFallbackCodexModelsToV1List("/v1/models", errors.New("database down")))
 }

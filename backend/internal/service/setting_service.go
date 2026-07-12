@@ -87,6 +87,7 @@ type cachedGatewayForwardingSettings struct {
 	anthropicCacheTTL1hInjection bool
 	glmZCodeStrongMimic          bool
 	openAICyberSafetyRetry       bool
+	openAIGPT56SolDefaultMax     bool
 	expiresAt                    int64 // unix nano
 }
 
@@ -701,6 +702,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
 	updates[SettingKeyEnableGLMZCodeStrongMimic] = strconv.FormatBool(settings.EnableGLMZCodeStrongMimic)
 	updates[SettingKeyOpenAICyberSafetyRetry] = strconv.FormatBool(settings.OpenAICyberSafetyRetryEnabled)
+	updates[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] = strconv.FormatBool(settings.OpenAIGPT56SolDefaultMaxReasoning)
 
 	// Balance low notification
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -734,6 +736,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 			anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
 			glmZCodeStrongMimic:          settings.EnableGLMZCodeStrongMimic,
 			openAICyberSafetyRetry:       settings.OpenAICyberSafetyRetryEnabled,
+			openAIGPT56SolDefaultMax:     settings.OpenAIGPT56SolDefaultMaxReasoning,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
 		if s.onUpdate != nil {
@@ -848,12 +851,12 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		}
 	}
 	type gwfResult struct {
-		fp, mp, cch, cacheTTL1h, glmZCodeStrong, cyberSafetyRetry bool
+		fp, mp, cch, cacheTTL1h, glmZCodeStrong, cyberSafetyRetry, gpt56SolMax bool
 	}
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
-				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning, cached.anthropicCacheTTL1hInjection, cached.glmZCodeStrongMimic, cached.openAICyberSafetyRetry}, nil
+				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning, cached.anthropicCacheTTL1hInjection, cached.glmZCodeStrongMimic, cached.openAICyberSafetyRetry, cached.openAIGPT56SolDefaultMax}, nil
 			}
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
@@ -865,6 +868,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			SettingKeyEnableAnthropicCacheTTL1hInjection,
 			SettingKeyEnableGLMZCodeStrongMimic,
 			SettingKeyOpenAICyberSafetyRetry,
+			SettingKeyOpenAIGPT56SolDefaultMaxReasoning,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
@@ -875,9 +879,10 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 				anthropicCacheTTL1hInjection: false,
 				glmZCodeStrongMimic:          false,
 				openAICyberSafetyRetry:       false,
+				openAIGPT56SolDefaultMax:     false,
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false, true, false, false, false}, nil
+			return gwfResult{true, false, true, false, false, false, false}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
@@ -891,6 +896,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 		glmZCodeStrong := values[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 		cyberSafetyRetry := values[SettingKeyOpenAICyberSafetyRetry] == "true"
+		gpt56SolMax := values[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:       fp,
 			metadataPassthrough:          mp,
@@ -898,9 +904,10 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			anthropicCacheTTL1hInjection: cacheTTL1h,
 			glmZCodeStrongMimic:          glmZCodeStrong,
 			openAICyberSafetyRetry:       cyberSafetyRetry,
+			openAIGPT56SolDefaultMax:     gpt56SolMax,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gwfResult{fp, mp, cch, cacheTTL1h, glmZCodeStrong, cyberSafetyRetry}, nil
+		return gwfResult{fp, mp, cch, cacheTTL1h, glmZCodeStrong, cyberSafetyRetry, gpt56SolMax}, nil
 	})
 	if r, ok := val.(gwfResult); ok {
 		return r.fp, r.mp, r.cch
@@ -935,6 +942,21 @@ func (s *SettingService) IsOpenAICyberSafetyRetryEnabled(ctx context.Context) bo
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.openAICyberSafetyRetry
+		}
+	}
+	return false
+}
+
+func (s *SettingService) IsOpenAIGPT56SolDefaultMaxReasoningEnabled(ctx context.Context) bool {
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.openAIGPT56SolDefaultMax
+		}
+	}
+	_, _, _ = s.GetGatewayForwardingSettings(ctx)
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.openAIGPT56SolDefaultMax
 		}
 	}
 	return false
@@ -1124,6 +1146,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRewriteMessageCacheControl:         "false",
 		SettingKeyEnableGLMZCodeStrongMimic:          "false",
 		SettingKeyOpenAICyberSafetyRetry:             "false",
+		SettingKeyOpenAIGPT56SolDefaultMaxReasoning:  "false",
 
 		// Channel monitor defaults
 		SettingKeyChannelMonitorEnabled:                "true",
@@ -1420,6 +1443,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.RewriteMessageCacheControl = settings[SettingKeyRewriteMessageCacheControl] == "true"
 	result.EnableGLMZCodeStrongMimic = settings[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 	result.OpenAICyberSafetyRetryEnabled = settings[SettingKeyOpenAICyberSafetyRetry] == "true"
+	result.OpenAIGPT56SolDefaultMaxReasoning = settings[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] == "true"
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

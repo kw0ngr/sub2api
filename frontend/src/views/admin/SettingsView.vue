@@ -3049,6 +3049,22 @@
                 "
               />
               <SettingsToggleCard
+                v-model="form.openai_gpt56_sol_default_max_reasoning_enabled"
+                :title="
+                  t('admin.settings.gatewayForwarding.openaiGPT56SolDefaultMax')
+                "
+                :hint="
+                  t(
+                    'admin.settings.gatewayForwarding.openaiGPT56SolDefaultMaxHint',
+                  )
+                "
+                :note="
+                  t(
+                    'admin.settings.gatewayForwarding.openaiGPT56SolDefaultMaxNote',
+                  )
+                "
+              />
+              <SettingsToggleCard
                 v-model="form.enable_anthropic_cache_ttl_1h_injection"
                 :title="
                   t(
@@ -5426,6 +5442,7 @@ const form = reactive<SettingsForm>({
   rewrite_message_cache_control: false,
   enable_glm_zcode_strong_mimic: false,
   openai_cyber_safety_retry_enabled: false,
+  openai_gpt56_sol_default_max_reasoning_enabled: false,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6331,6 +6348,8 @@ async function saveSettings() {
       enable_glm_zcode_strong_mimic: form.enable_glm_zcode_strong_mimic,
       openai_cyber_safety_retry_enabled:
         form.openai_cyber_safety_retry_enabled,
+      openai_gpt56_sol_default_max_reasoning_enabled:
+        form.openai_gpt56_sol_default_max_reasoning_enabled,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,
