@@ -541,7 +541,8 @@ const API_KEY_HEALTH_PLATFORMS = new Set<AccountPlatform>([
   'gemini',
   'openrouter',
   'deepseek',
-  'glm'
+  'glm',
+  'grok'
 ])
 
 const buildDefaultTodayStats = (): WindowStats => ({

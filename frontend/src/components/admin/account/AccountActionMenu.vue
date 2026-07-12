@@ -94,7 +94,8 @@ const API_KEY_HEALTH_PLATFORMS = new Set<AccountPlatform>([
   'gemini',
   'openrouter',
   'deepseek',
-  'glm'
+  'glm',
+  'grok'
 ])
 const isRateLimited = computed(() => {
   if (props.account?.rate_limit_reset_at && new Date(props.account.rate_limit_reset_at) > new Date()) {

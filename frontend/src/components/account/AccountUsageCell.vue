@@ -316,7 +316,7 @@
         </div>
 
         <!-- Source: upstream rate-limit headers -->
-        <div v-if="grokHeaderRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-blue-500/15 bg-blue-500/[0.06] px-2 py-1.5">
+        <div v-if="grokHeaderRows.length && !grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-blue-500/15 bg-blue-500/[0.06] px-2 py-1.5">
           <div class="text-[9px] font-medium text-blue-700 dark:text-blue-300">上游响应头</div>
           <div v-for="row in grokHeaderRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
             <span>{{ row.label }}</span>
@@ -326,10 +326,13 @@
 
         <!-- Source: local rolling budget -->
         <div v-if="grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-emerald-500/15 bg-emerald-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">本地 40m 估算（备用，非官方窗口）</div>
+          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">Grok 40m 本地窗口（本地估算，非官方）</div>
           <div v-for="row in grokLocalBudgetRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
             <span>{{ row.label }}</span>
             <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
+          </div>
+          <div v-if="grokHeaderRows.length" class="pt-0.5 text-[9px] text-emerald-700/80 dark:text-emerald-300/80">
+            已记录上游 rate-limit 头，仅作诊断，不作为可用总量。
           </div>
         </div>
 
@@ -1269,6 +1272,10 @@ const grokLocalBudgetRows = computed(() => {
     rows.push({
       label: '窗口请求',
       value: `${formatCompactNumber(budget.window_stats.requests, { allowBillions: false })} req`
+    })
+    rows.push({
+      label: '窗口成本',
+      value: `$${budget.window_stats.cost.toFixed(2)}`
     })
   }
   return rows
