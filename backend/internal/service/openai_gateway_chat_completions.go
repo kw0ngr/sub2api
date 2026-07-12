@@ -127,7 +127,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 		if s.shouldDefaultGPT56SolMaxReasoning(ctx, upstreamModel) && responsesReq.Reasoning == nil {
 			responsesReq.Reasoning = &apicompat.ResponsesReasoning{Effort: "max", Summary: "auto"}
-			responsesBody, _ = sjson.SetRawBytes(responsesBody, "reasoning", []byte(`{"effort":"max","summary":"auto"}`))
 		}
 	} else {
 		// Normal path: convert Chat Completions → Responses.
@@ -193,6 +192,18 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 					return nil, fmt.Errorf("remarshal after prompt cache key injection: %w", err)
 				}
 			}
+		}
+	}
+	if responsesReq.Reasoning != nil &&
+		strings.TrimSpace(responsesReq.Reasoning.Effort) != "" &&
+		strings.TrimSpace(gjson.GetBytes(responsesBody, "reasoning.effort").String()) == "" {
+		reasoningJSON, marshalErr := json.Marshal(responsesReq.Reasoning)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("marshal default reasoning: %w", marshalErr)
+		}
+		responsesBody, err = sjson.SetRawBytes(responsesBody, "reasoning", reasoningJSON)
+		if err != nil {
+			return nil, fmt.Errorf("set default reasoning in responses body: %w", err)
 		}
 	}
 
