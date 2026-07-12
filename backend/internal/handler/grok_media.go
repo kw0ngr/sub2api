@@ -197,7 +197,20 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		accountReleaseFunc, accountAcquired, acquireFailoverErr := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		if acquireFailoverErr != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			h.gatewayService.RecordOpenAIAccountSwitch()
+			failedAccountIDs[account.ID] = struct{}{}
+			lastFailoverErr = acquireFailoverErr
+			if switchCount >= maxAccountSwitches {
+				h.handleFailoverExhausted(c, acquireFailoverErr, false)
+				return
+			}
+			switchCount++
+			reqLog.Warn("grok_media.account_slot_local_failover_switching", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount), zap.Int("max_switches", maxAccountSwitches))
+			continue
+		}
 		if !accountAcquired {
 			return
 		}

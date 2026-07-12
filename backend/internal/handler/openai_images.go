@@ -167,7 +167,20 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		accountReleaseFunc, acquired, acquireFailoverErr := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		if acquireFailoverErr != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			h.gatewayService.RecordOpenAIAccountSwitch()
+			failedAccountIDs[account.ID] = struct{}{}
+			lastFailoverErr = acquireFailoverErr
+			if switchCount >= maxAccountSwitches {
+				h.handleFailoverExhausted(c, acquireFailoverErr, streamStarted)
+				return
+			}
+			switchCount++
+			reqLog.Warn("openai.images.account_slot_local_failover_switching", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount), zap.Int("max_switches", maxAccountSwitches))
+			continue
+		}
 		if !acquired {
 			return
 		}

@@ -11,10 +11,11 @@ import (
 )
 
 type concurrencyCacheMock struct {
-	acquireUserSlotFn    func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error)
-	acquireAccountSlotFn func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error)
-	releaseUserCalled    int32
-	releaseAccountCalled int32
+	acquireUserSlotFn      func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error)
+	acquireAccountSlotFn   func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error)
+	incrementAccountWaitFn func(ctx context.Context, accountID int64, maxWait int) (bool, error)
+	releaseUserCalled      int32
+	releaseAccountCalled   int32
 }
 
 func (m *concurrencyCacheMock) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -42,6 +43,9 @@ func (m *concurrencyCacheMock) GetAccountConcurrencyBatch(ctx context.Context, a
 }
 
 func (m *concurrencyCacheMock) IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error) {
+	if m.incrementAccountWaitFn != nil {
+		return m.incrementAccountWaitFn(ctx, accountID, maxWait)
+	}
 	return true, nil
 }
 

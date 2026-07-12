@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
@@ -838,4 +839,45 @@ func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject
 	})
 	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
 	return httptest.NewServer(router)
+}
+
+func TestAcquireResponsesAccountSlot_WaitQueueFullReturnsFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointChatCompletions, nil)
+
+	cache := &concurrencyCacheMock{
+		acquireAccountSlotFn: func(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
+			return false, nil
+		},
+		incrementAccountWaitFn: func(ctx context.Context, accountID int64, maxWait int) (bool, error) {
+			require.Equal(t, int64(1975), accountID)
+			require.Equal(t, 3, maxWait)
+			return false, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		concurrencyHelper: NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+	streamStarted := false
+	selection := &service.AccountSelectionResult{
+		Account: &service.Account{ID: 1975},
+		WaitPlan: &service.AccountWaitPlan{
+			AccountID:      1975,
+			MaxConcurrency: 1,
+			MaxWaiting:     3,
+			Timeout:        time.Millisecond,
+		},
+	}
+
+	release, acquired, failoverErr := h.acquireResponsesAccountSlot(c, nil, "", selection, true, &streamStarted, zap.NewNop())
+
+	require.Nil(t, release)
+	require.False(t, acquired)
+	require.NotNil(t, failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.False(t, streamStarted)
+	require.Empty(t, w.Body.String())
 }

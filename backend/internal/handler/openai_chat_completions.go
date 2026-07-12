@@ -173,7 +173,20 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, acquired, acquireFailoverErr := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		if acquireFailoverErr != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			h.gatewayService.RecordOpenAIAccountSwitch()
+			failedAccountIDs[account.ID] = struct{}{}
+			lastFailoverErr = acquireFailoverErr
+			if switchCount >= maxAccountSwitches {
+				h.handleFailoverExhausted(c, acquireFailoverErr, streamStarted)
+				return
+			}
+			switchCount++
+			reqLog.Warn("openai_chat_completions.account_slot_local_failover_switching", zap.Int64("account_id", account.ID), zap.Int("switch_count", switchCount), zap.Int("max_switches", maxAccountSwitches))
+			continue
+		}
 		if !acquired {
 			return
 		}
