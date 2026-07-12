@@ -1526,7 +1526,8 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 			COUNT(CASE WHEN status = $1 AND schedulable = true THEN 1 END) as normal_accounts,
 			COUNT(CASE WHEN status = $2 THEN 1 END) as error_accounts,
 			COUNT(CASE WHEN rate_limited_at IS NOT NULL AND rate_limit_reset_at > $3 THEN 1 END) as ratelimit_accounts,
-			COUNT(CASE WHEN overload_until IS NOT NULL AND overload_until > $4 THEN 1 END) as overload_accounts
+			COUNT(CASE WHEN overload_until IS NOT NULL AND overload_until > $4 THEN 1 END) as overload_accounts,
+			COUNT(CASE WHEN platform = $5 AND status = $1 AND schedulable = true THEN 1 END) as grok_available_accounts
 		FROM accounts
 		WHERE deleted_at IS NULL
 	`
@@ -1534,15 +1535,21 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 		ctx,
 		r.sql,
 		accountStatsQuery,
-		[]any{service.StatusActive, service.StatusError, now, now},
+		[]any{service.StatusActive, service.StatusError, now, now, service.PlatformGrok},
 		&stats.TotalAccounts,
 		&stats.NormalAccounts,
 		&stats.ErrorAccounts,
 		&stats.RateLimitAccounts,
 		&stats.OverloadAccounts,
+		&stats.GrokAvailableAccounts,
 	); err != nil {
 		return err
 	}
+
+	// Rough pool capacity: available Grok accounts * local 40m token budget per account.
+	const grokLocalTokenBudgetPerAccount int64 = 40_000_000
+	stats.GrokPoolTokenPerAccount = grokLocalTokenBudgetPerAccount
+	stats.GrokPoolTokenEstimate = stats.GrokAvailableAccounts * grokLocalTokenBudgetPerAccount
 
 	return nil
 }

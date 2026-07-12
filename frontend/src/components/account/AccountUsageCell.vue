@@ -285,18 +285,17 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
-    <template v-else-if="account.platform === 'grok' && (account.type === 'oauth' || account.type === 'apikey')">
+        <template v-else-if="account.platform === 'grok' && (account.type === 'oauth' || account.type === 'apikey')">
       <div v-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
       </div>
       <div v-else-if="error" class="text-xs text-red-500">{{ error }}</div>
       <div
         v-else-if="usageInfo"
-        class="max-w-[280px] rounded-lg border border-slate-500/15 bg-slate-500/[0.055] px-2.5 py-2 text-[10px] shadow-sm shadow-black/5 dark:border-slate-400/10 dark:bg-slate-400/[0.06]"
+        class="max-w-[240px] rounded-lg border border-slate-500/15 bg-slate-500/[0.055] px-2.5 py-2 text-[10px] shadow-sm shadow-black/5 dark:border-slate-400/10 dark:bg-slate-400/[0.06]"
       >
         <div class="mb-1.5 flex items-center justify-between gap-2">
           <div class="min-w-0">
@@ -315,49 +314,34 @@
           </span>
         </div>
 
-        <!-- Source: upstream rate-limit headers -->
-        <div v-if="grokHeaderRows.length && !grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-blue-500/15 bg-blue-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-blue-700 dark:text-blue-300">上游响应头</div>
-          <div v-for="row in grokHeaderRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
-            <span>{{ row.label }}</span>
-            <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
-          </div>
-        </div>
-
-        <!-- Source: local rolling budget -->
+        <!-- Primary: local 40m estimate -->
         <div v-if="grokLocalBudgetRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-emerald-500/15 bg-emerald-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">Grok 40m 本地窗口（本地估算，非官方）</div>
-          <div v-for="row in grokLocalBudgetRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
+          <div class="text-[9px] font-medium text-emerald-700 dark:text-emerald-300">40m 本地估算</div>
+          <div
+            v-for="row in grokLocalBudgetRows.slice(0, 2)"
+            :key="row.label"
+            class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300"
+          >
             <span>{{ row.label }}</span>
             <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
-          </div>
-          <div v-if="grokHeaderRows.length" class="pt-0.5 text-[9px] text-emerald-700/80 dark:text-emerald-300/80">
-            已记录上游 rate-limit 头，仅作诊断，不作为可用总量。
           </div>
         </div>
 
-        <!-- Source: management official usage -->
-        <div v-if="grokOfficialRows.length" class="mb-1.5 space-y-0.5 rounded-md border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5">
-          <div class="text-[9px] font-medium text-violet-700 dark:text-violet-300">官方 Management</div>
-          <div v-for="row in grokOfficialRows" :key="row.label" class="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
-            <span>{{ row.label }}</span>
-            <span class="font-medium tabular-nums text-slate-700 dark:text-slate-100">{{ row.value }}</span>
+        <!-- Compact diagnostics: upstream / official (collapsed to one line each) -->
+        <div v-if="grokHeaderRows.length || grokOfficialRows.length" class="mb-1 space-y-0.5 text-[9px] text-slate-500 dark:text-slate-400">
+          <div v-if="grokHeaderRows.length" class="truncate" :title="grokHeaderRows.map(r => `${r.label} ${r.value}`).join(' · ')">
+            上游 · {{ grokHeaderRows.map(r => `${r.label} ${r.value}`).join(' · ') }}
+          </div>
+          <div v-if="grokOfficialRows.length" class="truncate" :title="grokOfficialRows.map(r => `${r.label} ${r.value}`).join(' · ')">
+            官方 · {{ grokOfficialRows.map(r => `${r.label} ${r.value}`).join(' · ') }}
           </div>
         </div>
 
         <div
-          v-if="!grokHeaderRows.length && !grokLocalBudgetRows.length && !grokOfficialRows.length"
+          v-if="!grokLocalBudgetRows.length && !grokHeaderRows.length && !grokOfficialRows.length"
           class="rounded-md border border-dashed border-amber-400/30 bg-amber-400/[0.08] px-2 py-1.5 text-amber-700 dark:text-amber-300"
         >
           {{ grokQuotaEmptyText }}
-        </div>
-
-        <div v-if="usageInfo.grok_retry_after_seconds" class="text-[10px] text-amber-600 dark:text-amber-400">
-          Retry-After {{ formatDurationSeconds(usageInfo.grok_retry_after_seconds) }}
-        </div>
-
-        <div v-if="grokLocalUsageText" class="mt-1 truncate text-[9px] text-slate-500 dark:text-slate-400" :title="grokLocalUsageText">
-          {{ grokLocalUsageText }}
         </div>
 
         <div v-if="grokFriendlyError" class="mt-1 truncate text-[9px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
@@ -371,7 +355,7 @@
             :disabled="activeQueryLoading || grokProbeLoading"
             @click="probeGrokQuota"
           >
-            {{ grokProbeLoading ? '探测中...' : '探测上游额度' }}
+            {{ grokProbeLoading ? '探测中...' : '探测' }}
           </button>
           <button
             type="button"
@@ -379,14 +363,14 @@
             :disabled="activeQueryLoading || grokProbeLoading"
             @click="loadActiveUsage"
           >
-            {{ activeQueryLoading ? '刷新中...' : '刷新本地窗口' }}
+            {{ activeQueryLoading ? '刷新中...' : '刷新' }}
           </button>
         </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
-    <!-- Gemini platform: show quota + local usage window -->
+<!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
       <!-- Auth Type + Tier Badge (first line) -->
       <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
@@ -1295,9 +1279,14 @@ const grokOfficialRows = computed(() => {
 const grokQuotaStateLabel = computed(() => {
   if (usageInfo.value?.error_code === 'rate_limited') return '限流'
   if (usageInfo.value?.needs_reauth) return '需重授权'
-  if (grokHeaderRows.value.length) return '上游响应头'
-  if (grokOfficialRows.value.length) return '官方 Management'
-  if (grokLocalBudgetRows.value.length) return '本地估算(备用)'
+  if (grokLocalBudgetRows.value.length) {
+    const u = grokLocalBudget.value?.utilization ?? 0
+    if (u >= 100) return '耗尽'
+    if (u >= 80) return '紧张'
+    return '可用'
+  }
+  if (grokHeaderRows.value.length) return '有响应头'
+  if (grokOfficialRows.value.length) return '有官方'
   return '未知'
 })
 
@@ -1316,18 +1305,15 @@ const grokQuotaStateClass = computed(() => {
 })
 
 const grokQuotaSubtitle = computed(() => {
-  const parts: string[] = []
-  const lastSeen = usageInfo.value?.grok_last_headers_seen_at || usageInfo.value?.grok_last_quota_probe_at
-  if (lastSeen) parts.push(`头 ${formatRelativeTime(lastSeen)}`)
   const budget = grokLocalBudget.value
-  if (budget?.updated_at) parts.push(`本地 ${formatRelativeTime(budget.updated_at)}`)
-  const official = usageInfo.value?.grok_official_usage
-  if (official?.updated_at) parts.push(`官方 ${formatRelativeTime(official.updated_at)}`)
-  return parts.length ? parts.join(' · ') : '三源分开展示，互不覆盖'
+  if (budget?.updated_at) return `本地 40m · ${formatRelativeTime(budget.updated_at)}`
+  const lastSeen = usageInfo.value?.grok_last_headers_seen_at || usageInfo.value?.grok_last_quota_probe_at
+  if (lastSeen) return `上游头 · ${formatRelativeTime(lastSeen)}`
+  return '本地 40m 估算优先'
 })
 
 const grokQuotaEmptyText = computed(() => {
-  return '尚无额度数据。可点「探测上游额度」主动拉取 rate-limit 头；本地窗口在有 usage log 后自动出现。'
+  return '暂无额度。可点探测拉取上游头；有请求后会显示 40m 本地估算。'
 })
 
 const probeGrokQuota = async () => {

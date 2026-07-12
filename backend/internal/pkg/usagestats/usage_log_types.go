@@ -52,6 +52,11 @@ type DashboardStats struct {
 	RateLimitAccounts int64 `json:"ratelimit_accounts"` // 限流账户数
 	OverloadAccounts  int64 `json:"overload_accounts"`  // 过载账户数
 
+	// Grok 账号池粗估（本地 40m * 可用账号数；非官方额度）
+	GrokAvailableAccounts   int64 `json:"grok_available_accounts"`
+	GrokPoolTokenEstimate   int64 `json:"grok_pool_token_estimate"`
+	GrokPoolTokenPerAccount int64 `json:"grok_pool_token_per_account"`
+
 	// 累计 Token 使用统计
 	TotalRequests            int64   `json:"total_requests"`
 	TotalInputTokens         int64   `json:"total_input_tokens"`

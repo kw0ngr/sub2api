@@ -71,6 +71,9 @@ const createDashboardStats = (): DashboardStats => ({
   error_accounts: 0,
   ratelimit_accounts: 0,
   overload_accounts: 0,
+  grok_available_accounts: 0,
+  grok_pool_token_estimate: 0,
+  grok_pool_token_per_account: 40000000,
   total_requests: 0,
   total_input_tokens: 0,
   total_output_tokens: 0,
@@ -420,7 +423,7 @@ describe('admin DashboardView', () => {
 
     expect(wrapper.find('.admin-dashboard-polish').exists()).toBe(true)
     expect(wrapper.find('.dashboard-filter-panel').exists()).toBe(true)
-    expect(wrapper.findAll('.dashboard-stat-card')).toHaveLength(8)
+    expect(wrapper.findAll('.dashboard-stat-card')).toHaveLength(9)
     expect(wrapper.findAll('.dashboard-analytics-card').length).toBeGreaterThanOrEqual(3)
   })
 

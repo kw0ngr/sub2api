@@ -1319,6 +1319,10 @@ export interface DashboardStats {
   error_accounts: number // 异常账户数
   ratelimit_accounts: number // 限流账户数
   overload_accounts: number // 过载账户数
+  // Grok 账号池粗估（本地 40m * 可用账号；非官方）
+  grok_available_accounts?: number
+  grok_pool_token_estimate?: number
+  grok_pool_token_per_account?: number
 
   // 累计 Token 使用统计
   total_requests: number

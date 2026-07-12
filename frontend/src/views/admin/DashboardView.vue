@@ -54,6 +54,29 @@
             </div>
           </div>
 
+          <!-- Grok Pool Estimate -->
+          <div class="card dashboard-stat-card p-4">
+            <div class="flex items-center gap-3">
+              <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
+                <Icon name="cube" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.grokPool') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  {{ formatTokens(stats.grok_pool_token_estimate || 0) }}
+                </p>
+                <p class="truncate text-xs text-gray-500 dark:text-gray-400" :title="t('admin.dashboard.grokPoolHint')">
+                  {{ stats.grok_available_accounts || 0 }}
+                  {{ t('admin.dashboard.grokPoolAccounts') }}
+                  ·
+                  {{ formatTokens(stats.grok_pool_token_per_account || 40000000) }}/{{ t('admin.dashboard.grokPoolPerAccount') }}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <!-- Today Requests -->
           <div class="card dashboard-stat-card p-4">
             <div class="flex items-center gap-3">
