@@ -127,8 +127,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 		if s.shouldDefaultGPT56SolMaxReasoning(ctx, upstreamModel) && responsesReq.Reasoning == nil {
 			responsesReq.Reasoning = &apicompat.ResponsesReasoning{Effort: "max", Summary: "auto"}
-			responsesBody, _ = sjson.SetBytes(responsesBody, "reasoning.effort", "max")
-			responsesBody, _ = sjson.SetBytes(responsesBody, "reasoning.summary", "auto")
+			responsesBody, _ = sjson.SetRawBytes(responsesBody, "reasoning", []byte(`{"effort":"max","summary":"auto"}`))
 		}
 	} else {
 		// Normal path: convert Chat Completions → Responses.

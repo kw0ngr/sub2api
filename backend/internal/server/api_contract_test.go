@@ -599,6 +599,7 @@ func TestAPIContracts(t *testing.T) {
 					"enable_glm_zcode_strong_mimic": false,
 					"enable_metadata_passthrough": false,
 					"openai_cyber_safety_retry_enabled": false,
+					"openai_gpt56_sol_default_max_reasoning_enabled": false,
 					"web_search_emulation_enabled": false,
 					"openai_fast_policy_settings": {
 						"rules": [
