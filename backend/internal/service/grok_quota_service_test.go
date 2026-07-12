@@ -20,6 +20,11 @@ type grokQuotaAccountRepoStub struct {
 	rateLimitedUntil  *time.Time
 	tempUnschedUntil  *time.Time
 	tempUnschedReason string
+	clearErrorCalls   int
+	clearTempCalls    int
+	clearRateCalls    int
+	setSchedulableTo  *bool
+	setSchedulableN   int
 }
 
 func (r *grokQuotaAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -47,6 +52,41 @@ func (r *grokQuotaAccountRepoStub) SetRateLimited(_ context.Context, _ int64, re
 func (r *grokQuotaAccountRepoStub) SetTempUnschedulable(_ context.Context, _ int64, until time.Time, reason string) error {
 	r.tempUnschedUntil = &until
 	r.tempUnschedReason = reason
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) ClearError(_ context.Context, id int64) error {
+	r.clearErrorCalls++
+	if r.account != nil && r.account.ID == id {
+		r.account.Status = StatusActive
+		r.account.ErrorMessage = ""
+	}
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) ClearTempUnschedulable(_ context.Context, id int64) error {
+	r.clearTempCalls++
+	r.tempUnschedUntil = nil
+	r.tempUnschedReason = ""
+	if r.account != nil && r.account.ID == id {
+		r.account.TempUnschedulableUntil = nil
+		r.account.TempUnschedulableReason = ""
+	}
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) ClearRateLimit(_ context.Context, _ int64) error {
+	r.clearRateCalls++
+	r.rateLimitedUntil = nil
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) SetSchedulable(_ context.Context, id int64, schedulable bool) error {
+	r.setSchedulableN++
+	r.setSchedulableTo = &schedulable
+	if r.account != nil && r.account.ID == id {
+		r.account.Schedulable = schedulable
+	}
 	return nil
 }
 
@@ -384,4 +424,93 @@ func TestGrokQuotaService_ValidateAccessToken(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not configured")
 	})
+}
+
+func TestGrokQuotaService_ProbeUsage_recoversHealthyAccount(t *testing.T) {
+	// Given: previously failed OAuth account that is actually healthy now.
+	until := time.Now().Add(20 * time.Minute)
+	account := &Account{
+		ID:                      1943,
+		Platform:                PlatformGrok,
+		Type:                    AccountTypeOAuth,
+		Status:                  StatusError,
+		Schedulable:             false,
+		ErrorMessage:            "Access forbidden (403): account may be suspended or lack permissions",
+		TempUnschedulableUntil:  &until,
+		TempUnschedulableReason: "grok probe forbidden",
+		Credentials: map[string]any{
+			"access_token": "token",
+		},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	headers := http.Header{}
+	headers.Set("x-ratelimit-limit-requests", "60")
+	headers.Set("x-ratelimit-remaining-requests", "42")
+	headers.Set("x-ratelimit-reset-requests", "120")
+	upstream := &grokQuotaHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     headers,
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	// When
+	result, err := svc.ProbeUsage(context.Background(), account.ID)
+
+	// Then
+	require.NoError(t, err)
+	require.True(t, result.HeadersObserved)
+	require.Equal(t, 1, repo.clearErrorCalls)
+	require.Equal(t, 1, repo.clearTempCalls)
+	require.Equal(t, 1, repo.clearRateCalls)
+	require.Equal(t, 1, repo.setSchedulableN)
+	require.NotNil(t, repo.setSchedulableTo)
+	require.True(t, *repo.setSchedulableTo)
+	require.Equal(t, StatusActive, account.Status)
+	require.True(t, account.Schedulable)
+	require.Empty(t, account.ErrorMessage)
+	require.Nil(t, account.TempUnschedulableUntil)
+}
+
+func TestGrokQuotaService_ProbeUsage_doesNotRecoverDisabledAccount(t *testing.T) {
+	account := &Account{
+		ID:           2001,
+		Platform:     PlatformGrok,
+		Type:         AccountTypeOAuth,
+		Status:       StatusDisabled,
+		Schedulable:  false,
+		ErrorMessage: "manually disabled",
+		Credentials:  map[string]any{"access_token": "token"},
+		Concurrency:  1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	headers := http.Header{}
+	headers.Set("x-ratelimit-limit-requests", "60")
+	headers.Set("x-ratelimit-remaining-requests", "10")
+	upstream := &grokQuotaHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     headers,
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	_, err := svc.ProbeUsage(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, repo.clearErrorCalls)
+	require.Equal(t, 0, repo.setSchedulableN)
+	require.Equal(t, StatusDisabled, account.Status)
+	require.False(t, account.Schedulable)
+}
+
+func TestIsRecoverableGrokProbeError(t *testing.T) {
+	require.True(t, isRecoverableGrokProbeError(""))
+	require.True(t, isRecoverableGrokProbeError("Access forbidden (403): account may be suspended or lack permissions"))
+	require.True(t, isRecoverableGrokProbeError("grok probe forbidden"))
+	require.True(t, isRecoverableGrokProbeError("token_refresh_failed: no refresh token"))
+	require.False(t, isRecoverableGrokProbeError("billing hard fail permanently"))
 }

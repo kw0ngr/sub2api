@@ -489,8 +489,85 @@ func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *A
 				resetAt = time.Unix(*snapshot.Requests.ResetUnix, 0)
 			}
 			_ = s.accountRepo.SetRateLimited(ctx, account.ID, resetAt)
+			return
+		}
+		// Probe succeeded (2xx): auto-heal recoverable scheduling/error state so
+		// batch-probe "成功" accounts become schedulable again without manual recovery.
+		if statusCode >= 200 && statusCode < 300 {
+			s.recoverGrokAccountAfterSuccessfulProbe(ctx, account)
 		}
 	}
+}
+
+// recoverGrokAccountAfterSuccessfulProbe restores accounts that were temporarily
+// degraded by probe/auth/rate-limit failures, without re-enabling manually disabled accounts.
+func (s *GrokQuotaService) recoverGrokAccountAfterSuccessfulProbe(ctx context.Context, account *Account) {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return
+	}
+	// Never override explicit admin disable.
+	if account.Status == StatusDisabled {
+		return
+	}
+
+	// Clear sticky error only for probe/auth style failures (or empty).
+	if account.Status == StatusError {
+		if isRecoverableGrokProbeError(account.ErrorMessage) {
+			if err := s.accountRepo.ClearError(ctx, account.ID); err == nil {
+				account.Status = StatusActive
+				account.ErrorMessage = ""
+			}
+		}
+	} else if strings.TrimSpace(account.ErrorMessage) != "" && isRecoverableGrokProbeError(account.ErrorMessage) {
+		// Active-but-stale error text from older runs.
+		if err := s.accountRepo.ClearError(ctx, account.ID); err == nil {
+			account.ErrorMessage = ""
+		}
+	}
+
+	_ = s.accountRepo.ClearRateLimit(ctx, account.ID)
+	_ = s.accountRepo.ClearTempUnschedulable(ctx, account.ID)
+	account.TempUnschedulableUntil = nil
+	account.TempUnschedulableReason = ""
+
+	if !account.Schedulable {
+		if err := s.accountRepo.SetSchedulable(ctx, account.ID, true); err == nil {
+			account.Schedulable = true
+		}
+	}
+}
+
+func isRecoverableGrokProbeError(msg string) bool {
+	m := strings.ToLower(strings.TrimSpace(msg))
+	if m == "" {
+		return true
+	}
+	needles := []string{
+		"access forbidden",
+		"forbidden",
+		"unauthorized",
+		"401",
+		"403",
+		"grok probe",
+		"token refresh failed",
+		"token_refresh_failed",
+		"invalid_grant",
+		"incorrect api key",
+		"permission-denied",
+		"permission denied",
+		"lack permissions",
+		"suspended or lack",
+		"rate limit",
+		"rate limited",
+		"temporary cooldown",
+		"temp unsched",
+	}
+	for _, n := range needles {
+		if strings.Contains(m, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyGrokProbeResult(result *GrokQuotaProbeResult) string {
