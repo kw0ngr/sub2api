@@ -771,6 +771,47 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	s.Require().Equal(wantTpm, stats.Tpm, "Tpm mismatch")
 }
 
+func (s *UsageLogRepoSuite) TestDashboardStats_GrokPoolEstimateSubtractsWindowUsage() {
+	now := time.Now().UTC()
+	baseStats, err := s.repo.GetDashboardStats(s.ctx)
+	s.Require().NoError(err, "GetDashboardStats base")
+
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "grok-pool@example.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-grok-pool", Name: "grok-pool"})
+	accountUsed := mustCreateAccount(s.T(), s.client, &service.Account{Name: "grok-used", Platform: service.PlatformGrok, Type: service.AccountTypeOAuth})
+	accountIdle := mustCreateAccount(s.T(), s.client, &service.Account{Name: "grok-idle", Platform: service.PlatformGrok, Type: service.AccountTypeOAuth})
+
+	_, err = s.repo.Create(s.ctx, &service.UsageLog{
+		UserID:       user.ID,
+		APIKeyID:     apiKey.ID,
+		AccountID:    accountUsed.ID,
+		Model:        "grok-4.5",
+		InputTokens:  5_000_000,
+		OutputTokens: 2_000_000,
+		CreatedAt:    now.Add(-10 * time.Minute),
+	})
+	s.Require().NoError(err, "Create current Grok usage")
+
+	_, err = s.repo.Create(s.ctx, &service.UsageLog{
+		UserID:       user.ID,
+		APIKeyID:     apiKey.ID,
+		AccountID:    accountIdle.ID,
+		Model:        "grok-4.5",
+		InputTokens:  9_000_000,
+		OutputTokens: 9_000_000,
+		CreatedAt:    now.Add(-45 * time.Minute),
+	})
+	s.Require().NoError(err, "Create old Grok usage")
+
+	stats, err := s.repo.GetDashboardStats(s.ctx)
+	s.Require().NoError(err, "GetDashboardStats")
+
+	const perAccount = int64(40_000_000)
+	s.Require().Equal(baseStats.GrokAvailableAccounts+2, stats.GrokAvailableAccounts)
+	s.Require().Equal(perAccount, stats.GrokPoolTokenPerAccount)
+	s.Require().Equal(baseStats.GrokPoolTokenEstimate+2*perAccount-7_000_000, stats.GrokPoolTokenEstimate)
+}
+
 func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 	now := time.Now().UTC()
 	todayStart := truncateToDayUTC(now)

@@ -1546,10 +1546,37 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 		return err
 	}
 
-	// Rough pool capacity: available Grok accounts * local 40m token budget per account.
+	// Rough remaining pool budget: available Grok accounts * local 40m token budget
+	// minus tokens already used by those accounts in the same rolling window.
 	const grokLocalTokenBudgetPerAccount int64 = 40_000_000
 	stats.GrokPoolTokenPerAccount = grokLocalTokenBudgetPerAccount
-	stats.GrokPoolTokenEstimate = stats.GrokAvailableAccounts * grokLocalTokenBudgetPerAccount
+
+	grokWindowUsageQuery := `
+		SELECT COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0)
+		FROM usage_logs ul
+		JOIN accounts a ON a.id = ul.account_id
+		WHERE a.deleted_at IS NULL
+		  AND a.platform = $1
+		  AND a.status = $2
+		  AND a.schedulable = true
+		  AND ul.created_at >= $3
+	`
+	var grokWindowUsedTokens int64
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		grokWindowUsageQuery,
+		[]any{service.PlatformGrok, service.StatusActive, now.Add(-40 * time.Minute)},
+		&grokWindowUsedTokens,
+	); err != nil {
+		return err
+	}
+
+	grokPoolCapacity := stats.GrokAvailableAccounts * grokLocalTokenBudgetPerAccount
+	stats.GrokPoolTokenEstimate = grokPoolCapacity - grokWindowUsedTokens
+	if stats.GrokPoolTokenEstimate < 0 {
+		stats.GrokPoolTokenEstimate = 0
+	}
 
 	return nil
 }
