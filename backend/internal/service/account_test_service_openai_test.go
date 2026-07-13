@@ -89,6 +89,84 @@ func (r *openAIAccountTestRepo) SetRateLimited(_ context.Context, id int64, rese
 	return nil
 }
 
+type restoreRuntimeAccountRepo struct {
+	mockAccountRepoForGemini
+
+	clearErrorCalls int
+	clearTempCalls  int
+	clearRateCalls  int
+	clearModelCalls int
+	schedulableSet  *bool
+}
+
+func (r *restoreRuntimeAccountRepo) ClearError(context.Context, int64) error {
+	r.clearErrorCalls++
+	return nil
+}
+
+func (r *restoreRuntimeAccountRepo) ClearTempUnschedulable(context.Context, int64) error {
+	r.clearTempCalls++
+	return nil
+}
+
+func (r *restoreRuntimeAccountRepo) ClearRateLimit(context.Context, int64) error {
+	r.clearRateCalls++
+	return nil
+}
+
+func (r *restoreRuntimeAccountRepo) ClearModelRateLimits(context.Context, int64) error {
+	r.clearModelCalls++
+	return nil
+}
+
+func (r *restoreRuntimeAccountRepo) SetSchedulable(_ context.Context, _ int64, schedulable bool) error {
+	r.schedulableSet = &schedulable
+	return nil
+}
+
+func TestAccountTestService_RestoreGrokOAuthAfterSuccessfulTest(t *testing.T) {
+	until := time.Now().Add(time.Hour)
+	repo := &restoreRuntimeAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{
+		ID:                      2001,
+		Platform:                PlatformGrok,
+		Type:                    AccountTypeOAuth,
+		Status:                  StatusError,
+		Schedulable:             false,
+		ErrorMessage:            "Access forbidden (403): account may be suspended or lack permissions",
+		TempUnschedulableUntil:  &until,
+		TempUnschedulableReason: "grok probe forbidden",
+	}
+
+	svc.restoreAPIKeySchedulingAfterSuccessfulTest(context.Background(), account)
+
+	require.Equal(t, 1, repo.clearErrorCalls)
+	require.Equal(t, 1, repo.clearTempCalls)
+	require.Equal(t, 1, repo.clearRateCalls)
+	require.Equal(t, 1, repo.clearModelCalls)
+	require.NotNil(t, repo.schedulableSet)
+	require.True(t, *repo.schedulableSet)
+}
+
+func TestAccountTestService_RestoreGrokOAuthKeepsManualUnschedulable(t *testing.T) {
+	repo := &restoreRuntimeAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{
+		ID:          2002,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: false,
+	}
+
+	svc.restoreAPIKeySchedulingAfterSuccessfulTest(context.Background(), account)
+
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearTempCalls)
+	require.Nil(t, repo.schedulableSet)
+}
+
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()

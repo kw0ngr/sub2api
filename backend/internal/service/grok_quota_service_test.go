@@ -343,7 +343,7 @@ func TestBuildGrokOfficialUsageBody_usesUtcDayWindow(t *testing.T) {
 	require.Contains(t, string(body), `"usage"`)
 }
 
-func TestGrokQuotaService_ProbeHeaders_marksUnauthorizedAsSideEffect(t *testing.T) {
+func TestGrokQuotaService_ProbeHeaders_DoesNotTempUnscheduleOnUnauthorized(t *testing.T) {
 	account := &Account{
 		ID:          42,
 		Platform:    PlatformGrok,
@@ -363,8 +363,8 @@ func TestGrokQuotaService_ProbeHeaders_marksUnauthorizedAsSideEffect(t *testing.
 	result, err := svc.ProbeHeaders(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnauthorized, result.StatusCode)
-	require.NotNil(t, repo.tempUnschedUntil)
-	require.Contains(t, repo.tempUnschedReason, "unauthorized")
+	require.Nil(t, repo.tempUnschedUntil)
+	require.Empty(t, repo.tempUnschedReason)
 }
 
 func TestClassifyGrokProbeResult(t *testing.T) {

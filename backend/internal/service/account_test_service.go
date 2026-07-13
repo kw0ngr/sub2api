@@ -216,8 +216,17 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 }
 
 func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx context.Context, account *Account) {
-	if s == nil || s.accountRepo == nil || account == nil || account.Type != AccountTypeAPIKey {
+	if s == nil || s.accountRepo == nil || account == nil || account.Status == StatusDisabled {
 		return
+	}
+	if account.Type != AccountTypeAPIKey {
+		hasRecoverableRuntimeState := account.Status == StatusError ||
+			strings.TrimSpace(account.ErrorMessage) != "" ||
+			account.TempUnschedulableUntil != nil ||
+			strings.TrimSpace(account.TempUnschedulableReason) != ""
+		if !account.IsGrokOAuth() || !hasRecoverableRuntimeState || !isRecoverableGrokProbeError(account.ErrorMessage+" "+account.TempUnschedulableReason) {
+			return
+		}
 	}
 	if err := s.accountRepo.ClearError(ctx, account.ID); err != nil {
 		log.Printf("[WARN] failed to clear account error after successful test: account=%d err=%v", account.ID, err)
@@ -230,6 +239,11 @@ func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx cont
 	}
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
 		log.Printf("[WARN] failed to clear account temporary cooldown after successful test: account=%d err=%v", account.ID, err)
+	}
+	if account.IsGrokOAuth() && !account.Schedulable {
+		if err := s.accountRepo.SetSchedulable(ctx, account.ID, true); err != nil {
+			log.Printf("[WARN] failed to restore account schedulable after successful test: account=%d err=%v", account.ID, err)
+		}
 	}
 }
 

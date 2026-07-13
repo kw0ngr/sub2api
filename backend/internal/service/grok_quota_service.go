@@ -470,9 +470,9 @@ func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *A
 	now := time.Now()
 	switch statusCode {
 	case http.StatusUnauthorized:
-		_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, now.Add(10*time.Minute), "grok probe unauthorized")
+		return
 	case http.StatusForbidden:
-		_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, now.Add(30*time.Minute), "grok probe forbidden")
+		return
 	case http.StatusTooManyRequests:
 		cooldown := 2 * time.Minute
 		if snapshot != nil && snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
