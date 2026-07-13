@@ -470,9 +470,9 @@ func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *A
 	now := time.Now()
 	switch statusCode {
 	case http.StatusUnauthorized:
-		return
+		s.disableGrokAccountAfterFailedProbe(ctx, account, "grok probe unauthorized")
 	case http.StatusForbidden:
-		return
+		s.disableGrokAccountAfterFailedProbe(ctx, account, "grok probe forbidden")
 	case http.StatusTooManyRequests:
 		cooldown := 2 * time.Minute
 		if snapshot != nil && snapshot.RetryAfterSeconds != nil && *snapshot.RetryAfterSeconds > 0 {
@@ -501,6 +501,24 @@ func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *A
 
 // recoverGrokAccountAfterSuccessfulProbe restores accounts that were temporarily
 // degraded by probe/auth/rate-limit failures, without re-enabling manually disabled accounts.
+
+func (s *GrokQuotaService) disableGrokAccountAfterFailedProbe(ctx context.Context, account *Account, reason string) {
+	if s == nil || s.accountRepo == nil || account == nil || account.Status == StatusDisabled {
+		return
+	}
+	msg := strings.TrimSpace(reason)
+	if msg == "" {
+		msg = "grok probe failed"
+	}
+	_ = s.accountRepo.SetError(ctx, account.ID, msg)
+	account.Status = StatusError
+	account.ErrorMessage = msg
+	if account.Schedulable {
+		_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+		account.Schedulable = false
+	}
+}
+
 func (s *GrokQuotaService) recoverGrokAccountAfterSuccessfulProbe(ctx context.Context, account *Account) {
 	if s == nil || s.accountRepo == nil || account == nil {
 		return

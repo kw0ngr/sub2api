@@ -21,6 +21,8 @@ type grokQuotaAccountRepoStub struct {
 	tempUnschedUntil  *time.Time
 	tempUnschedReason string
 	clearErrorCalls   int
+	setErrorCalls     int
+	lastErrorMsg      string
 	clearTempCalls    int
 	clearRateCalls    int
 	setSchedulableTo  *bool
@@ -52,6 +54,16 @@ func (r *grokQuotaAccountRepoStub) SetRateLimited(_ context.Context, _ int64, re
 func (r *grokQuotaAccountRepoStub) SetTempUnschedulable(_ context.Context, _ int64, until time.Time, reason string) error {
 	r.tempUnschedUntil = &until
 	r.tempUnschedReason = reason
+	return nil
+}
+
+func (r *grokQuotaAccountRepoStub) SetError(_ context.Context, id int64, msg string) error {
+	r.setErrorCalls++
+	r.lastErrorMsg = msg
+	if r.account != nil && r.account.ID == id {
+		r.account.Status = StatusError
+		r.account.ErrorMessage = msg
+	}
 	return nil
 }
 
@@ -343,11 +355,13 @@ func TestBuildGrokOfficialUsageBody_usesUtcDayWindow(t *testing.T) {
 	require.Contains(t, string(body), `"usage"`)
 }
 
-func TestGrokQuotaService_ProbeHeaders_DoesNotTempUnscheduleOnUnauthorized(t *testing.T) {
+func TestGrokQuotaService_ProbeHeaders_DisablesCallsOnUnauthorized(t *testing.T) {
 	account := &Account{
 		ID:          42,
 		Platform:    PlatformGrok,
 		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
 		Credentials: map[string]any{"access_token": "bad"},
 		Concurrency: 1,
 	}
@@ -365,6 +379,36 @@ func TestGrokQuotaService_ProbeHeaders_DoesNotTempUnscheduleOnUnauthorized(t *te
 	require.Equal(t, http.StatusUnauthorized, result.StatusCode)
 	require.Nil(t, repo.tempUnschedUntil)
 	require.Empty(t, repo.tempUnschedReason)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "unauthorized")
+	require.Equal(t, 1, repo.setSchedulableN)
+	require.NotNil(t, repo.setSchedulableTo)
+	require.False(t, *repo.setSchedulableTo)
+}
+
+func TestGrokQuotaService_ProbeHeaders_DoesNotReenableDisabledAccountOnUnauthorized(t *testing.T) {
+	account := &Account{
+		ID:          43,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusDisabled,
+		Schedulable: false,
+		Credentials: map[string]any{"access_token": "bad"},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	upstream := &grokQuotaHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"error":"unauthorized"}`)),
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+	_, err := svc.ProbeHeaders(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableN)
 }
 
 func TestClassifyGrokProbeResult(t *testing.T) {
