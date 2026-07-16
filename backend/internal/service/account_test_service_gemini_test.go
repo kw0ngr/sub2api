@@ -5,12 +5,71 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestApplyTestConnectionAction_TemporaryGeminiFailuresDoNotMutateScheduling(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       []byte
+	}{
+		{
+			name:       "model quota exhausted",
+			statusCode: http.StatusTooManyRequests,
+			body:       []byte(`{"error":{"code":429,"message":"Quota exceeded for model gemini-2.0-flash","status":"RESOURCE_EXHAUSTED"}}`),
+		},
+		{
+			name:       "retired model",
+			statusCode: http.StatusNotFound,
+			body:       []byte(`{"error":{"code":404,"message":"This model models/gemini-2.0-flash is no longer available.","status":"NOT_FOUND"}}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &rateLimitAccountRepoStub{}
+			account := &Account{
+				ID:          300,
+				Platform:    PlatformGemini,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+			}
+
+			applyTestConnectionAction(context.Background(), repo, account, tt.statusCode, http.Header{}, tt.body)
+
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.Zero(t, repo.tempCalls)
+		})
+	}
+}
+
+func TestApplyTestConnectionAction_InvalidGeminiCredentialDisablesAccount(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	account := &Account{
+		ID:          301,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	body := []byte(`{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"API_KEY_INVALID"}}`)
+
+	applyTestConnectionAction(context.Background(), repo, account, http.StatusBadRequest, http.Header{}, body)
+
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+}
 
 func TestCreateGeminiTestPayload_ImageModel(t *testing.T) {
 	t.Parallel()

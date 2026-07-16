@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -89,6 +91,62 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		}
 	}
 	return keys
+}
+
+func (s *RateLimitService) handleGeminiModelQuotaLimit(ctx context.Context, account *Account, responseBody []byte, requestedModel string) bool {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return false
+	}
+
+	limitedModel := ""
+	ambiguous := false
+	gjson.GetBytes(responseBody, "error.details").ForEach(func(_, detail gjson.Result) bool {
+		if detail.Get("@type").String() != "type.googleapis.com/google.rpc.QuotaFailure" {
+			return true
+		}
+		detail.Get("violations").ForEach(func(_, violation gjson.Result) bool {
+			model := strings.TrimSpace(violation.Get("quotaDimensions.model").String())
+			model = strings.TrimPrefix(model, "models/")
+			if model == "" {
+				return true
+			}
+			if limitedModel == "" {
+				limitedModel = model
+				return true
+			}
+			if model != limitedModel {
+				ambiguous = true
+				return false
+			}
+			return true
+		})
+		return !ambiguous
+	})
+	if ambiguous || limitedModel == "" {
+		return false
+	}
+
+	modelKey := ""
+	if strings.TrimSpace(requestedModel) != "" {
+		modelKey = strings.TrimSpace(account.GetMappedModel(requestedModel))
+	}
+	if modelKey == "" {
+		modelKey = limitedModel
+	}
+
+	now := time.Now()
+	resetAt := now.Add(s.GeminiCooldown(ctx, account))
+	if resetUnix := ParseGeminiRateLimitResetTime(responseBody); resetUnix != nil {
+		if parsed := time.Unix(*resetUnix, 0); parsed.After(now) {
+			resetAt = parsed
+		}
+	}
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt); err != nil {
+		slog.Warn("gemini_model_rate_limit_set_failed", "account_id", account.ID, "model", modelKey, "error", err)
+		return true
+	}
+	slog.Info("gemini_model_rate_limited", "account_id", account.ID, "model", modelKey, "reset_at", resetAt)
+	return true
 }
 
 func isAnthropicFableModel(model string) bool {

@@ -142,6 +142,15 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 			return true
 		}
 		customErrorCodesDisabledPool := account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()
+		if !customErrorCodesDisabledPool && account.Platform == PlatformGemini && statusCode == http.StatusTooManyRequests {
+			model := ""
+			if len(requestedModel) > 0 {
+				model = requestedModel[0]
+			}
+			if s.handleGeminiModelQuotaLimit(ctx, account, responseBody, model) {
+				return true
+			}
+		}
 		if !customErrorCodesDisabledPool &&
 			len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
 			return true

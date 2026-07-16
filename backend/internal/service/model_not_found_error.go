@@ -11,6 +11,7 @@ var upstreamModelNotFoundKeywords = []string{
 	"model_not_found",
 	"model does not exist",
 	"does not exist",
+	"no longer available",
 }
 
 // isUpstreamModelNotFoundError only matches 404 errors that identify a model,

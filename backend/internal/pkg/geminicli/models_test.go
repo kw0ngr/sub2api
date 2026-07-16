@@ -2,6 +2,20 @@ package geminicli
 
 import "testing"
 
+func TestDefaultTestModel_UsesAvailableStableModel(t *testing.T) {
+	t.Parallel()
+
+	if DefaultTestModel != "gemini-2.5-flash" {
+		t.Fatalf("expected default Gemini test model to be gemini-2.5-flash, got %q", DefaultTestModel)
+	}
+
+	for _, model := range DefaultModels {
+		if model.ID == "gemini-2.0-flash" {
+			t.Fatal("retired gemini-2.0-flash must not remain in the curated test model list")
+		}
+	}
+}
+
 func TestDefaultModels_ContainsImageModels(t *testing.T) {
 	t.Parallel()
 

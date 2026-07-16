@@ -1273,29 +1273,16 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Con
 // of structured error events, causing the system to miss account disabling.
 // Wraps the text as a synthetic JSON error body and delegates to ClassifyAPIKeyStatusAction
 // so there is a single source of truth for all keyword/code matching.
-// applyTestConnectionAction classifies a non-200 response from a test connection and writes
-// account state accordingly. For APIKey accounts only.
-func applyTestConnectionAction(ctx context.Context, repo AccountRepository, account *Account, statusCode int, headers http.Header, body []byte) {
-	switch ClassifyAPIKeyStatusAction(account, statusCode, body) {
-	case APIKeyStatusActionPermanentDisable:
-		msg := buildAPIKeyRuntimeErrorMessage(statusCode, body, "API key permanently disabled after test connection")
-		_ = repo.SetError(ctx, account.ID, msg)
-		if account.Schedulable {
-			_ = repo.SetSchedulable(ctx, account.ID, false)
-		}
-	case APIKeyStatusActionTemporaryCooldown:
-		if statusCode == http.StatusTooManyRequests {
-			resetAt := (&RateLimitService{}).calculateOpenAI429ResetTime(headers)
-			if resetAt == nil {
-				t := time.Now().Add(apiKey429Cooldown)
-				resetAt = &t
-			}
-			_ = repo.SetRateLimited(ctx, account.ID, *resetAt)
-		} else {
-			reason := buildAPIKeyRuntimeErrorMessage(statusCode, body, "API key temporary cooldown after test connection")
-			until := time.Now().Add(apiKeyProbeCooldown)
-			_ = repo.SetTempUnschedulable(ctx, account.ID, until, reason)
-		}
+// applyTestConnectionAction only persists deterministic credential failures.
+// Temporary/model-specific probe errors are diagnostic results, not production scheduler state.
+func applyTestConnectionAction(ctx context.Context, repo AccountRepository, account *Account, statusCode int, _ http.Header, body []byte) {
+	if ClassifyAPIKeyStatusAction(account, statusCode, body) != APIKeyStatusActionPermanentDisable {
+		return
+	}
+	msg := buildAPIKeyRuntimeErrorMessage(statusCode, body, "API key permanently disabled after test connection")
+	_ = repo.SetError(ctx, account.ID, msg)
+	if account.Schedulable {
+		_ = repo.SetSchedulable(ctx, account.ID, false)
 	}
 }
 

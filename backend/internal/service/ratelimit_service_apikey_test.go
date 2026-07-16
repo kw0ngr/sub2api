@@ -165,6 +165,51 @@ func TestRateLimitService_HandleUpstreamError_GeminiAPIKey400InvalidDisables(t *
 	require.Equal(t, 1, repo.setErrorCalls)
 }
 
+func TestRateLimitService_HandleUpstreamError_GeminiModelQuota429UsesModelRateLimit(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       105,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{
+		"error": {
+			"code": 429,
+			"message": "Quota exceeded for model gemini-2.0-flash. Please retry in 20s.",
+			"status": "RESOURCE_EXHAUSTED",
+			"details": [
+				{
+					"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+					"violations": [
+						{"quotaDimensions": {"location": "global", "model": "gemini-2.0-flash"}},
+						{"quotaDimensions": {"location": "global", "model": "gemini-2.0-flash"}}
+					]
+				},
+				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "20s"}
+			]
+		}
+	}`)
+
+	before := time.Now()
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		http.Header{},
+		body,
+		"gemini-2.0-flash",
+	)
+	after := time.Now()
+
+	require.True(t, shouldDisable)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Equal(t, []string{"gemini-2.0-flash"}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+	require.WithinDuration(t, before.Add(20*time.Second), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
+}
+
 func TestRateLimitService_HandleUpstreamError_APIKey429UsesTemporaryCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
