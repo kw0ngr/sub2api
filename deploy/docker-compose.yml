@@ -219,12 +219,14 @@ services:
         hard: 100000
     volumes:
       - redis_data:/data
+    # 该 command 是传给内层 sh -c 的单个脚本；续行符确保所有 Redis
+    # 持久化参数都属于同一条 redis-server 命令。
     command: >
       sh -c '
-        redis-server
-        --save 60 1
-        --appendonly yes
-        --appendfsync everysec
+        redis-server \
+        --save 60 1 \
+        --appendonly yes \
+        --appendfsync everysec \
         ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
     environment:
       - TZ=${TZ:-Asia/Shanghai}

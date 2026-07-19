@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type grokQuotaAccountRepoStub struct {
@@ -103,19 +104,21 @@ func (r *grokQuotaAccountRepoStub) SetSchedulable(_ context.Context, id int64, s
 }
 
 type grokQuotaHTTPUpstreamStub struct {
-	requestBody string
-	requestURL  string
-	authHeader  string
-	calls       int
-	response    *http.Response
-	responses   []*http.Response
-	err         error
+	requestBody  string
+	requestURL   string
+	authHeader   string
+	acceptHeader string
+	calls        int
+	response     *http.Response
+	responses    []*http.Response
+	err          error
 }
 
 func (u *grokQuotaHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 	u.calls++
 	u.requestURL = req.URL.String()
 	u.authHeader = req.Header.Get("Authorization")
+	u.acceptHeader = req.Header.Get("Accept")
 	if req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
 		u.requestBody = string(body)
@@ -169,6 +172,50 @@ func TestGrokQuotaService_ProbeUsage_requiresManagementCredentials(t *testing.T)
 	require.Equal(t, 1, upstream.calls)
 	require.Contains(t, repo.extraUpdates, "grok_usage_snapshot")
 	require.Equal(t, "super", repo.extraUpdates["subscription_tier"])
+}
+
+func TestGrokQuotaService_ProbeHeadersFallbackUsesResponsesHealthProbe(t *testing.T) {
+	account := &Account{
+		ID:          1895,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "token", "base_url": "https://api.x.ai/v1"},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	probeHeaders := http.Header{}
+	probeHeaders.Set("x-ratelimit-limit-requests", "60")
+	probeHeaders.Set("x-ratelimit-remaining-requests", "41")
+	upstream := &grokQuotaHTTPUpstreamStub{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			},
+			{
+				StatusCode: http.StatusOK,
+				Header:     probeHeaders,
+				Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\"}\n\n")),
+			},
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	result, err := svc.ProbeHeaders(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, upstream.calls)
+	require.True(t, result.HeadersObserved)
+	require.Equal(t, "header_probe_responses", result.Source)
+	require.Equal(t, "active_probe_responses", result.Snapshot.ObservationSource)
+	require.Equal(t, "https://api.x.ai/v1/responses", upstream.requestURL)
+	require.Equal(t, "application/json, text/event-stream", upstream.acceptHeader)
+	require.Equal(t, "grok-4.5", gjson.Get(upstream.requestBody, "model").String())
+	require.Equal(t, "hi", gjson.Get(upstream.requestBody, "input").String())
+	require.True(t, gjson.Get(upstream.requestBody, "stream").Bool())
+	require.False(t, gjson.Get(upstream.requestBody, "max_tokens").Exists())
+	require.False(t, gjson.Get(upstream.requestBody, "messages").Exists())
 }
 
 func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T) {

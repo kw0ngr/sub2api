@@ -24,6 +24,8 @@ const (
 	grokOfficialUsageDefaultZone  = "Etc/GMT"
 	grokOfficialUsageDefaultValue = "usd"
 	grokOfficialUsageTokenValue   = "usage"
+	grokQuotaProbeInput           = "hi"
+	grokQuotaDefaultModel         = "grok-4.5"
 )
 
 type GrokQuotaProbeResult struct {
@@ -177,17 +179,18 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 		result.Snapshot = snapshot
 		result.HeadersObserved = snapshot.HasObservedHeaders()
 	}
-	// GET /models often omits rate-limit headers; try a minimal chat call to elicit them.
+	// GET /models often omits rate-limit headers; try the same minimal Responses
+	// request used by the account health check.
 	if (snapshot == nil || !snapshot.HasObservedHeaders()) && s != nil {
 		if token, tokErr := s.resolveAccessToken(ctx, account); tokErr == nil && strings.TrimSpace(token) != "" {
-			if chatSnap, chatStatus, chatErr := s.probeRateLimitHeadersViaChat(ctx, account, token); chatErr == nil && chatSnap != nil {
-				if chatSnap.HasObservedHeaders() || snapshot == nil {
-					snapshot = chatSnap
-					statusCode = chatStatus
-					result.StatusCode = chatStatus
+			if responsesSnap, responsesStatus, responsesErr := s.probeRateLimitHeadersViaResponses(ctx, account, token); responsesErr == nil && responsesSnap != nil {
+				if responsesSnap.HasObservedHeaders() || snapshot == nil {
+					snapshot = responsesSnap
+					statusCode = responsesStatus
+					result.StatusCode = responsesStatus
 					result.Snapshot = snapshot
-					result.HeadersObserved = chatSnap.HasObservedHeaders()
-					result.Source = "header_probe_chat"
+					result.HeadersObserved = responsesSnap.HasObservedHeaders()
+					result.Source = "header_probe_responses"
 				}
 			}
 		}
@@ -205,7 +208,9 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 
 	if !includeManagement {
 		if result.HeadersObserved {
-			result.Source = "header_probe"
+			if result.Source == "" {
+				result.Source = "header_probe"
+			}
 		} else if result.ErrorMessage == "" {
 			result.Source = "header_probe_no_headers"
 			result.ErrorMessage = "未观测到 xAI rate-limit 响应头"
@@ -377,9 +382,9 @@ func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken,
 	return fmt.Errorf("xAI rejected access_token (HTTP %d): %s", resp.StatusCode, msg)
 }
 
-// probeRateLimitHeadersViaChat tries a minimal chat completion to elicit rate-limit headers
-// when GET /models returns no quota headers.
-func (s *GrokQuotaService) probeRateLimitHeadersViaChat(ctx context.Context, account *Account, token string) (*xai.QuotaSnapshot, int, error) {
+// probeRateLimitHeadersViaResponses uses the same minimal request shape as the
+// account health check to elicit rate-limit headers when GET /models omits them.
+func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context, account *Account, token string) (*xai.QuotaSnapshot, int, error) {
 	if s == nil || s.httpUpstream == nil {
 		return nil, 0, fmt.Errorf("http upstream not configured")
 	}
@@ -387,12 +392,11 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaChat(ctx context.Context, acc
 	if baseURL == "" {
 		baseURL = xai.DefaultBaseURL
 	}
-	targetURL := baseURL + "/chat/completions"
-	body, _ := json.Marshal(map[string]any{
-		"model":      "grok-3",
-		"messages":   []map[string]string{{"role": "user", "content": "ping"}},
-		"max_tokens": 1,
-	})
+	targetURL := baseURL + "/responses"
+	body, err := buildGrokQuotaProbeBody(grokQuotaDefaultModel)
+	if err != nil {
+		return nil, 0, err
+	}
 	callCtx, cancel := context.WithTimeout(ctx, grokQuotaUpstreamTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, targetURL, bytes.NewReader(body))
@@ -401,7 +405,7 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaChat(ctx context.Context, acc
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("User-Agent", "sub2api-grok-quota-probe/1.0")
 	resp, err := s.httpUpstream.Do(req, s.resolveProxyURL(ctx, account), account.ID, maxInt(account.Concurrency, 1))
 	if err != nil {
@@ -409,9 +413,9 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaChat(ctx context.Context, acc
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe_chat")
+	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe_responses")
 	if snapshot == nil {
-		snapshot = &xai.QuotaSnapshot{StatusCode: resp.StatusCode, ObservationSource: "active_probe_chat", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+		snapshot = &xai.QuotaSnapshot{StatusCode: resp.StatusCode, ObservationSource: "active_probe_responses", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	snapshot.LastProbeAt = now
@@ -420,6 +424,18 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaChat(ctx context.Context, acc
 		snapshot.HeadersObserved = true
 	}
 	return snapshot, resp.StatusCode, nil
+}
+
+func buildGrokQuotaProbeBody(model string) ([]byte, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = grokQuotaDefaultModel
+	}
+	return json.Marshal(map[string]any{
+		"model":  model,
+		"input":  grokQuotaProbeInput,
+		"stream": true,
+	})
 }
 
 func (s *GrokQuotaService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {

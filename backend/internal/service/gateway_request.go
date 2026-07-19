@@ -140,6 +140,18 @@ func normalizeSessionUserAgentFallback(raw string) string {
 	return strings.Join(strings.Fields(normalized), " ")
 }
 
+const claudeCodeLongContextModelSuffix = "[1m]"
+
+// Claude Code 把 [1m] 作为客户端长上下文选择器；若后缀泄漏到中转请求，
+// 在 Anthropic 协议入口移除它（包括重复后缀），避免模型匹配和上游调用失败。
+func normalizeClaudeCodeLongContextModel(model string) string {
+	for len(model) > len(claudeCodeLongContextModelSuffix) &&
+		strings.EqualFold(model[len(model)-len(claudeCodeLongContextModelSuffix):], claudeCodeLongContextModelSuffix) {
+		model = model[:len(model)-len(claudeCodeLongContextModelSuffix)]
+	}
+	return model
+}
+
 // ParseGatewayRequest 解析网关请求体并返回结构化结果。
 // protocol 指定请求协议格式（domain.PlatformAnthropic / domain.PlatformGemini），
 // 不同协议使用不同的 system/messages 字段名。
@@ -168,6 +180,19 @@ func ParseGatewayRequest(body []byte, protocol string) (*ParsedRequest, error) {
 			return nil, fmt.Errorf("invalid model field type")
 		}
 		parsed.Model = modelResult.String()
+		if protocol == domain.PlatformAnthropic {
+			normalizedModel := normalizeClaudeCodeLongContextModel(parsed.Model)
+			if normalizedModel != parsed.Model {
+				normalizedBody, err := sjson.SetBytes(body, "model", normalizedModel)
+				if err != nil {
+					return nil, fmt.Errorf("normalize model field: %w", err)
+				}
+				body = normalizedBody
+				jsonStr = *(*string)(unsafe.Pointer(&body))
+				parsed.Body = normalizedBody
+				parsed.Model = normalizedModel
+			}
+		}
 	}
 
 	// stream: 需要严格类型校验，非 bool 返回错误

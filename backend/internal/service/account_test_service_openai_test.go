@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
@@ -196,6 +197,47 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.NotEmpty(t, repo.updatedExtra)
 	require.Equal(t, 42.0, repo.updatedExtra["codex_5h_used_percent"])
 	require.Equal(t, 88.0, repo.updatedExtra["codex_7d_used_percent"])
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_GrokUsesSharedResponsesProbe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = newOpenAISuccessStream("hello from Grok")
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          1895,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "grok-access-token",
+			"base_url":     "https://api.x.ai/v1",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	req := upstream.requests[0]
+	require.Equal(t, "https://api.x.ai/v1/responses", req.URL.String())
+	require.Equal(t, "Bearer grok-access-token", req.Header.Get("Authorization"))
+	require.Equal(t, "application/json, text/event-stream", req.Header.Get("Accept"))
+	bodyReader, bodyErr := req.GetBody()
+	require.NoError(t, bodyErr)
+	defer func() { _ = bodyReader.Close() }()
+	body, bodyErr := io.ReadAll(bodyReader)
+	require.NoError(t, bodyErr)
+	require.Equal(t, "grok-4.5", gjson.GetBytes(body, "model").String())
+	require.Equal(t, "hi", gjson.GetBytes(body, "input").String())
+	require.True(t, gjson.GetBytes(body, "stream").Bool())
+	require.False(t, gjson.GetBytes(body, "store").Exists())
+	require.False(t, gjson.GetBytes(body, "instructions").Exists())
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 

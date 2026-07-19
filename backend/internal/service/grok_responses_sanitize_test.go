@@ -61,3 +61,51 @@ func TestSanitizeGrokResponsesBodyFiltersUnsupportedTools(t *testing.T) {
 		t.Fatalf("tool_choice should be removed when target function was filtered: %s", string(out))
 	}
 }
+
+func TestIsGrokInvalidEncryptedContentResponse(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		want       bool
+	}{
+		{
+			name:       "exact xai decryption error",
+			statusCode: 400,
+			body:       `{"code":"invalid-argument","error":"Could not decrypt the provided encrypted_content. Ensure the value is unmodified."}`,
+			want:       true,
+		},
+		{
+			name:       "wrong status",
+			statusCode: 422,
+			body:       `{"code":"invalid-argument","error":"Could not decrypt the provided encrypted_content."}`,
+			want:       false,
+		},
+		{
+			name:       "wrong code",
+			statusCode: 400,
+			body:       `{"code":"bad-request","error":"Could not decrypt the provided encrypted_content."}`,
+			want:       false,
+		},
+		{
+			name:       "not a decryption error",
+			statusCode: 400,
+			body:       `{"code":"invalid-argument","error":"The provided encrypted_content is invalid."}`,
+			want:       false,
+		},
+		{
+			name:       "nested error is not the observed xai shape",
+			statusCode: 400,
+			body:       `{"code":"invalid-argument","error":{"message":"Could not decrypt the provided encrypted_content."}}`,
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isGrokInvalidEncryptedContentResponse(tt.statusCode, []byte(tt.body)); got != tt.want {
+				t.Fatalf("isGrokInvalidEncryptedContentResponse() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

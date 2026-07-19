@@ -26,6 +26,23 @@ var grokResponsesSupportedToolTypes = map[string]struct{}{
 	"x_search":           {},
 }
 
+func isGrokInvalidEncryptedContentResponse(statusCode int, body []byte) bool {
+	if statusCode != 400 {
+		return false
+	}
+
+	code := gjson.GetBytes(body, "code")
+	message := gjson.GetBytes(body, "error")
+	if code.Type != gjson.String || message.Type != gjson.String ||
+		!strings.EqualFold(strings.TrimSpace(code.String()), "invalid-argument") {
+		return false
+	}
+
+	normalizedMessage := strings.ToLower(message.String())
+	return strings.Contains(normalizedMessage, "decrypt") &&
+		strings.Contains(normalizedMessage, "encrypted_content")
+}
+
 func sanitizeGrokResponsesBody(body []byte, upstreamModel string) ([]byte, bool, error) {
 	if !json.Valid(body) {
 		return nil, false, fmt.Errorf("invalid grok responses json request body")

@@ -28,8 +28,12 @@ func (s *OpenAIGatewayService) SelectCodexModelsAccount(ctx context.Context, gro
 		return nil, err
 	}
 	for i := range accounts {
-		if accounts[i].IsOpenAIOAuth() && strings.TrimSpace(accounts[i].GetOpenAIAccessToken()) != "" {
-			return &accounts[i], nil
+		account := s.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, &accounts[i], "", PlatformOpenAI)
+		if account == nil {
+			continue
+		}
+		if account.IsOpenAIOAuth() && strings.TrimSpace(account.GetOpenAIAccessToken()) != "" {
+			return account, nil
 		}
 	}
 	return nil, ErrNoAvailableAccounts

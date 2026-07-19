@@ -669,9 +669,19 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	// Create OpenAI Responses API payload
-	payload := createOpenAITestPayload(testModelID, isOAuth)
-	payloadBytes, _ := json.Marshal(payload)
+	// Grok health checks and quota probes intentionally share the same minimal
+	// Responses request so a probe cannot disagree with the real test path.
+	var payloadBytes []byte
+	if account.IsGrok() {
+		var payloadErr error
+		payloadBytes, payloadErr = buildGrokQuotaProbeBody(testModelID)
+		if payloadErr != nil {
+			return s.sendErrorAndEnd(c, "Failed to create Grok test payload")
+		}
+	} else {
+		payload := createOpenAITestPayload(testModelID, isOAuth)
+		payloadBytes, _ = json.Marshal(payload)
+	}
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -684,6 +694,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	if account.IsGrok() {
+		req.Header.Set("Accept", "application/json, text/event-stream")
+	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth && account.IsOpenAI() {
@@ -742,7 +755,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
+	if err := s.processOpenAIStream(c, ctx, account, resp.Body, !account.IsGrok()); err != nil {
 		return err
 	}
 	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
@@ -1328,7 +1341,7 @@ func isStreamOnlyErrorText(text string, deltaCount int, completedSeen bool) bool
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API.
 // account may be nil for OAuth accounts where state marking is not needed.
-func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
+func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader, requireExpectedOutput bool) error {
 	reader := bufio.NewReader(body)
 
 	var (
@@ -1339,7 +1352,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 
 	applyExpectedOutputCheck := func() error {
 		txt := accumulatedText.String()
-		if !strings.Contains(strings.ToLower(txt), testExpectedOutput) {
+		if requireExpectedOutput && !strings.Contains(strings.ToLower(txt), testExpectedOutput) {
 			errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, txt)
 			if account != nil && s.accountRepo != nil {
 				_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)

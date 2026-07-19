@@ -581,6 +581,11 @@ func (s *OpsService) executeWithAccount(ctx context.Context, reqType opsRetryReq
 			_, err = s.geminiCompatService.ForwardNative(ctx, c, account, modelName, action, errorLog.Stream, body)
 		}
 	case opsRetryTypeMessages:
+		parsedReq, parseErr := ParseGatewayRequest(body, domain.PlatformAnthropic)
+		if parseErr != nil {
+			return &opsRetryExecution{status: opsRetryStatusFailed, errorMessage: "failed to parse request body"}
+		}
+		body = parsedReq.Body
 		switch account.Platform {
 		case PlatformAntigravity:
 			if s.antigravityGatewayService == nil {
@@ -595,10 +600,6 @@ func (s *OpsService) executeWithAccount(ctx context.Context, reqType opsRetryReq
 		default:
 			if s.gatewayService == nil {
 				return &opsRetryExecution{status: opsRetryStatusFailed, errorMessage: "gateway service not available"}
-			}
-			parsedReq, parseErr := ParseGatewayRequest(body, domain.PlatformAnthropic)
-			if parseErr != nil {
-				return &opsRetryExecution{status: opsRetryStatusFailed, errorMessage: "failed to parse request body"}
 			}
 			_, err = s.gatewayService.Forward(ctx, c, account, parsedReq)
 		}

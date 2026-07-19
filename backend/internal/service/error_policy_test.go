@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -222,6 +223,126 @@ func TestCheckErrorPolicy(t *testing.T) {
 	}
 }
 
+func TestCheckErrorPolicy_TempRuleScopesKnownModel(t *testing.T) {
+	newAccount := func(id int64, statusCode int) *Account {
+		return &Account{
+			ID:       id,
+			Type:     AccountTypeOAuth,
+			Platform: PlatformAntigravity,
+			Credentials: map[string]any{
+				"temp_unschedulable_enabled": true,
+				"temp_unschedulable_rules": []any{
+					map[string]any{
+						"error_code":       float64(statusCode),
+						"keywords":         []any{"overloaded"},
+						"duration_minutes": float64(10),
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("known model uses model scope", func(t *testing.T) {
+		repo := &errorPolicyRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+		result := svc.CheckErrorPolicy(
+			context.Background(),
+			newAccount(41, http.StatusServiceUnavailable),
+			http.StatusServiceUnavailable,
+			[]byte(`overloaded`),
+			"claude-sonnet-4-5",
+		)
+
+		require.Equal(t, ErrorPolicyTempUnscheduled, result)
+		require.Zero(t, repo.tempCalls)
+		require.Equal(t, []string{"claude-sonnet-4-5"}, repo.modelScopes)
+	})
+
+	t.Run("unknown model keeps account scope", func(t *testing.T) {
+		repo := &errorPolicyRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+		result := svc.CheckErrorPolicy(
+			context.Background(),
+			newAccount(42, http.StatusServiceUnavailable),
+			http.StatusServiceUnavailable,
+			[]byte(`overloaded`),
+		)
+
+		require.Equal(t, ErrorPolicyTempUnscheduled, result)
+		require.Equal(t, 1, repo.tempCalls)
+		require.Empty(t, repo.modelScopes)
+	})
+
+	t.Run("authentication failure stays account scoped", func(t *testing.T) {
+		repo := &errorPolicyRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+		result := svc.CheckErrorPolicy(
+			context.Background(),
+			newAccount(43, http.StatusUnauthorized),
+			http.StatusUnauthorized,
+			[]byte(`overloaded`),
+			"claude-sonnet-4-5",
+		)
+
+		require.Equal(t, ErrorPolicyTempUnscheduled, result)
+		require.Equal(t, 1, repo.tempCalls)
+		require.Empty(t, repo.modelScopes)
+	})
+
+	t.Run("model persistence failure never widens to account", func(t *testing.T) {
+		repo := &errorPolicyRepoStub{modelRateLimitErr: errors.New("write failed")}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+		result := svc.CheckErrorPolicy(
+			context.Background(),
+			newAccount(44, http.StatusServiceUnavailable),
+			http.StatusServiceUnavailable,
+			[]byte(`overloaded`),
+			"claude-sonnet-4-5",
+		)
+
+		require.Equal(t, ErrorPolicyTempUnscheduled, result)
+		require.Zero(t, repo.tempCalls)
+		require.Equal(t, []string{"claude-sonnet-4-5"}, repo.modelScopes)
+	})
+}
+
+func TestHandleUpstreamError_TempRuleUsesRequestedModel(t *testing.T) {
+	repo := &errorPolicyRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       45,
+		Type:     AccountTypeOAuth,
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusServiceUnavailable),
+					"keywords":         []any{"overloaded"},
+					"duration_minutes": float64(10),
+				},
+			},
+		},
+	}
+
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusServiceUnavailable,
+		http.Header{},
+		[]byte(`overloaded`),
+		"gpt-5.6-sol",
+	)
+
+	require.True(t, shouldDisable)
+	require.Zero(t, repo.tempCalls)
+	require.Equal(t, []string{"gpt-5.6-sol"}, repo.modelScopes)
+}
+
 func TestHandleUpstreamError_PoolModeCustomErrorCodesOverride(t *testing.T) {
 	t.Run("pool_mode_without_custom_error_codes_still_skips", func(t *testing.T) {
 		repo := &errorPolicyRepoStub{}
@@ -333,6 +454,9 @@ func TestApplyErrorPolicy(t *testing.T) {
 				Type:     AccountTypeOAuth,
 				Platform: PlatformAntigravity,
 				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"claude-sonnet-4-5": "claude-sonnet-4-5",
+					},
 					"temp_unschedulable_enabled": true,
 					"temp_unschedulable_rules": []any{
 						map[string]any{
@@ -362,9 +486,10 @@ func TestApplyErrorPolicy(t *testing.T) {
 
 			var handleErrorCount int
 			p := antigravityRetryLoopParams{
-				ctx:     context.Background(),
-				prefix:  "[test]",
-				account: tt.account,
+				ctx:            context.Background(),
+				prefix:         "[test]",
+				account:        tt.account,
+				requestedModel: "claude-sonnet-4-5",
 				handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
 					handleErrorCount++
 					return nil
@@ -382,6 +507,8 @@ func TestApplyErrorPolicy(t *testing.T) {
 				var switchErr *AntigravityAccountSwitchError
 				require.ErrorAs(t, retErr, &switchErr)
 				require.Equal(t, tt.account.ID, switchErr.OriginalAccountID)
+				require.Zero(t, repo.tempCalls)
+				require.Equal(t, []string{"claude-sonnet-4-5"}, repo.modelScopes)
 			} else {
 				require.NoError(t, retErr)
 			}
@@ -395,9 +522,11 @@ func TestApplyErrorPolicy(t *testing.T) {
 
 type errorPolicyRepoStub struct {
 	mockAccountRepoForGemini
-	tempCalls    int
-	setErrCalls  int
-	lastErrorMsg string
+	tempCalls         int
+	setErrCalls       int
+	lastErrorMsg      string
+	modelScopes       []string
+	modelRateLimitErr error
 }
 
 func (r *errorPolicyRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
@@ -409,4 +538,9 @@ func (r *errorPolicyRepoStub) SetError(ctx context.Context, id int64, errorMsg s
 	r.setErrCalls++
 	r.lastErrorMsg = errorMsg
 	return nil
+}
+
+func (r *errorPolicyRepoStub) SetModelRateLimit(_ context.Context, _ int64, scope string, _ time.Time) error {
+	r.modelScopes = append(r.modelScopes, scope)
+	return r.modelRateLimitErr
 }
