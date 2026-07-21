@@ -539,6 +539,12 @@ func TestClassifyAPIKeyStatusAction_OpenAIAccountNotActive(t *testing.T) {
 			body:       []byte(`{"error":{"message":"Unsupported parameter: 'reasoning_effort'. In the Responses API, this parameter has moved to 'reasoning.effort'.","type":"invalid_request_error","code":"unsupported_parameter"}}`),
 			expected:   APIKeyStatusActionIgnore,
 		},
+		{
+			name:       "400 unknown parameter should not cooldown key",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"message":"Unknown parameter: 'input[0].namespace'.","type":"invalid_request_error","code":"unknown_parameter","param":"input[0].namespace"}}`),
+			expected:   APIKeyStatusActionIgnore,
+		},
 	}
 
 	for _, tt := range tests {

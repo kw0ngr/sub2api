@@ -2112,6 +2112,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			requestView = newOpenAIRequestView(body)
 			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
 		}
+		normalizedBody, normalized, err = normalizeOpenAICodexCompactReasoningEffortForAccount(c, account, body)
+		if err != nil {
+			return nil, err
+		}
+		if normalized {
+			body = normalizedBody
+			originalBody = normalizedBody
+			requestView = newOpenAIRequestView(body)
+			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+		}
 		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
 		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, reqModel)
 		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, reqStream, startTime)
@@ -2313,6 +2323,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				markPatchSet("reasoning_effort", normalized)
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning_effort: %s -> %s (model: %s, account: %s)", effort, normalized, modelForEffort, account.Name)
 			}
+		}
+		if normalizeOpenAICodexCompactReasoningEffortInReqBody(c, account, reqBody, modelForEffort) {
+			bodyModified = true
+			disablePatch()
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized OAuth compact reasoning.effort max -> xhigh (model: %s, account: %s)", modelForEffort, account.Name)
 		}
 	}
 
@@ -2710,6 +2725,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	httpInvalidEncryptedContentRetryTried := false
+	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
@@ -2752,10 +2768,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					}
 					setOpsUpstreamRequestBody(c, body)
 					httpInvalidEncryptedContentRetryTried = true
+					rejectedFieldRetryState.remember(body)
 					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
 					continue
 				}
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			}
+			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
+				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)
+			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
+				body = retryBody
+				requestView = newOpenAIRequestView(body)
+				reqBody = nil
+				setOpsUpstreamRequestBody(c, body)
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request after %s (account: %s)", reason, account.Name)
+				continue
 			}
 			if shouldRetryResponsesViaChatCompletionsAfterHTTPError(account, resp.StatusCode, upstreamMsg, respBody) {
 				logger.L().Info("openai responses: endpoint unsupported, falling back to chat completions bridge",
