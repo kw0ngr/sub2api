@@ -2102,6 +2102,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	if passthroughEnabled {
+		normalizedBody, normalized, err := normalizeOpenAIResponsesReasoningEffortAlias(body, reqModel)
+		if err != nil {
+			return nil, err
+		}
+		if normalized {
+			body = normalizedBody
+			originalBody = normalizedBody
+			requestView = newOpenAIRequestView(body)
+			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+		}
 		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
 		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, reqModel)
 		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, reqStream, startTime)
@@ -6268,6 +6278,40 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 			normalized = next
 			changed = true
 		}
+	}
+
+	return normalized, changed, nil
+}
+
+func normalizeOpenAIResponsesReasoningEffortAlias(body []byte, model string) ([]byte, bool, error) {
+	if len(body) == 0 || !gjson.GetBytes(body, "reasoning_effort").Exists() {
+		return body, false, nil
+	}
+
+	rawEffort := strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
+	normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, model)
+	if normalizedEffort == "" && isOpenAIMinimalOrNoneEffort(rawEffort) {
+		normalizedEffort = "none"
+	}
+
+	normalized := body
+	changed := false
+	if normalizedEffort != "" && strings.TrimSpace(gjson.GetBytes(normalized, "reasoning.effort").String()) == "" {
+		next, err := sjson.SetBytes(normalized, "reasoning.effort", normalizedEffort)
+		if err != nil {
+			return body, false, fmt.Errorf("normalize responses reasoning_effort alias: %w", err)
+		}
+		normalized = next
+		changed = true
+	}
+
+	if changed || strings.TrimSpace(gjson.GetBytes(normalized, "reasoning.effort").String()) != "" {
+		next, err := sjson.DeleteBytes(normalized, "reasoning_effort")
+		if err != nil {
+			return body, false, fmt.Errorf("delete responses reasoning_effort alias: %w", err)
+		}
+		normalized = next
+		changed = true
 	}
 
 	return normalized, changed, nil

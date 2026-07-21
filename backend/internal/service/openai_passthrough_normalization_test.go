@@ -31,3 +31,14 @@ func TestNormalizeOpenAIPassthroughOAuthBody_CompactRemovesUnsupportedUser(t *te
 	require.False(t, gjson.GetBytes(normalized, "stream").Exists())
 	require.False(t, gjson.GetBytes(normalized, "store").Exists())
 }
+
+func TestNormalizeOpenAIResponsesReasoningEffortAlias_MovesFlatResponsesAlias(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":"hello","reasoning_effort":"max"}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningEffortAlias(body, "gpt-5.6-sol")
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "reasoning_effort").Exists())
+	require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
+}

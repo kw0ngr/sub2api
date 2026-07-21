@@ -533,6 +533,12 @@ func TestClassifyAPIKeyStatusAction_OpenAIAccountNotActive(t *testing.T) {
 			body:       []byte(`{"error":{"message":"model not allowed for this project","code":"forbidden"}}`),
 			expected:   APIKeyStatusActionTemporaryCooldown,
 		},
+		{
+			name:       "400 unsupported responses reasoning_effort parameter should not cooldown key",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"message":"Unsupported parameter: 'reasoning_effort'. In the Responses API, this parameter has moved to 'reasoning.effort'.","type":"invalid_request_error","code":"unsupported_parameter"}}`),
+			expected:   APIKeyStatusActionIgnore,
+		},
 	}
 
 	for _, tt := range tests {

@@ -133,6 +133,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	if statusCode == http.StatusBadRequest && isClientRequestParameterValidationError(msg) {
 		return APIKeyStatusActionIgnore
 	}
+	if statusCode == http.StatusBadRequest && code == "unsupported_parameter" {
+		return APIKeyStatusActionIgnore
+	}
 
 	switch statusCode {
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
