@@ -450,7 +450,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
 
 		if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
+			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body, testModelID)
 		}
 		if isClaudeCodeCredentialScopeError(string(body)) {
 			log.Printf("[ClaudeMimicTestDebug] %s", buildClaudeMimicDebugLine(req, payloadBytes, account, claudeCodeMimicTokenLabel(authScheme, account), mimicClaudeCode))
@@ -774,7 +774,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 				)
 			}
 		} else if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
+			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body, testModelID)
 		} else if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			// OAuth 401: mark account as error and disable scheduling
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
@@ -864,7 +864,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		body, _ := io.ReadAll(resp.Body)
 
 		if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
+			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body, testModelID)
 		}
 
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
@@ -1321,9 +1321,20 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, ctx context.Con
 // of structured error events, causing the system to miss account disabling.
 // Wraps the text as a synthetic JSON error body and delegates to ClassifyAPIKeyStatusAction
 // so there is a single source of truth for all keyword/code matching.
-// applyTestConnectionAction only persists deterministic credential failures.
-// Temporary/model-specific probe errors are diagnostic results, not production scheduler state.
-func applyTestConnectionAction(ctx context.Context, repo AccountRepository, account *Account, statusCode int, _ http.Header, body []byte) {
+// applyTestConnectionAction keeps manual tests aligned with runtime account
+// health semantics. Deterministic model access failures cool down only the
+// tested account-model pair; all other temporary probe failures remain
+// diagnostic-only, while deterministic credential failures still disable the
+// key.
+func applyTestConnectionAction(ctx context.Context, repo AccountRepository, account *Account, statusCode int, _ http.Header, body []byte, requestedModel ...string) {
+	if repo == nil || account == nil {
+		return
+	}
+	if model := firstRequestedModel(requestedModel); model != "" {
+		if (&RateLimitService{accountRepo: repo}).HandleUpstreamModelNotFound(ctx, account, model, statusCode, body) {
+			return
+		}
+	}
 	if ClassifyAPIKeyStatusAction(account, statusCode, body) != APIKeyStatusActionPermanentDisable {
 		return
 	}

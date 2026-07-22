@@ -217,7 +217,14 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				cyberSafetyRetry := openAIFailoverIsCyberSafetyRetry(failoverErr)
+				effectiveMaxSwitches := openAIEffectiveFailoverMaxSwitches(maxAccountSwitches, failoverErr)
+				// cyber_policy is request-specific rather than an account-health signal.
+				// Retrying another account is optional, but it must neither penalize the
+				// selected account nor fan out across the whole pool.
+				if !cyberSafetyRetry {
+					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				}
 				// Pool mode: retry on the same account
 				if failoverErr.RetryableOnSameAccount {
 					retryLimit := account.GetPoolModeRetryCount()
@@ -240,7 +247,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
-				if switchCount >= maxAccountSwitches {
+				if switchCount >= effectiveMaxSwitches {
 					h.handleFailoverExhausted(c, failoverErr, streamStarted)
 					return
 				}
@@ -250,7 +257,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("switch_count", switchCount),
-						zap.Int("max_switches", maxAccountSwitches),
+						zap.Int("max_switches", effectiveMaxSwitches),
 					)
 					h.handleFailoverExhausted(c, failoverErr, streamStarted)
 					return
@@ -259,7 +266,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
 					zap.Int("switch_count", switchCount),
-					zap.Int("max_switches", maxAccountSwitches),
+					zap.Int("max_switches", effectiveMaxSwitches),
 				)
 				continue
 			}

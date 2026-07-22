@@ -823,6 +823,29 @@ func TestOpenAIFailoverIsCyberSafetyRetry(t *testing.T) {
 	require.False(t, openAIFailoverIsCyberSafetyRetry(nil))
 }
 
+func TestOpenAIChatCompletionsCyberSafetyRetryBudget(t *testing.T) {
+	cyberErr := &service.UpstreamFailoverError{
+		ResponseBody: []byte(`{"type":"response.failed","response":{"error":{"type":"content_policy","code":"cyber_policy","message":"This content was flagged for possible cybersecurity risk."}}}`),
+	}
+	regularErr := &service.UpstreamFailoverError{
+		ResponseBody: []byte(`{"error":{"type":"server_error","message":"temporarily unavailable"}}`),
+	}
+
+	require.Equal(t, openAICyberSafetyRetryMaxSwitches, openAIEffectiveFailoverMaxSwitches(50, cyberErr))
+	require.Equal(t, 2, openAIEffectiveFailoverMaxSwitches(2, cyberErr), "a lower operator limit must remain authoritative")
+	require.Equal(t, 50, openAIEffectiveFailoverMaxSwitches(50, regularErr), "ordinary failover keeps the configured budget")
+	require.Equal(t, 50, openAIEffectiveFailoverMaxSwitches(50, nil))
+
+	// Mirror the handlers' switch-count state machine: a configured budget of
+	// 50 must stop after exactly three cross-account cyber retries, not consume
+	// the whole pool as the production incident did.
+	switchCount := 0
+	for switchCount < openAIEffectiveFailoverMaxSwitches(50, cyberErr) {
+		switchCount++
+	}
+	require.Equal(t, 3, switchCount)
+}
+
 func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject middleware.AuthSubject) *httptest.Server {
 	t.Helper()
 	groupID := int64(2)

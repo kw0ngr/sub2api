@@ -616,6 +616,39 @@ func TestAccountTestService_OpenAIApiKeyUsesV1ResponsesEndpoint(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
+func TestAccountTestService_OpenAIApiKeyModelNotFoundUsesModelCooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newSoraTestContext()
+
+	resp := newJSONResponse(http.StatusBadGateway, `{"type":"response.failed","response":{"error":{"code":"model_not_found","message":"Project does not have access to model gpt-5.6-sol"}}}`)
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:          1150,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.openai.com"},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.6-sol")
+
+	require.Error(t, err)
+	require.Equal(t, 1, repo.modelRateLimitCalls)
+	require.Equal(t, "gpt-5.6-sol", repo.modelRateLimitKey)
+	require.NotNil(t, repo.modelRateLimitAt)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Contains(t, recorder.Body.String(), "model_not_found")
+}
+
 func TestAccountTestService_DeepSeekAPIKeyUsesAnthropicCompatibleBaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newSoraTestContext()

@@ -2967,6 +2967,14 @@ func TestOpenAIStreamingCyberSafetyResponseRetriesWhenEnabled(t *testing.T) {
 	require.Empty(t, rec.Body.String())
 }
 
+func TestOpenAIStreamFailedEventHTTPStatus_ModelNotFoundIsSemantic404(t *testing.T) {
+	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"model_not_found","message":"Project does not have access to model gpt-5.6-sol"}}}`)
+	require.Equal(t, http.StatusNotFound, openAIStreamFailedEventHTTPStatus(payload, ""))
+
+	serverFailure := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error","message":"upstream temporarily unavailable"}}}`)
+	require.Equal(t, http.StatusBadGateway, openAIStreamFailedEventHTTPStatus(serverFailure, ""))
+}
+
 func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

@@ -85,6 +85,32 @@ func TestRateLimitService_HandleUpstreamError_OpenAIModelNotFoundDoesNotTempUnsc
 	require.Equal(t, 0, repo.tempCalls)
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAIResponsesModelNotFound502UsesModelCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       1150,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"type":"response.failed","response":{"error":{"code":"model_not_found","message":"Project does not have access to model gpt-5.6-sol"}}}`)
+
+	handled := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusBadGateway,
+		http.Header{},
+		body,
+		"gpt-5.6-sol",
+	)
+
+	require.True(t, handled)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Equal(t, []string{"gpt-5.6-sol"}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+}
+
 func TestRateLimitService_HandleUpstreamError_OpenAICallIDTooLongDoesNotTempUnscheduleKey(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

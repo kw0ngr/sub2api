@@ -7466,6 +7466,12 @@ func extractUpstreamErrorMessage(body []byte) string {
 		return m
 	}
 
+	// OpenAI Responses terminal failure:
+	// {"type":"response.failed","response":{"error":{"message":"..."}}}
+	if m := gjson.GetBytes(body, "response.error.message").String(); strings.TrimSpace(m) != "" {
+		return m
+	}
+
 	// xAI/Grok CLI proxy style:
 	// {"code":"permission-denied","error":"Access to the chat endpoint is denied."}
 	// Here error is a string rather than an object.
@@ -7484,6 +7490,9 @@ func extractUpstreamErrorMessage(body []byte) string {
 
 func extractUpstreamErrorCode(body []byte) string {
 	if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
+		return code
+	}
+	if code := strings.TrimSpace(gjson.GetBytes(body, "response.error.code").String()); code != "" {
 		return code
 	}
 
@@ -7508,7 +7517,10 @@ func extractUpstreamErrorCode(body []byte) string {
 // extractUpstreamErrorType extracts the error type field from Anthropic-style responses:
 // {"type":"error","error":{"type":"authentication_error","message":"..."}}
 func extractUpstreamErrorType(body []byte) string {
-	return strings.TrimSpace(gjson.GetBytes(body, "error.type").String())
+	if errType := strings.TrimSpace(gjson.GetBytes(body, "error.type").String()); errType != "" {
+		return errType
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "response.error.type").String())
 }
 
 func isCountTokensUnsupported404(statusCode int, body []byte) bool {

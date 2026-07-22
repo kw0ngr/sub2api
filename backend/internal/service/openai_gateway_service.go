@@ -3508,6 +3508,13 @@ func openAIStreamFailedEventHTTPStatus(payload []byte, message string) int {
 	if combined == "" {
 		return http.StatusBadGateway
 	}
+	// A Responses stream transports terminal model access failures inside a
+	// 200/SSE response.failed event. Preserve the semantic 404 so account health
+	// handling records only the failed account-model pair instead of applying a
+	// generic 502 account-wide cooldown.
+	if isUpstreamModelNotFoundError(http.StatusBadGateway, payload) {
+		return http.StatusNotFound
+	}
 	if containsAny(combined, "insufficient_quota", "exceeded your current quota", "billing details", "usage_limit", "rate_limit", "quota exceeded") {
 		return http.StatusTooManyRequests
 	}

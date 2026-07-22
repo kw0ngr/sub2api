@@ -14,19 +14,29 @@ var upstreamModelNotFoundKeywords = []string{
 	"no longer available",
 }
 
-// isUpstreamModelNotFoundError only matches 404 errors that identify a model,
-// so endpoint/base-URL 404s continue through the existing account policy.
+// isUpstreamModelNotFoundError recognizes deterministic account-model access
+// failures without mistaking an endpoint/base-URL 404 or an arbitrary 5xx for
+// account health. Explicit structured model_not_found codes are authoritative
+// even when a Responses stream wraps the terminal failure as HTTP 502; message
+// heuristics remain limited to the conventional 400/404 statuses.
 func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
-	if statusCode != http.StatusNotFound && statusCode != http.StatusBadRequest {
+	if statusCode < http.StatusBadRequest {
 		return false
 	}
 	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(body)))
 	errType := strings.ToLower(strings.TrimSpace(extractUpstreamErrorType(body)))
 	for _, keyword := range upstreamModelNotFoundKeywords {
-		if containsNormalizedModelNotFound(message, keyword) ||
-			containsNormalizedModelNotFound(code, keyword) ||
+		if containsNormalizedModelNotFound(code, keyword) ||
 			containsNormalizedModelNotFound(errType, keyword) {
+			return true
+		}
+	}
+	if statusCode != http.StatusNotFound && statusCode != http.StatusBadRequest {
+		return false
+	}
+	for _, keyword := range upstreamModelNotFoundKeywords {
+		if containsNormalizedModelNotFound(message, keyword) {
 			return true
 		}
 	}
