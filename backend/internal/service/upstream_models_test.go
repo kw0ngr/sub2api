@@ -121,6 +121,7 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "Bearer xai-token", grokOAuthReq.Header.Get("Authorization"))
 	require.Equal(t, "9.9.9-test", grokOAuthReq.Header.Get("x-grok-client-version"))
 	require.Equal(t, "xai-grok-cli", grokOAuthReq.Header.Get("x-xai-token-auth"))
+	require.Equal(t, "interactive", grokOAuthReq.Header.Get("x-grok-client-mode"))
 	require.NotEmpty(t, grokOAuthReq.Header.Get("User-Agent"))
 
 	geminiReq, err := svc.buildGeminiUpstreamModelsRequest(ctx, &Account{

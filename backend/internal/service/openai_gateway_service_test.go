@@ -41,6 +41,15 @@ type streamFailureAccountRepo struct {
 	lastErrorMsg  string
 }
 
+type grokProbeStreamAccountRepo struct {
+	stubOpenAIAccountRepo
+	setErrorCalls       int
+	setSchedulableCalls int
+	rateLimitedCalls    int
+	tempCalls           int
+	modelCooldownCalls  int
+}
+
 type grokOAuthRefreshAccountRepo struct {
 	stubOpenAIAccountRepo
 	updated map[string]any
@@ -54,6 +63,31 @@ func (r *grokOAuthRefreshAccountRepo) UpdateCredentials(_ context.Context, _ int
 func (r *streamFailureAccountRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
 	r.setErrorCalls++
 	r.lastErrorMsg = errorMsg
+	return nil
+}
+
+func (r *grokProbeStreamAccountRepo) SetError(_ context.Context, _ int64, _ string) error {
+	r.setErrorCalls++
+	return nil
+}
+
+func (r *grokProbeStreamAccountRepo) SetSchedulable(_ context.Context, _ int64, _ bool) error {
+	r.setSchedulableCalls++
+	return nil
+}
+
+func (r *grokProbeStreamAccountRepo) SetRateLimited(_ context.Context, _ int64, _ time.Time) error {
+	r.rateLimitedCalls++
+	return nil
+}
+
+func (r *grokProbeStreamAccountRepo) SetTempUnschedulable(_ context.Context, _ int64, _ time.Time, _ string) error {
+	r.tempCalls++
+	return nil
+}
+
+func (r *grokProbeStreamAccountRepo) SetModelRateLimit(_ context.Context, _ int64, _ string, _ time.Time) error {
+	r.modelCooldownCalls++
 	return nil
 }
 
@@ -2541,7 +2575,7 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, 7, usage.InputTokens)
@@ -2569,7 +2603,7 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-4o", "gpt-4o")
 	require.NoError(t, err)
 	require.NotNil(t, usage)
 	require.Equal(t, 0, usage.InputTokens)
@@ -2577,7 +2611,7 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `data: {"type":"response.in_progress"`)
 }
 
-func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
+func TestHandleSSEToJSON_ResponseFailedReturnsFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -2593,12 +2627,105 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	usage, err := svc.handleSSEToJSON(resp, c, &Account{ID: 77, Platform: PlatformOpenAI}, body, "gpt-4o", "gpt-4o")
 	require.Nil(t, usage)
 	require.Error(t, err)
-	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.Contains(t, rec.Body.String(), "upstream rejected request")
-	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "upstream rejected request")
+	require.Empty(t, rec.Body.String())
+}
+
+func TestGrokBuildProbeNonStreamingSSEFailureDoesNotMutateAccountHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"x-request-id": []string{"req_probe"},
+		},
+	}
+	body := []byte(`data: {"type":"response.failed","response":{"error":{"type":"rate_limit_error","code":"rate_limit","message":"probe failed: rate limit"}}}`)
+
+	usage, err := svc.handleSSEToJSON(resp, c, account, body, "grok-build", "grok-build-0.1")
+
+	require.Nil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+	require.Empty(t, rec.Body.String())
+}
+
+func TestGrokBuildProbeNonStreamingJSONFailureDoesNotMutateAccountHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"req_probe"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_probe","status":"failed","error":{"type":"rate_limit_error","code":"rate_limit","message":"probe failed: rate limit"}}`,
+		)),
+	}
+
+	usage, err := svc.handleNonStreamingResponse(
+		context.Background(), resp, c, account, "grok-build", "grok-build-0.1",
+	)
+
+	require.Nil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+	require.Empty(t, rec.Body.String())
 }
 
 func TestOpenAIStreamingResponseFailedInsufficientQuotaReturns429Failover(t *testing.T) {
@@ -2629,6 +2756,169 @@ func TestOpenAIStreamingResponseFailedInsufficientQuotaReturns429Failover(t *tes
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "insufficient_quota")
 	require.NotContains(t, rec.Body.String(), "response.failed")
+}
+
+func TestGrokBuildProbeStreamingFailureDoesNotMutateAccountHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	body := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_probe"}}`,
+		`data: {"type":"response.failed","response":{"error":{"type":"rate_limit_error","code":"rate_limit","message":"probe failed: rate limit"}}}`,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_probe"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	usage, err := svc.handleStreamingResponse(
+		context.Background(), resp, c, account, time.Now(), "grok-build", "grok-build-0.1",
+	)
+
+	require.NotNil(t, usage)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+}
+
+func TestGrokBuildProbeHTTPNonAuthErrorsAlwaysEnterFailover(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	body := []byte(`{"error":{"message":"optional probe unavailable"}}`)
+
+	for _, statusCode := range []int{
+		http.StatusBadRequest,
+		http.StatusNotFound,
+		http.StatusUpgradeRequired,
+	} {
+		require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(
+			account, statusCode, "optional probe unavailable", body, "grok-build",
+		), "status %d must remain request-local", statusCode)
+	}
+
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(
+		account, http.StatusNotFound, "real model missing", body, "grok-4.5",
+	))
+}
+
+func TestGrokBuildProbeAnthropicBufferedFailureDoesNotMutateAccountHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	body := `data: {"type":"response.failed","response":{"id":"resp_probe","status":"failed","error":{"type":"rate_limit_error","code":"rate_limit","message":"probe failed: rate limit"}}}`
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_probe"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleAnthropicBufferedStreamingResponse(
+		resp, c, account, "grok-build", "grok-build", "grok-build-0.1", time.Now(),
+	)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+	require.Empty(t, rec.Body.String())
+}
+
+func TestGrokBuildProbeAnthropicStreamingFailureDoesNotMutateAccountHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	body := `data: {"type":"response.failed","response":{"id":"resp_probe","status":"failed","error":{"type":"rate_limit_error","code":"rate_limit","message":"probe failed: rate limit"}}}`
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_probe"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleAnthropicStreamingResponse(
+		resp, c, account, "grok-build", "grok-build", "grok-build-0.1", time.Now(),
+	)
+
+	require.NotNil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+	require.Empty(t, rec.Body.String())
 }
 
 func TestOpenAIStreamingCyberSafetyResponseRetriesWhenEnabled(t *testing.T) {

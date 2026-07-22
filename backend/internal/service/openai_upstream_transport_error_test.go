@@ -90,3 +90,26 @@ func TestHandleOpenAIUpstreamTransportErrorCanceledDoesNotFailoverOrUnschedule(t
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, repo.calls)
 }
+
+func TestHandleOpenAIUpstreamTransportErrorGrokBuildProbeDoesNotUnschedule(t *testing.T) {
+	repo := &openAITransportErrorAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{
+		ID:       2108,
+		Name:     "grok-build-probe",
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+
+	err := svc.handleOpenAIUpstreamTransportError(
+		context.Background(), nil, account, errors.New("socks connect tcp: connection refused"), false, "grok-build",
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Empty(t, repo.calls)
+}

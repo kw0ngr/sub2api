@@ -245,7 +245,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -257,7 +257,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 			upstreamDetail := ""
 			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -422,7 +422,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -433,7 +433,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 			upstreamDetail := ""
 			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -555,7 +555,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 	// Free Grok Build (cli-chat-proxy) requires Grok CLI identity headers.
 	// Without x-grok-client-version the upstream returns 426 Upgrade Required.
 	if account != nil && account.Platform == PlatformGrok {
-		applyGrokCLIClientHeaders(req.Header, account)
+		if c != nil && c.Request != nil {
+			copyGrokCLIRequestContextHeaders(req.Header, c.Request.Header)
+		}
+		applyGrokCLIRequestHeaders(req.Header, account, openAIModelForUpstreamError(body))
 	}
 	return req, nil
 }
@@ -665,7 +668,9 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	}
 	if strings.TrimSpace(finalResponse.Status) == "failed" {
 		payload, _ := json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
-		return nil, s.newOpenAIStreamFailoverError(c, account, false, requestID, payload, openAICompatFailedResponseMessage(finalResponse))
+		return nil, s.newOpenAIStreamFailoverError(
+			c, account, false, requestID, payload, openAICompatFailedResponseMessage(finalResponse), upstreamModel,
+		)
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -962,7 +967,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if strings.TrimSpace(event.Type) == "response.failed" {
 			payloadBytes := []byte(payload)
 			message := extractOpenAISSEErrorMessage(payloadBytes)
-			streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message)
+			streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message, upstreamModel)
 			return true
 		}
 

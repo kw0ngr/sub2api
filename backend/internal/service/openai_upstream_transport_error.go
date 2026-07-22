@@ -56,7 +56,7 @@ func classifyOpenAITransportError(err error) openAITransportErrorClass {
 	return openAITransportErrorClass{}
 }
 
-func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool) error {
+func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool, requestedModel ...string) error {
 	if account == nil {
 		return err
 	}
@@ -76,7 +76,14 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 		return err
 	}
 	if classifyOpenAITransportError(err).Persistent {
-		s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+		if isGrokBuildProbeRequest(account, firstRequestedModel(requestedModel)) {
+			logger.L().With(zap.String("component", "service.openai_gateway")).Info(
+				"grok_build_probe_transport_health_mutation_skipped",
+				zap.Int64("account_id", account.ID),
+			)
+		} else {
+			s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+		}
 	}
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,

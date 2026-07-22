@@ -30,10 +30,15 @@ const (
 
 	// Free Build / Grok CLI path requires these client identity headers.
 	// Without x-grok-client-version, cli-chat-proxy returns 426 Upgrade Required.
-	DefaultCLIClientVersion    = "0.2.93"
+	// Keep this aligned with xai-org/grok-build's lockstepped
+	// xai-grok-version crate. Incoming official CLI versions are preserved by
+	// the gateway, while this value is the fallback for non-CLI callers such as
+	// account tests and quota probes.
+	DefaultCLIClientVersion    = "0.2.109"
 	DefaultCLIClientIdentifier = "grok-shell"
+	DefaultCLIClientMode       = "interactive"
 	DefaultCLITokenAuth        = "xai-grok-cli"
-	DefaultCLIUserAgent        = "grok-shell/0.2.93 (linux; x86_64)"
+	DefaultCLIUserAgent        = "grok-shell/0.2.109 (linux; x86_64)"
 
 	EnvAuthorizeURL               = "XAI_OAUTH_AUTHORIZE_URL"
 	EnvTokenURL                   = "XAI_OAUTH_TOKEN_URL"
@@ -58,6 +63,7 @@ func DefaultCLIClientHeaders() map[string]string {
 		"x-xai-token-auth":         DefaultCLITokenAuth,
 		"x-authenticateresponse":   "authenticate-response",
 		"x-grok-client-identifier": DefaultCLIClientIdentifier,
+		"x-grok-client-mode":       DefaultCLIClientMode,
 		"User-Agent":               "grok-shell/" + version + " (linux; x86_64)",
 	}
 }

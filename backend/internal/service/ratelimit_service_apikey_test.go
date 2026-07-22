@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"testing"
@@ -19,6 +20,18 @@ type rateLimitAccountRepoStubWithSchedulable struct {
 	rateLimitAccountRepoStub
 	setSchedulableCalls int
 	lastSchedulable     bool
+}
+
+type grokBuildProbeStreamTimeoutSettingRepo struct {
+	SettingRepository
+	value string
+}
+
+func (r *grokBuildProbeStreamTimeoutSettingRepo) GetValue(_ context.Context, key string) (string, error) {
+	if key == SettingKeyStreamTimeoutSettings {
+		return r.value, nil
+	}
+	return "", nil
 }
 
 func (r *rateLimitAccountRepoStubWithSchedulable) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
@@ -511,6 +524,212 @@ func TestRateLimitService_HandleUpstreamError_GrokOAuthBuildProbe404DoesNotMutat
 	require.Zero(t, repo.tempCalls)
 	require.Empty(t, repo.modelRateLimitScopes)
 	require.Empty(t, repo.modelRateLimitResets)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokOAuthBuildProbeAllNonAuthErrorsAreRequestLocal(t *testing.T) {
+	for _, statusCode := range []int{
+		http.StatusBadRequest,
+		http.StatusPaymentRequired,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusUpgradeRequired,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+	} {
+		t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+			repo := &rateLimitAccountRepoStubWithSchedulable{}
+			svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			account := &Account{
+				ID:          2108,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping":              map[string]any{"grok-build": "grok-build-0.1"},
+					"custom_error_codes_enabled": true,
+					"custom_error_codes":         []any{float64(statusCode)},
+					"temp_unschedulable_enabled": true,
+					"temp_unschedulable_rules": []any{
+						map[string]any{
+							"error_code":       float64(statusCode),
+							"keywords":         []any{"probe failed"},
+							"duration_minutes": float64(30),
+						},
+					},
+				},
+			}
+
+			shouldFailover := svc.HandleUpstreamError(
+				context.Background(), account, statusCode, http.Header{}, []byte(`{"error":"probe failed"}`), "grok-build",
+			)
+
+			require.True(t, shouldFailover)
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, repo.setSchedulableCalls)
+			require.Zero(t, repo.tempCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.Zero(t, repo.overloadedCalls)
+			require.Empty(t, repo.modelRateLimitScopes)
+		})
+	}
+}
+
+func TestIsGrokBuildProbeRequestChecksFinalModelBeforeWildcardRemapping(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-*": "grok-4.5"},
+		},
+	}
+
+	require.True(t, isGrokBuildProbeRequest(account, "grok-build-0.1"))
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokBuildProbeInvalidCredentialStillDisables(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+	body := []byte(`{"code":"invalid-argument","error":"Incorrect API key provided."}`)
+
+	shouldFailover := svc.HandleUpstreamError(
+		context.Background(), account, http.StatusBadRequest, http.Header{}, body, "grok-build",
+	)
+
+	require.True(t, shouldFailover)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+	require.Zero(t, repo.tempCalls)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokBuildProbe401StillAuthenticates(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+
+	shouldFailover := svc.HandleUpstreamError(
+		context.Background(), account, http.StatusUnauthorized, http.Header{},
+		[]byte(`{"error":{"message":"expired access token"}}`), "grok-build",
+	)
+
+	require.True(t, shouldFailover)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+}
+
+func TestGrokBuildProbeInvalidCredentialIsNotExempt(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+
+	require.False(t, isIgnorableGrokBuildProbeError(
+		account, http.StatusBadRequest, []byte(`{"error":"Incorrect API key provided."}`), "grok-build",
+	))
+}
+
+func TestRateLimitService_HandleStreamTimeout_GrokBuildProbeNeverMutatesHealth(t *testing.T) {
+	settingsJSON, err := json.Marshal(StreamTimeoutSettings{
+		Enabled:                true,
+		Action:                 StreamTimeoutActionError,
+		ThresholdCount:         1,
+		ThresholdWindowMinutes: 1,
+	})
+	require.NoError(t, err)
+
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetSettingService(NewSettingService(&grokBuildProbeStreamTimeoutSettingRepo{value: string(settingsJSON)}, &config.Config{}))
+	account := &Account{
+		ID:       2108,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+
+	handled := svc.HandleStreamTimeout(context.Background(), account, "grok-build")
+
+	require.False(t, handled)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.tempCalls)
+}
+
+func TestRateLimitService_CheckErrorPolicy_GrokBuildProbeOverridesCustomHealthRules(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       2108,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping":              map[string]any{"grok-build": "grok-build-0.1"},
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusForbidden)},
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusForbidden),
+					"keywords":         []any{"permission"},
+					"duration_minutes": float64(30),
+				},
+			},
+		},
+	}
+
+	result := svc.CheckErrorPolicy(
+		context.Background(), account, http.StatusForbidden, []byte("permission denied"), "grok-build",
+	)
+
+	require.Equal(t, ErrorPolicyNone, result)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Empty(t, repo.modelRateLimitScopes)
+}
+
+func TestRateLimitService_HandleUpstreamModelNotFound_GrokBuildProbeSkipsCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       2108,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"grok-build": "grok-build-0.1"},
+		},
+	}
+
+	handled := svc.HandleUpstreamModelNotFound(
+		context.Background(), account, "grok-build", http.StatusNotFound,
+		[]byte(`{"error":{"code":"model_not_found","message":"grok-build-0.1 was not found"}}`),
+	)
+
+	require.True(t, handled)
+	require.Empty(t, repo.modelRateLimitScopes)
 }
 
 func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402UsesModelCooldown(t *testing.T) {

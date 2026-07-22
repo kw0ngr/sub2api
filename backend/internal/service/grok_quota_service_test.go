@@ -104,14 +104,15 @@ func (r *grokQuotaAccountRepoStub) SetSchedulable(_ context.Context, id int64, s
 }
 
 type grokQuotaHTTPUpstreamStub struct {
-	requestBody  string
-	requestURL   string
-	authHeader   string
-	acceptHeader string
-	calls        int
-	response     *http.Response
-	responses    []*http.Response
-	err          error
+	requestBody   string
+	requestURL    string
+	authHeader    string
+	acceptHeader  string
+	requestHeader http.Header
+	calls         int
+	response      *http.Response
+	responses     []*http.Response
+	err           error
 }
 
 func (u *grokQuotaHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
@@ -119,6 +120,7 @@ func (u *grokQuotaHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ i
 	u.requestURL = req.URL.String()
 	u.authHeader = req.Header.Get("Authorization")
 	u.acceptHeader = req.Header.Get("Accept")
+	u.requestHeader = req.Header.Clone()
 	if req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
 		u.requestBody = string(body)
@@ -179,7 +181,7 @@ func TestGrokQuotaService_ProbeHeadersFallbackUsesResponsesHealthProbe(t *testin
 		ID:          1895,
 		Platform:    PlatformGrok,
 		Type:        AccountTypeOAuth,
-		Credentials: map[string]any{"access_token": "token", "base_url": "https://api.x.ai/v1"},
+		Credentials: map[string]any{"access_token": "token", "base_url": "https://cli-chat-proxy.grok.com/v1"},
 		Concurrency: 1,
 	}
 	repo := &grokQuotaAccountRepoStub{account: account}
@@ -209,8 +211,15 @@ func TestGrokQuotaService_ProbeHeadersFallbackUsesResponsesHealthProbe(t *testin
 	require.True(t, result.HeadersObserved)
 	require.Equal(t, "header_probe_responses", result.Source)
 	require.Equal(t, "active_probe_responses", result.Snapshot.ObservationSource)
-	require.Equal(t, "https://api.x.ai/v1/responses", upstream.requestURL)
+	require.Equal(t, "https://cli-chat-proxy.grok.com/v1/responses", upstream.requestURL)
 	require.Equal(t, "application/json, text/event-stream", upstream.acceptHeader)
+	require.Equal(t, "xai-grok-cli", upstream.requestHeader.Get("x-xai-token-auth"))
+	require.Equal(t, "interactive", upstream.requestHeader.Get("x-grok-client-mode"))
+	require.Equal(t, "grok-4.5", upstream.requestHeader.Get("x-grok-model-override"))
+	require.NotEmpty(t, upstream.requestHeader.Get("x-grok-conv-id"))
+	require.NotEmpty(t, upstream.requestHeader.Get("x-grok-req-id"))
+	require.NotEmpty(t, upstream.requestHeader.Get("x-grok-session-id"))
+	require.NotEmpty(t, upstream.requestHeader.Get("x-grok-agent-id"))
 	require.Equal(t, "grok-4.5", gjson.Get(upstream.requestBody, "model").String())
 	require.Equal(t, "hi", gjson.Get(upstream.requestBody, "input").String())
 	require.True(t, gjson.Get(upstream.requestBody, "stream").Bool())

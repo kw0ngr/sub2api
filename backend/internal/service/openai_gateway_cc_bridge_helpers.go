@@ -69,7 +69,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	upstreamMsg string,
 	upstreamModel string,
 ) *UpstreamFailoverError {
-	if resp == nil || account == nil || !s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+	if resp == nil || account == nil || !s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 		return nil
 	}
 	upstreamDetail := ""

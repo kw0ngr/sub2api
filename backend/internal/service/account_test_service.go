@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -599,14 +600,12 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		}
 	}
 
-	// For API Key accounts with model mapping, map the model
-	if account.Type == "apikey" {
-		mapping := account.GetModelMapping()
-		if len(mapping) > 0 {
-			if mappedModel, exists := mapping[testModelID]; exists {
-				testModelID = mappedModel
-			}
-		}
+	// Match the production gateway's final model resolution. Grok OAuth uses
+	// account-level mappings too (including wildcard aliases), so testing the
+	// caller-facing alias directly can produce a result that real traffic never
+	// sees.
+	if account.Type == AccountTypeAPIKey || account.IsGrokOAuth() {
+		testModelID = account.GetMappedModel(testModelID)
 	}
 
 	if isOpenAIImageModel(testModelID) {
@@ -700,8 +699,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrok() {
 		req.Header.Set("Accept", "application/json, text/event-stream")
-		// cli-chat-proxy requires Grok CLI identity; bare Bearer yields 426.
-		applyGrokCLIClientHeaders(req.Header, account)
+		// cli-chat-proxy requires both static CLI identity and per-request
+		// conversation context; bare Bearer yields 426/403 depending on the
+		// upstream generation.
+		applyGrokCLIRequestHeaders(req.Header, account, testModelID)
 	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
@@ -742,13 +743,23 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		if isOAuth && s.accountRepo != nil {
+		requestLocalBuildProbe := isIgnorableGrokBuildProbeError(account, resp.StatusCode, body, testModelID)
+		if requestLocalBuildProbe {
+			slog.Info("grok_build_probe_account_test_health_mutation_skipped", "account_id", account.ID, "status_code", resp.StatusCode)
+		}
+		if isOAuth && s.accountRepo != nil && !requestLocalBuildProbe {
 			if resetAt := (&RateLimitService{}).calculateOpenAI429ResetTime(resp.Header); resetAt != nil {
 				_ = s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt)
 				account.RateLimitResetAt = resetAt
 			}
 		}
-		if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
+		if account.IsGrokOAuth() && isGrokInvalidCredentialError(resp.StatusCode, body) && s.accountRepo != nil {
+			errMsg := buildAPIKeyRuntimeErrorMessage(resp.StatusCode, body, "Grok credential rejected during account test")
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			if account.Schedulable {
+				_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+			}
+		} else if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
 			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)
 		} else if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			// OAuth 401: mark account as error and disable scheduling
@@ -764,7 +775,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if err := s.processOpenAIStream(c, ctx, account, resp.Body, !account.IsGrok()); err != nil {
 		return err
 	}
-	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	if isGrokBuildProbeRequest(account, testModelID) {
+		slog.Info("grok_build_probe_account_test_recovery_skipped", "account_id", account.ID)
+	} else {
+		s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	}
 	return nil
 }
 

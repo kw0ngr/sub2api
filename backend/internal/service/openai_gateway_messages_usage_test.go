@@ -56,7 +56,7 @@ func TestHandleAnthropicBufferedStreamingResponse_TopLevelTerminalUsage(t *testi
 	}
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	result, err := svc.handleAnthropicBufferedStreamingResponse(resp, c, "claude-sonnet-4", "gpt-5.4", "gpt-5.4", time.Now())
+	result, err := svc.handleAnthropicBufferedStreamingResponse(resp, c, nil, "claude-sonnet-4", "gpt-5.4", "gpt-5.4", time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 18, result.Usage.InputTokens)

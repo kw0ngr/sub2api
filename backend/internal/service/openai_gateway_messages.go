@@ -320,7 +320,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			)
 			return s.ForwardAsAnthropic(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 		}
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 			upstreamDetail := ""
 			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -366,7 +366,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
-		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
@@ -437,6 +437,7 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -452,6 +453,12 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	if finalResponse == nil {
 		writeAnthropicError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
 		return nil, fmt.Errorf("upstream stream ended without terminal event")
+	}
+	if strings.TrimSpace(finalResponse.Status) == "failed" {
+		payload, _ := json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
+		return nil, s.newOpenAIStreamFailoverError(
+			c, account, false, requestID, payload, openAICompatFailedResponseMessage(finalResponse), upstreamModel,
+		)
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -537,6 +544,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
+	var streamFailoverErr *UpstreamFailoverError
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -591,6 +599,13 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				zap.String("request_id", requestID),
 			)
 			return false
+		}
+		if strings.TrimSpace(event.Type) == "response.failed" {
+			payloadBytes := []byte(payload)
+			streamFailoverErr = s.newOpenAIStreamFailoverError(
+				c, account, false, requestID, payloadBytes, extractOpenAISSEErrorMessage(payloadBytes), upstreamModel,
+			)
+			return true
 		}
 
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
@@ -673,7 +688,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		message := "OpenAI messages stream ended before a terminal event"
 		if !clientOutputStarted {
-			return result, s.newOpenAIStreamFailoverError(c, account, false, requestID, nil, message)
+			return result, s.newOpenAIStreamFailoverError(c, account, false, requestID, nil, message, upstreamModel)
 		}
 		s.recordOpenAIMessagesStreamUpstreamError(c, account, requestID, "stream_missing_terminal", message)
 		return result, fmt.Errorf("stream usage incomplete: missing terminal event")
@@ -702,6 +717,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return missingTerminalErr()
 			}
 			if processFrame(frame) {
+				if streamFailoverErr != nil {
+					return resultWithUsage(), streamFailoverErr
+				}
 				return finalizeStream()
 			}
 		}
@@ -714,6 +732,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return missingTerminalErr()
 			}
 			if processFrame(frame) {
+				if streamFailoverErr != nil {
+					return resultWithUsage(), streamFailoverErr
+				}
 				return finalizeStream()
 			}
 		}
@@ -773,6 +794,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 						return missingTerminalErr()
 					}
 					if processFrame(frame) {
+						if streamFailoverErr != nil {
+							return resultWithUsage(), streamFailoverErr
+						}
 						return finalizeStream()
 					}
 				}
@@ -793,6 +817,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return missingTerminalErr()
 			}
 			if processFrame(frame) {
+				if streamFailoverErr != nil {
+					return resultWithUsage(), streamFailoverErr
+				}
 				return finalizeStream()
 			}
 

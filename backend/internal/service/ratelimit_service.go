@@ -120,6 +120,15 @@ const (
 // CheckErrorPolicy 检查自定义错误码和临时不可调度规则。
 // 自定义错误码开启时覆盖后续所有逻辑（包括临时不可调度）。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) ErrorPolicyResult {
+	if account == nil {
+		return ErrorPolicyNone
+	}
+	if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
+		// Keep this guard ahead of user-defined temp/custom rules. grok-build-0.1
+		// is an optional CLI capability probe, not evidence about account health.
+		slog.Info("grok_build_probe_error_policy_skipped", "account_id", account.ID, "status_code", statusCode)
+		return ErrorPolicyNone
+	}
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
 			return ErrorPolicyMatched
@@ -149,12 +158,13 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 			return true
 		}
 		// Grok clients periodically send grok-build-0.1 as an optional capability
-		// probe. Some otherwise healthy OAuth subscriptions answer 402 while older
-		// gateways answer 404/400. Those responses describe the probe model, not the
-		// account: keep request-local failover for compatibility, but do not persist
-		// any account or model cooldown. Authentication failures are intentionally
-		// handled above.
-		if isIgnorableGrokBuildProbeError(account, statusCode, firstRequestedModel(requestedModel)) {
+		// probe. The current official catalog no longer advertises that model, and
+		// different gateway generations answer 400/402/403/404/429/5xx. Those
+		// responses describe a disposable probe, not account health: keep
+		// request-local failover, but never persist account/model cooldown or an
+		// error state. Genuine invalid credentials are handled above and 401 remains
+		// an authentication signal.
+		if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
 			slog.Info(
 				"grok_build_probe_health_mutation_skipped",
 				"account_id", account.ID,
@@ -394,7 +404,7 @@ genericRuntimePath:
 	return shouldDisable
 }
 
-func isIgnorableGrokBuildProbeError(account *Account, statusCode int, requestedModel string) bool {
+func isGrokBuildProbeRequest(account *Account, requestedModel string) bool {
 	if account == nil || !account.IsGrokOAuth() {
 		return false
 	}
@@ -403,19 +413,32 @@ func isIgnorableGrokBuildProbeError(account *Account, statusCode int, requestedM
 	if model == "" {
 		return false
 	}
+	// Some callers already pass the final upstream model. Check it before
+	// applying account mappings so a broad wildcard cannot accidentally remap
+	// grok-build-0.1 a second time and defeat the health isolation guard.
+	if strings.EqualFold(model, grokBuildProbeModel) {
+		return true
+	}
 	if mapped := strings.TrimSpace(account.GetMappedModel(model)); mapped != "" {
 		model = mapped
 	}
-	if !strings.EqualFold(model, grokBuildProbeModel) {
+	return strings.EqualFold(model, grokBuildProbeModel)
+}
+
+func isIgnorableGrokBuildProbeError(account *Account, statusCode int, responseBody []byte, requestedModel string) bool {
+	if !isGrokBuildProbeRequest(account, requestedModel) {
+		return false
+	}
+	// xAI sometimes reports rejected OAuth credentials as a 400/403 API-key
+	// error. That is a genuine authentication signal even when the requested
+	// model happened to be the disposable Build probe.
+	if isGrokInvalidCredentialError(statusCode, responseBody) {
 		return false
 	}
 
-	switch statusCode {
-	case http.StatusBadRequest, http.StatusPaymentRequired, http.StatusNotFound:
-		return true
-	default:
-		return false
-	}
+	// Any non-authentication error from this optional probe is request-local.
+	// A later real-model request is the only reliable account health signal.
+	return statusCode >= http.StatusBadRequest && statusCode != http.StatusUnauthorized
 }
 
 func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Context, account *Account, responseBody []byte, requestedModel string) bool {
@@ -1976,7 +1999,14 @@ const tempUnschedMessageMaxBytes = 2048
 // HandleUpstreamModelNotFound records only the failed account-model pair.
 // This avoids disabling a healthy API key merely because one routed model is unavailable.
 func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, account *Account, requestedModel string, statusCode int, responseBody []byte) bool {
-	if s == nil || s.accountRepo == nil || account == nil || !account.ShouldHandleErrorCode(statusCode) {
+	if s == nil || account == nil {
+		return false
+	}
+	if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, requestedModel) {
+		slog.Info("grok_build_probe_model_cooldown_skipped", "account_id", account.ID, "status_code", statusCode)
+		return true
+	}
+	if s.accountRepo == nil || !account.ShouldHandleErrorCode(statusCode) {
 		return false
 	}
 	if !isUpstreamModelNotFoundError(statusCode, responseBody) {
@@ -2012,6 +2042,10 @@ func firstRequestedModel(requestedModel []string) string {
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) bool {
 	if account == nil {
+		return false
+	}
+	if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
+		slog.Info("grok_build_probe_temp_unschedulable_skipped", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
 	if !account.IsTempUnschedulableEnabled() {
@@ -2166,6 +2200,12 @@ func truncateTempUnschedMessage(body []byte, maxBytes int) string {
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleStreamTimeout(ctx context.Context, account *Account, model string) bool {
 	if account == nil {
+		return false
+	}
+	if isGrokBuildProbeRequest(account, model) {
+		// A disposable capability probe must not contribute to the account-wide
+		// timeout counter or trigger its configured cooldown/error threshold.
+		slog.Info("grok_build_probe_stream_timeout_health_mutation_skipped", "account_id", account.ID)
 		return false
 	}
 

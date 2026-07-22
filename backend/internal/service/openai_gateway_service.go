@@ -2019,6 +2019,23 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
 }
 
+func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
+	account *Account,
+	statusCode int,
+	upstreamMsg string,
+	upstreamBody []byte,
+	requestedModel string,
+) bool {
+	// grok-build-0.1 is an optional CLI capability probe. Even statuses such as
+	// 400/404/426, which are normally returned directly to the caller, must stay
+	// request-local and release the scheduler to try another account. A genuine
+	// credential rejection is still persisted by HandleUpstreamError.
+	if isIgnorableGrokBuildProbeError(account, statusCode, upstreamBody, requestedModel) {
+		return true
+	}
+	return s.shouldFailoverOpenAIUpstreamResponse(statusCode, upstreamMsg, upstreamBody)
+}
+
 func openAIModelForUpstreamError(requestBody []byte, requestedModel ...string) string {
 	if len(requestedModel) > 0 {
 		if model := strings.TrimSpace(requestedModel[0]); model != "" {
@@ -2746,7 +2763,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
 		}
 
 		// Handle error response
@@ -2792,7 +2809,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 				return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 			}
-			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+			if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -2991,7 +3008,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true, policyModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -3007,7 +3024,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	if reqStream {
-		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime)
+		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, policyModel)
 		if err != nil {
 			return nil, err
 		}
@@ -3530,6 +3547,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	upstreamRequestID string,
 	payload []byte,
 	message string,
+	requestedModel ...string,
 ) *UpstreamFailoverError {
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
 	if message == "" {
@@ -3572,7 +3590,9 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		if c != nil && c.Request != nil {
 			ctx = c.Request.Context()
 		}
-		_ = s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
+		_ = s.rateLimitService.HandleUpstreamError(
+			ctx, account, statusCode, headers, body, openAIModelForUpstreamError(nil, requestedModel...),
+		)
 	}
 	return &UpstreamFailoverError{
 		StatusCode:   statusCode,
@@ -3614,6 +3634,7 @@ func (s *OpenAIGatewayService) recordOpenAIStreamFailedSideEffects(
 	upstreamRequestID string,
 	payload []byte,
 	message string,
+	requestedModel ...string,
 ) {
 	if s == nil || s.rateLimitService == nil || account == nil || len(payload) == 0 {
 		return
@@ -3624,7 +3645,9 @@ func (s *OpenAIGatewayService) recordOpenAIStreamFailedSideEffects(
 	if upstreamRequestID = strings.TrimSpace(upstreamRequestID); upstreamRequestID != "" {
 		headers.Set("x-request-id", upstreamRequestID)
 	}
-	_ = s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
+	_ = s.rateLimitService.HandleUpstreamError(
+		ctx, account, statusCode, headers, body, openAIModelForUpstreamError(nil, requestedModel...),
+	)
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
@@ -3633,6 +3656,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	c *gin.Context,
 	account *Account,
 	startTime time.Time,
+	requestedModel ...string,
 ) (*openaiStreamingResultPassthrough, error) {
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -3699,10 +3723,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, requestedModel...)
 					}
 				}
-				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
+				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage, requestedModel...)
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
@@ -3759,7 +3783,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				msg += ": " + errText
 			}
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg, requestedModel...)
 		}
 		if clientDisconnected {
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete after disconnect: %w", err)
@@ -3783,7 +3807,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", requestedModel...)
 		}
 		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, errors.New("stream usage incomplete: missing terminal event")
 	}
@@ -4042,7 +4066,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Free Grok Build / cli-chat-proxy requires Grok CLI identity headers.
 	// Without them upstream returns 426: "Grok CLI version (none) is outdated".
 	if account != nil && account.Platform == PlatformGrok {
-		applyGrokCLIClientHeaders(req.Header, account)
+		if c != nil && c.Request != nil {
+			copyGrokCLIRequestContextHeaders(req.Header, c.Request.Header)
+		}
+		applyGrokCLIRequestHeaders(req.Header, account, openAIModelForUpstreamError(body))
 	}
 
 	// Ensure required headers exist
@@ -4051,69 +4078,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 
 	return req, nil
-}
-
-// applyGrokCLIClientHeaders injects cli-chat-proxy identity headers for Grok accounts.
-// Prefer credentials/extra overrides when present; otherwise use xai defaults.
-func applyGrokCLIClientHeaders(h http.Header, account *Account) {
-	if h == nil {
-		return
-	}
-	// Always ensure identity headers for Grok oauth/apikey against free Build proxy
-	// (and harmless on api.x.ai).
-	defaults := xai.DefaultCLIClientHeaders()
-
-	// Optional per-account overrides stored in credentials.headers map or flat keys.
-	overrides := map[string]string{}
-	if account != nil {
-		if raw, ok := account.Credentials["headers"]; ok {
-			switch v := raw.(type) {
-			case map[string]any:
-				for k, val := range v {
-					if s, ok := val.(string); ok && strings.TrimSpace(s) != "" {
-						overrides[k] = strings.TrimSpace(s)
-					}
-				}
-			case map[string]string:
-				for k, s := range v {
-					if strings.TrimSpace(s) != "" {
-						overrides[k] = strings.TrimSpace(s)
-					}
-				}
-			}
-		}
-		for _, key := range []string{
-			"x-grok-client-version",
-			"x-xai-token-auth",
-			"x-authenticateresponse",
-			"x-grok-client-identifier",
-			"user_agent",
-			"User-Agent",
-		} {
-			if s := strings.TrimSpace(account.GetCredential(key)); s != "" {
-				overrides[key] = s
-			}
-		}
-	}
-
-	setIfEmpty := func(name, value string) {
-		if strings.TrimSpace(value) == "" {
-			return
-		}
-		if strings.TrimSpace(h.Get(name)) == "" {
-			h.Set(name, value)
-		}
-	}
-	// Prefer explicit overrides (force set), then fill defaults if missing.
-	for k, v := range overrides {
-		if k == "user_agent" {
-			k = "User-Agent"
-		}
-		h.Set(k, v)
-	}
-	for k, v := range defaults {
-		setIfEmpty(k, v)
-	}
 }
 
 func isOpenAIInternalOAuthAccount(account *Account) bool {
@@ -4499,6 +4463,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 					upstreamRequestID,
 					nil,
 					"OpenAI stream ended before a terminal event",
+					mappedModel,
 				)
 			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
@@ -4544,7 +4509,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if errText := strings.TrimSpace(scanErr.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, msg), true
+			return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, msg, mappedModel), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
@@ -4575,11 +4540,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						sawFailedEvent = true
-						streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
+						streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, mappedModel)
 						return
 					}
 				}
-				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage)
+				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage, mappedModel)
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
@@ -4974,7 +4939,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
 	// may return SSE even when stream=false was requested.
 	if isEventStreamResponse(resp.Header) {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
 	bodyLooksLikeSSE := bodyHasSSEFraming(body)
 
@@ -4983,13 +4948,19 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// API-key traffic only uses it after JSON usage parsing fails, avoiding
 	// false positives when ordinary response text contains SSE-looking text.
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
+	}
+	if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "status").String()), "failed") ||
+		strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "type").String()), "response.failed") {
+		return nil, s.newOpenAIStreamFailoverError(
+			c, account, false, strings.TrimSpace(resp.Header.Get("x-request-id")), body, extractOpenAISSEErrorMessage(body), mappedModel,
+		)
 	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
 		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
@@ -5031,7 +5002,7 @@ func bodyHasSSEFraming(body []byte) bool {
 	return false
 }
 
-func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*OpenAIUsage, error) {
+func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*OpenAIUsage, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 
@@ -5064,7 +5035,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			return nil, s.newOpenAIStreamFailoverError(
+				c, account, false, strings.TrimSpace(resp.Header.Get("x-request-id")), terminalPayload, msg, mappedModel,
+			)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
 		if originalModel != mappedModel {

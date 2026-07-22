@@ -2,6 +2,24 @@ package xai
 
 import "testing"
 
+func TestDefaultCLIClientHeadersMatchesCurrentGrokBuildWireIdentity(t *testing.T) {
+	t.Setenv(EnvCLIClientVersion, "")
+
+	headers := DefaultCLIClientHeaders()
+	if got := headers["x-grok-client-version"]; got != DefaultCLIClientVersion {
+		t.Fatalf("x-grok-client-version = %q, want %q", got, DefaultCLIClientVersion)
+	}
+	if DefaultCLIClientVersion != "0.2.109" {
+		t.Fatalf("DefaultCLIClientVersion = %q, want current official version 0.2.109", DefaultCLIClientVersion)
+	}
+	if got := headers["x-grok-client-mode"]; got != DefaultCLIClientMode {
+		t.Fatalf("x-grok-client-mode = %q, want %q", got, DefaultCLIClientMode)
+	}
+	if got := headers["User-Agent"]; got != DefaultCLIUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", got, DefaultCLIUserAgent)
+	}
+}
+
 func TestIsCLIChatProxyBaseURLMatchesExactHost(t *testing.T) {
 	tests := []struct {
 		name    string

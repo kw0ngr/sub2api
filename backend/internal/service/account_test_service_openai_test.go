@@ -74,9 +74,13 @@ func newOpenAISuccessStream(text string) io.ReadCloser {
 
 type openAIAccountTestRepo struct {
 	mockAccountRepoForGemini
-	updatedExtra  map[string]any
-	rateLimitedID int64
-	rateLimitedAt *time.Time
+	updatedExtra        map[string]any
+	rateLimitedID       int64
+	rateLimitedAt       *time.Time
+	setErrorCalls       int
+	setErrorMessage     string
+	setSchedulableCalls int
+	lastSchedulable     bool
 }
 
 func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -87,6 +91,18 @@ func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates 
 func (r *openAIAccountTestRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
 	r.rateLimitedID = id
 	r.rateLimitedAt = &resetAt
+	return nil
+}
+
+func (r *openAIAccountTestRepo) SetError(_ context.Context, _ int64, message string) error {
+	r.setErrorCalls++
+	r.setErrorMessage = message
+	return nil
+}
+
+func (r *openAIAccountTestRepo) SetSchedulable(_ context.Context, _ int64, schedulable bool) error {
+	r.setSchedulableCalls++
+	r.lastSchedulable = schedulable
 	return nil
 }
 
@@ -239,10 +255,13 @@ func TestAccountTestService_GrokUsesSharedResponsesProbe(t *testing.T) {
 		Credentials: map[string]any{
 			"access_token": "grok-access-token",
 			"base_url":     "https://api.x.ai/v1",
+			"model_mapping": map[string]any{
+				"grok": "grok-4.5",
+			},
 		},
 	}
 
-	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok")
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 1)
@@ -250,6 +269,10 @@ func TestAccountTestService_GrokUsesSharedResponsesProbe(t *testing.T) {
 	require.Equal(t, "https://api.x.ai/v1/responses", req.URL.String())
 	require.Equal(t, "Bearer grok-access-token", req.Header.Get("Authorization"))
 	require.Equal(t, "application/json, text/event-stream", req.Header.Get("Accept"))
+	require.Equal(t, "interactive", req.Header.Get("x-grok-client-mode"))
+	require.Equal(t, "grok-4.5", req.Header.Get("x-grok-model-override"))
+	require.NotEmpty(t, req.Header.Get("x-grok-conv-id"))
+	require.NotEmpty(t, req.Header.Get("x-grok-req-id"))
 	bodyReader, bodyErr := req.GetBody()
 	require.NoError(t, bodyErr)
 	defer func() { _ = bodyReader.Close() }()
@@ -261,6 +284,107 @@ func TestAccountTestService_GrokUsesSharedResponsesProbe(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "store").Exists())
 	require.False(t, gjson.GetBytes(body, "instructions").Exists())
 	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_GrokBuildProbe429DoesNotPersistRateLimit(t *testing.T) {
+	ctx, recorder := newTestContext()
+	resp := newJSONResponse(http.StatusTooManyRequests, `{"error":{"message":"probe rate limited"}}`)
+	resp.Header.Set("Retry-After", "60")
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "grok-access-token",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-build": "grok-build-0.1",
+			},
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-build")
+
+	require.Error(t, err)
+	require.Nil(t, repo.rateLimitedAt)
+	require.Zero(t, repo.rateLimitedID)
+	require.Contains(t, recorder.Body.String(), "probe rate limited")
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "grok-build-0.1", upstream.requests[0].Header.Get("x-grok-model-override"))
+}
+
+func TestAccountTestService_GrokBuildProbeSuccessDoesNotRecoverAccount(t *testing.T) {
+	ctx, _ := newTestContext()
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = newOpenAISuccessStream("probe response")
+
+	repo := &restoreRuntimeAccountRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:           2108,
+		Platform:     PlatformGrok,
+		Type:         AccountTypeOAuth,
+		Status:       StatusError,
+		Schedulable:  false,
+		ErrorMessage: "real model permission denied",
+		Concurrency:  1,
+		Credentials: map[string]any{
+			"access_token": "grok-access-token",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-build": "grok-build-0.1",
+			},
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-build")
+
+	require.NoError(t, err)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearTempCalls)
+	require.Zero(t, repo.clearRateCalls)
+	require.Zero(t, repo.clearModelCalls)
+	require.Nil(t, repo.schedulableSet)
+}
+
+func TestAccountTestService_GrokBuildProbeInvalidCredentialStillDisables(t *testing.T) {
+	ctx, _ := newTestContext()
+	resp := newJSONResponse(http.StatusBadRequest, `{"code":"invalid-argument","error":"Incorrect API key provided."}`)
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "rejected-token",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-build": "grok-build-0.1",
+			},
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-build")
+
+	require.Error(t, err)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.setErrorMessage, "Grok credential rejected")
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+	require.Nil(t, repo.rateLimitedAt)
 }
 
 func TestAccountTestService_OpenAIStreamEOFBeforeCompletedFails(t *testing.T) {

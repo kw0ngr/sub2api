@@ -406,7 +406,9 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("User-Agent", "sub2api-grok-quota-probe/1.0")
+	// Use the exact same CLI wire identity as real inference and account tests.
+	// A quota probe must not disagree with the request path it is diagnosing.
+	applyGrokCLIRequestHeaders(req.Header, account, grokQuotaDefaultModel)
 	resp, err := s.httpUpstream.Do(req, s.resolveProxyURL(ctx, account), account.ID, maxInt(account.Concurrency, 1))
 	if err != nil {
 		return nil, 0, err
