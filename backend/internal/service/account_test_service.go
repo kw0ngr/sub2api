@@ -786,7 +786,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	if err := s.processOpenAIStream(c, ctx, account, resp.Body, !account.IsGrok()); err != nil {
+	if err := s.processOpenAIStream(c, ctx, account, resp.Body, !account.IsGrok(), testModelID); err != nil {
 		return err
 	}
 	if isGrokBuildProbeRequest(account, testModelID) {
@@ -1387,7 +1387,7 @@ func isStreamOnlyErrorText(text string, deltaCount int, completedSeen bool) bool
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API.
 // account may be nil for OAuth accounts where state marking is not needed.
-func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader, requireExpectedOutput bool) error {
+func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader, requireExpectedOutput bool, requestedModel ...string) error {
 	reader := bufio.NewReader(body)
 
 	var (
@@ -1484,6 +1484,16 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 								}
 							}
 						}
+						if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
+							payload := []byte(jsonStr)
+							(&RateLimitService{accountRepo: s.accountRepo}).HandleUpstreamModelNotFound(
+								ctx,
+								account,
+								firstRequestedModel(requestedModel),
+								openAIStreamFailedEventHTTPStatus(payload, errorMsg),
+								payload,
+							)
+						}
 						return s.sendErrorAndEnd(c, errorMsg)
 					case "error":
 						errorMsg := "Unknown error"
@@ -1499,6 +1509,11 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 						// Structured error event: classify and mark account state.
 						if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
 							syntheticBody := []byte(`{"error":{"message":` + fmt.Sprintf("%q", errorMsg) + `,"code":` + fmt.Sprintf("%q", errorCode) + `}}`)
+							if (&RateLimitService{accountRepo: s.accountRepo}).HandleUpstreamModelNotFound(
+								ctx, account, firstRequestedModel(requestedModel), http.StatusForbidden, syntheticBody,
+							) {
+								return s.sendErrorAndEnd(c, errorMsg)
+							}
 							action := ClassifyAPIKeyStatusAction(account, http.StatusForbidden, syntheticBody)
 							switch action {
 							case APIKeyStatusActionPermanentDisable:

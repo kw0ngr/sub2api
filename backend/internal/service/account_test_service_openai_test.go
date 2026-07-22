@@ -620,7 +620,8 @@ func TestAccountTestService_OpenAIApiKeyModelNotFoundUsesModelCooldown(t *testin
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newSoraTestContext()
 
-	resp := newJSONResponse(http.StatusBadGateway, `{"type":"response.failed","response":{"error":{"code":"model_not_found","message":"Project does not have access to model gpt-5.6-sol"}}}`)
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader("data: " + `{"type":"response.failed","response":{"error":{"code":"model_not_found","message":"Project does not have access to model gpt-5.6-sol"}}}` + "\n\n"))
 	repo := &openAIAccountTestRepo{}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
 	svc := &AccountTestService{
@@ -646,7 +647,7 @@ func TestAccountTestService_OpenAIApiKeyModelNotFoundUsesModelCooldown(t *testin
 	require.NotNil(t, repo.modelRateLimitAt)
 	require.Zero(t, repo.setErrorCalls)
 	require.Zero(t, repo.setSchedulableCalls)
-	require.Contains(t, recorder.Body.String(), "model_not_found")
+	require.Contains(t, recorder.Body.String(), "Project does not have access")
 }
 
 func TestAccountTestService_DeepSeekAPIKeyUsesAnthropicCompatibleBaseURL(t *testing.T) {
