@@ -63,6 +63,10 @@ const ModelWhitelistSelectorStub = defineComponent({
     modelValue: {
       type: Array,
       default: () => []
+    },
+    accountId: {
+      type: Number,
+      default: undefined
     }
   },
   emits: ['update:modelValue'],
@@ -78,6 +82,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <span data-testid="model-whitelist-value">
         {{ Array.isArray(modelValue) ? modelValue.join(',') : '' }}
       </span>
+      <span data-testid="model-whitelist-account-id">{{ accountId }}</span>
     </div>
   `
 })
@@ -154,6 +159,42 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
       'gpt-5.2': 'gpt-5.2'
+    })
+  })
+
+  it('loads, sync-enables, and persists Grok OAuth model restrictions', async () => {
+    const account = {
+      ...buildAccount(),
+      id: 2108,
+      name: 'Grok OAuth',
+      platform: 'grok',
+      type: 'oauth',
+      credentials: {
+        access_token: 'oauth-token',
+        base_url: 'https://cli-chat-proxy.grok.com/v1',
+        model_mapping: {
+          'grok-4.5': 'grok-4.5'
+        }
+      }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('grok-4.5')
+    expect(wrapper.get('[data-testid="model-whitelist-account-id"]').text()).toBe('2108')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      access_token: 'oauth-token',
+      base_url: 'https://cli-chat-proxy.grok.com/v1',
+      model_mapping: {
+        'grok-4.5': 'grok-4.5'
+      }
     })
   })
 

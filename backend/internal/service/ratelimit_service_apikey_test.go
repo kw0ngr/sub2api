@@ -445,6 +445,164 @@ func TestRateLimitService_HandleUpstreamError_OpenAIAPIKey402AccountNotActivePer
 	require.Equal(t, 1, repo.setErrorCalls)
 }
 
+func TestRateLimitService_HandleUpstreamError_GrokOAuthBuildProbe402DoesNotMutateHealth(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"base_url": "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-build-0.1": "grok-build-0.1",
+			},
+		},
+	}
+	body := []byte(`{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription."}`)
+
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusPaymentRequired,
+		http.Header{},
+		body,
+		"grok-build-0.1",
+	)
+	require.True(t, shouldDisable, "the optional probe may fail over without mutating persistent health")
+	require.Zero(t, repo.setErrorCalls, "a probe error must not poison the account")
+	require.Zero(t, repo.setSchedulableCalls, "a probe error must not change the scheduling switch")
+	require.Zero(t, repo.tempCalls)
+	require.Empty(t, repo.modelRateLimitScopes, "a probe error must not create a model cooldown")
+	require.Empty(t, repo.modelRateLimitResets)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokOAuthBuildProbe404DoesNotMutateHealth(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2104,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"grok-build": "grok-build-0.1",
+			},
+		},
+	}
+	body := []byte(`{"error":{"code":"model_not_found","message":"Model grok-build-0.1 was not found"}}`)
+
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusNotFound,
+		http.Header{},
+		body,
+		"grok-build",
+	)
+
+	require.True(t, shouldDisable)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Empty(t, repo.modelRateLimitScopes)
+	require.Empty(t, repo.modelRateLimitResets)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402UsesModelCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"base_url": "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-composer": "grok-composer-2.5-fast",
+			},
+		},
+	}
+	body := []byte(`{"code":"personal-team-blocked:spending-limit","error":"You need a Grok subscription for this model."}`)
+
+	before := time.Now()
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusPaymentRequired,
+		http.Header{},
+		body,
+		"grok-composer",
+	)
+	after := time.Now()
+
+	require.True(t, shouldDisable, "a genuine model entitlement mismatch should fail over")
+	require.Zero(t, repo.setErrorCalls, "a model entitlement error must not poison the account")
+	require.Zero(t, repo.setSchedulableCalls, "the account scheduling switch must stay enabled")
+	require.Zero(t, repo.tempCalls)
+	require.Equal(t, []string{"grok-composer-2.5-fast"}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+	require.WithinDuration(t, before.Add(grokSubscriptionModelCooldown), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402WithoutModelUsesTemporaryCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	body := []byte(`{"code":"personal-team-blocked:spending-limit","error":"subscription required"}`)
+
+	before := time.Now()
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusPaymentRequired, http.Header{}, body)
+	after := time.Now()
+
+	require.True(t, shouldDisable)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.NotNil(t, repo.lastTempUntil)
+	require.WithinDuration(t, before.Add(grokSubscriptionAccountCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
+}
+
+func TestRateLimitService_HandleUpstreamError_GrokOAuthGeneric402StillDisablesAccount(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2200,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	body := []byte(`{"error":{"message":"account billing is inactive","code":"billing_inactive"}}`)
+
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusPaymentRequired,
+		http.Header{},
+		body,
+		"grok-4.5",
+	)
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+	require.Empty(t, repo.modelRateLimitScopes)
+}
+
 // TestRateLimitService_HandleAuthError_ClosesSchedulingSwitch
 // 验证 handleAuthError 在永久禁用 key 时同步关闭调度开关
 func TestRateLimitService_HandleAuthError_ClosesSchedulingSwitch(t *testing.T) {

@@ -150,6 +150,28 @@ func TestAccountTestService_RestoreGrokOAuthAfterSuccessfulTest(t *testing.T) {
 	require.True(t, *repo.schedulableSet)
 }
 
+func TestAccountTestService_RestoreGrokOAuthAfterSuccessfulTestClearsStalePaymentError(t *testing.T) {
+	repo := &restoreRuntimeAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{
+		ID:           2108,
+		Platform:     PlatformGrok,
+		Type:         AccountTypeOAuth,
+		Status:       StatusError,
+		Schedulable:  false,
+		ErrorMessage: "Payment required (402): insufficient balance or billing issue",
+	}
+
+	svc.restoreAPIKeySchedulingAfterSuccessfulTest(context.Background(), account)
+
+	require.Equal(t, 1, repo.clearErrorCalls)
+	require.Equal(t, 1, repo.clearTempCalls)
+	require.Equal(t, 1, repo.clearRateCalls)
+	require.Equal(t, 1, repo.clearModelCalls)
+	require.NotNil(t, repo.schedulableSet)
+	require.True(t, *repo.schedulableSet)
+}
+
 func TestAccountTestService_RestoreGrokOAuthKeepsManualUnschedulable(t *testing.T) {
 	repo := &restoreRuntimeAccountRepo{}
 	svc := &AccountTestService{accountRepo: repo}

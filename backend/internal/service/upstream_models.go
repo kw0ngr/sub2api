@@ -297,6 +297,12 @@ func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Contex
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if account.Platform == PlatformGrok {
+		// cli-chat-proxy protects /models with the same Grok CLI identity
+		// contract as inference endpoints. Keep live model synchronization on
+		// the exact same default + per-account override header path.
+		applyGrokCLIClientHeaders(req.Header, account)
+	}
 	return req, nil
 }
 

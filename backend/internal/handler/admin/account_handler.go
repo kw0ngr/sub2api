@@ -2288,7 +2288,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 	if account.Platform == service.PlatformGrok {
-		response.Success(c, xaiDefaultModels())
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			response.Success(c, xai.DefaultModels())
+			return
+		}
+		response.Success(c, xaiModelsForMapping(mapping))
 		return
 	}
 
@@ -2347,16 +2352,27 @@ func glmDefaultModels() []claude.Model {
 	return models
 }
 
-func xaiDefaultModels() []claude.Model {
+func xaiModelsForMapping(mapping map[string]string) []xai.Model {
 	defaults := xai.DefaultModels()
-	models := make([]claude.Model, 0, len(defaults))
+	defaultByID := make(map[string]xai.Model, len(defaults))
 	for _, model := range defaults {
-		models = append(models, claude.Model{
-			ID:          model.ID,
-			Type:        "model",
-			DisplayName: model.DisplayName,
-			CreatedAt:   "",
-		})
+		defaultByID[model.ID] = model
+	}
+
+	requestedModels := make([]string, 0, len(mapping))
+	for requestedModel := range mapping {
+		requestedModels = append(requestedModels, requestedModel)
+	}
+	sort.Strings(requestedModels)
+
+	models := make([]xai.Model, 0, len(requestedModels))
+	for _, requestedModel := range requestedModels {
+		if model, ok := defaultByID[requestedModel]; ok {
+			models = append(models, model)
+			continue
+		}
+		custom := xai.Models([]string{requestedModel})
+		models = append(models, custom[0])
 	}
 	return models
 }

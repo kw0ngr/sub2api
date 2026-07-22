@@ -224,7 +224,11 @@ func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx cont
 			strings.TrimSpace(account.ErrorMessage) != "" ||
 			account.TempUnschedulableUntil != nil ||
 			strings.TrimSpace(account.TempUnschedulableReason) != ""
-		if !account.IsGrokOAuth() || !hasRecoverableRuntimeState || !isRecoverableGrokProbeError(account.ErrorMessage+" "+account.TempUnschedulableReason) {
+		// A successful real inference test is stronger evidence than the stale
+		// runtime error text. Recover Grok OAuth accounts from any machine-generated
+		// error/cooldown, while preserving an active account that an admin manually
+		// made unschedulable (it has no runtime state to clear).
+		if !account.IsGrokOAuth() || !hasRecoverableRuntimeState {
 			return
 		}
 	}

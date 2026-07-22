@@ -64,8 +64,11 @@ func DefaultCLIClientHeaders() map[string]string {
 
 // IsCLIChatProxyBaseURL reports whether baseURL points at free Build CLI proxy.
 func IsCLIChatProxyBaseURL(baseURL string) bool {
-	u := strings.ToLower(strings.TrimSpace(baseURL))
-	return strings.Contains(u, "cli-chat-proxy.grok.com")
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(u.Hostname()), "cli-chat-proxy.grok.com")
 }
 
 var (

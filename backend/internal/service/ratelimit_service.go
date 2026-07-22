@@ -71,6 +71,13 @@ const (
 	openAIImageRateLimitReason          = "openai_image_rate_limited"
 )
 
+const (
+	grokSubscriptionModelCooldown   = 6 * time.Hour
+	grokSubscriptionAccountCooldown = 30 * time.Minute
+	grokSubscriptionSpendingCode    = "personal-team-blocked:spending-limit"
+	grokBuildProbeModel             = "grok-build-0.1"
+)
+
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
 
 // NewRateLimitService 创建RateLimitService实例
@@ -139,6 +146,21 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 				msg := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "Grok credential rejected")
 				s.handleAuthError(ctx, account, msg)
 			}
+			return true
+		}
+		// Grok clients periodically send grok-build-0.1 as an optional capability
+		// probe. Some otherwise healthy OAuth subscriptions answer 402 while older
+		// gateways answer 404/400. Those responses describe the probe model, not the
+		// account: keep request-local failover for compatibility, but do not persist
+		// any account or model cooldown. Authentication failures are intentionally
+		// handled above.
+		if isIgnorableGrokBuildProbeError(account, statusCode, firstRequestedModel(requestedModel)) {
+			slog.Info(
+				"grok_build_probe_health_mutation_skipped",
+				"account_id", account.ID,
+				"status_code", statusCode,
+				"model", grokBuildProbeModel,
+			)
 			return true
 		}
 		customErrorCodesDisabledPool := account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()
@@ -319,6 +341,14 @@ genericRuntimePath:
 			shouldDisable = true
 			break
 		}
+		// Grok OAuth subscription entitlements are model-specific. In particular,
+		// cli-chat-proxy Free accounts can use grok-4.5 while plan-gated models
+		// return personal-team-blocked:spending-limit. Do not turn that single
+		// model failure into a permanent account-wide error.
+		if s.handleGrokSubscriptionSpendingLimit(ctx, account, responseBody, firstRequestedModel(requestedModel)) {
+			shouldDisable = true
+			break
+		}
 		// 支付要求：余额不足或计费问题，停止调度
 		msg := "Payment required (402): insufficient balance or billing issue"
 		if upstreamMsg != "" {
@@ -362,6 +392,89 @@ genericRuntimePath:
 	}
 
 	return shouldDisable
+}
+
+func isIgnorableGrokBuildProbeError(account *Account, statusCode int, requestedModel string) bool {
+	if account == nil || !account.IsGrokOAuth() {
+		return false
+	}
+
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		return false
+	}
+	if mapped := strings.TrimSpace(account.GetMappedModel(model)); mapped != "" {
+		model = mapped
+	}
+	if !strings.EqualFold(model, grokBuildProbeModel) {
+		return false
+	}
+
+	switch statusCode {
+	case http.StatusBadRequest, http.StatusPaymentRequired, http.StatusNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Context, account *Account, responseBody []byte, requestedModel string) bool {
+	if account == nil || !account.IsGrokOAuth() || !isGrokSubscriptionSpendingLimit(responseBody) {
+		return false
+	}
+
+	modelKey := strings.TrimSpace(requestedModel)
+	if modelKey != "" {
+		modelKey = strings.TrimSpace(account.GetMappedModel(modelKey))
+	}
+
+	if s == nil || s.accountRepo == nil {
+		return true
+	}
+
+	if modelKey != "" {
+		resetAt := time.Now().Add(grokSubscriptionModelCooldown)
+		if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt); err != nil {
+			slog.Warn("grok_subscription_model_rate_limit_set_failed", "account_id", account.ID, "model", modelKey, "error", err)
+			return true
+		}
+		slog.Warn(
+			"grok_subscription_model_rate_limited",
+			"account_id", account.ID,
+			"model", modelKey,
+			"upstream_code", grokSubscriptionSpendingCode,
+			"reset_at", resetAt,
+			"reset_in", time.Until(resetAt).Truncate(time.Second),
+		)
+		return true
+	}
+
+	// Some auxiliary paths do not carry a model name. Preserve automatic
+	// recovery there as well, but cool down the account briefly to avoid a
+	// tight retry loop until a model-aware request or capability sync occurs.
+	until := time.Now().Add(grokSubscriptionAccountCooldown)
+	reason := "Grok subscription spending limit (402)"
+	if upstreamMsg := strings.TrimSpace(gjson.GetBytes(responseBody, "error").String()); upstreamMsg != "" {
+		reason += ": " + truncateForLog([]byte(sanitizeUpstreamErrorMessage(upstreamMsg)), 512)
+	}
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("grok_subscription_temp_unschedulable_set_failed", "account_id", account.ID, "error", err)
+		return true
+	}
+	slog.Warn(
+		"grok_subscription_temp_unschedulable",
+		"account_id", account.ID,
+		"upstream_code", grokSubscriptionSpendingCode,
+		"until", until,
+	)
+	return true
+}
+
+func isGrokSubscriptionSpendingLimit(responseBody []byte) bool {
+	if len(responseBody) == 0 {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(responseBody)), grokSubscriptionSpendingCode)
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.

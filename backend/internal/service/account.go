@@ -65,6 +65,7 @@ type Account struct {
 	modelMappingCacheRawPtr         uintptr
 	modelMappingCacheRawLen         int
 	modelMappingCacheRawSig         uint64
+	modelMappingCacheGrokBaseURL    string
 }
 
 type TempUnschedulableRule struct {
@@ -445,13 +446,21 @@ func (a *Account) GetModelMapping() map[string]string {
 	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
 	rawPtr := mapPtr(rawMapping)
 	rawLen := len(rawMapping)
+	grokBaseURL := ""
+	if a.Platform == domain.PlatformGrok {
+		// Grok's safe implicit capability depends on the selected upstream.
+		// Keep it in the cache key so an in-place base_url edit cannot retain the
+		// broader api.x.ai model set after switching to cli-chat-proxy (or vice versa).
+		grokBaseURL = strings.TrimSpace(a.GetGrokBaseURL())
+	}
 	rawSig := uint64(0)
 	rawSigReady := false
 
 	if a.modelMappingCacheReady &&
 		a.modelMappingCacheCredentialsPtr == credentialsPtr &&
 		a.modelMappingCacheRawPtr == rawPtr &&
-		a.modelMappingCacheRawLen == rawLen {
+		a.modelMappingCacheRawLen == rawLen &&
+		a.modelMappingCacheGrokBaseURL == grokBaseURL {
 		rawSig = modelMappingSignature(rawMapping)
 		rawSigReady = true
 		if a.modelMappingCacheRawSig == rawSig {
@@ -470,7 +479,26 @@ func (a *Account) GetModelMapping() map[string]string {
 	a.modelMappingCacheRawPtr = rawPtr
 	a.modelMappingCacheRawLen = rawLen
 	a.modelMappingCacheRawSig = rawSig
+	a.modelMappingCacheGrokBaseURL = grokBaseURL
 	return mapping
+}
+
+// defaultGrokCLIModelMapping is deliberately conservative. The subscription
+// CLI gateway exposes account-specific entitlements from GET /v1/models; Free
+// accounts currently return only grok-4.5. Advertising the full xAI catalogue
+// for an account that has not synchronized an explicit mapping causes requests
+// for plan-gated models to hit 402 and used to disable the whole OAuth account.
+// Paid/custom capabilities remain available through credentials.model_mapping.
+var defaultGrokCLIModelMapping = map[string]string{
+	"grok":     "grok-4.5",
+	"grok-4.5": "grok-4.5",
+}
+
+func defaultGrokModelMappingForAccount(account *Account) map[string]string {
+	if account != nil && xai.IsCLIChatProxyBaseURL(account.GetGrokBaseURL()) {
+		return defaultGrokCLIModelMapping
+	}
+	return domain.DefaultGrokModelMapping
 }
 
 func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
@@ -480,7 +508,7 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 			return domain.DefaultAntigravityModelMapping
 		}
 		if a.Platform == domain.PlatformGrok {
-			return domain.DefaultGrokModelMapping
+			return defaultGrokModelMappingForAccount(a)
 		}
 		// Bedrock 默认映射由 forwardBedrock 统一处理（需配合 region prefix 调整）
 		return nil
@@ -491,7 +519,7 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 			return domain.DefaultAntigravityModelMapping
 		}
 		if a.Platform == domain.PlatformGrok {
-			return domain.DefaultGrokModelMapping
+			return defaultGrokModelMappingForAccount(a)
 		}
 		return nil
 	}
@@ -518,7 +546,7 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return domain.DefaultAntigravityModelMapping
 	}
 	if a.Platform == domain.PlatformGrok {
-		return domain.DefaultGrokModelMapping
+		return defaultGrokModelMappingForAccount(a)
 	}
 	return nil
 }

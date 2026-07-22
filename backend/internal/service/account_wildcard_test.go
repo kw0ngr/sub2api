@@ -4,6 +4,8 @@ package service
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMatchWildcard(t *testing.T) {
@@ -238,6 +240,55 @@ func TestAccountIsModelSupported(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAccountGetModelMapping_GrokCLIUsesConservativeDefault(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": "https://cli-chat-proxy.grok.com/v1",
+		},
+	}
+
+	mapping := account.GetModelMapping()
+	require.Equal(t, map[string]string{
+		"grok":     "grok-4.5",
+		"grok-4.5": "grok-4.5",
+	}, mapping)
+	require.True(t, account.IsModelSupported("grok-4.5"))
+	require.False(t, account.IsModelSupported("grok-build-0.1"))
+	require.False(t, account.IsModelSupported("grok-4.3"))
+}
+
+func TestAccountGetModelMapping_GrokExplicitMappingOverridesCLIDefault(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": "https://cli-chat-proxy.grok.com/v1",
+			"model_mapping": map[string]any{
+				"grok-build-0.1": "grok-build-0.1",
+			},
+		},
+	}
+
+	require.True(t, account.IsModelSupported("grok-build-0.1"))
+	require.False(t, account.IsModelSupported("grok-4.5"))
+}
+
+func TestAccountGetModelMapping_GrokBaseURLChangeInvalidatesDefaultCache(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": "https://cli-chat-proxy.grok.com/v1",
+		},
+	}
+
+	require.False(t, account.IsModelSupported("grok-build-0.1"))
+	account.Credentials["base_url"] = "https://api.x.ai/v1"
+	require.True(t, account.IsModelSupported("grok-build-0.1"))
 }
 
 func TestAccountGetMappedModel(t *testing.T) {

@@ -110,12 +110,18 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
 			"access_token": "xai-token",
-			"base_url":     "https://api.x.ai/v1",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+			"headers": map[string]any{
+				"x-grok-client-version": "9.9.9-test",
+			},
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, "https://api.x.ai/v1/models", grokOAuthReq.URL.String())
+	require.Equal(t, "https://cli-chat-proxy.grok.com/v1/models", grokOAuthReq.URL.String())
 	require.Equal(t, "Bearer xai-token", grokOAuthReq.Header.Get("Authorization"))
+	require.Equal(t, "9.9.9-test", grokOAuthReq.Header.Get("x-grok-client-version"))
+	require.Equal(t, "xai-grok-cli", grokOAuthReq.Header.Get("x-xai-token-auth"))
+	require.NotEmpty(t, grokOAuthReq.Header.Get("User-Agent"))
 
 	geminiReq, err := svc.buildGeminiUpstreamModelsRequest(ctx, &Account{
 		Platform: PlatformGemini,
