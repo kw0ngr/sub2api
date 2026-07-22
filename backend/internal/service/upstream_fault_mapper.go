@@ -72,6 +72,13 @@ func (m *UpstreamFaultMapper) Map(
 
 func mapOpenAIResponsesFault(statusCode int, quotaExhausted bool) UpstreamMappedFault {
 	switch statusCode {
+	case http.StatusBadRequest:
+		return UpstreamMappedFault{
+			Code:       UpstreamFaultCodeInvalid,
+			StatusCode: http.StatusBadRequest,
+			ErrorType:  "invalid_request_error",
+			Message:    "Upstream request was rejected",
+		}
 	case http.StatusUnauthorized:
 		return UpstreamMappedFault{
 			Code:       UpstreamFaultCodeAuth,

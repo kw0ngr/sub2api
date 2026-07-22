@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,47 @@ func TestUpstreamFaultMapper_OpenAIResponsesContract(t *testing.T) {
 	require.Equal(t, "upstream_error", mapped.ErrorType)
 	require.Equal(t, "Upstream authentication failed, please contact administrator", mapped.Message)
 	require.NotContains(t, mapped.Message, "SECRET")
+}
+
+func TestOpenAIGatewayService_ClientValidation400DoesNotFailoverOrCooldown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.6-sol","input":"Reply exactly OK","max_output_tokens":8,"stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	upstreamBody := `{"error":{"message":"Invalid 'max_output_tokens': integer below minimum value. Expected a value >= 16, but got 8 instead.","type":"invalid_request_error","param":"max_output_tokens","code":"integer_below_min_value"}}`
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewBufferString(upstreamBody)),
+	}}
+	repo := &grokProbeStreamAccountRepo{}
+	cfg := &config.Config{}
+	svc := &OpenAIGatewayService{
+		cfg:                 cfg,
+		httpUpstream:        upstream,
+		rateLimitService:    NewRateLimitService(repo, nil, cfg, nil, nil),
+		upstreamFaultMapper: NewUpstreamFaultMapper(),
+	}
+	account := &Account{
+		ID:          12,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.setErrorCalls)
 }
 
 func TestOpenAIGatewayService_ForwardAsChatCompletions_UsesMappedFault(t *testing.T) {

@@ -187,9 +187,8 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			) {
 				return APIKeyStatusActionPermanentDisable
 			}
-			// Unrecognized 400: could be a parameter issue or an unknown account error.
-			// Treat as temporary cooldown to avoid hammering a potentially disabled key.
-			return APIKeyStatusActionTemporaryCooldown
+			// Unrecognized 400s are request errors, not account health signals.
+			return APIKeyStatusActionIgnore
 		case http.StatusForbidden:
 			// Prefer structured error code
 			if containsAny(code,
@@ -273,7 +272,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			) {
 				return APIKeyStatusActionPermanentDisable
 			}
-			return APIKeyStatusActionTemporaryCooldown
+			return APIKeyStatusActionIgnore
 		}
 	case PlatformGemini:
 		switch statusCode {
@@ -330,7 +329,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			) {
 				return APIKeyStatusActionPermanentDisable
 			}
-			return APIKeyStatusActionTemporaryCooldown
+			return APIKeyStatusActionIgnore
 		}
 	case PlatformGLM:
 		switch statusCode {
@@ -380,7 +379,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 				) {
 				return APIKeyStatusActionPermanentDisable
 			}
-			return APIKeyStatusActionTemporaryCooldown
+			return APIKeyStatusActionIgnore
 		}
 	case PlatformOpenRouter, PlatformDeepSeek:
 		switch statusCode {
@@ -411,8 +410,11 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 				) {
 				return APIKeyStatusActionPermanentDisable
 			}
-			return APIKeyStatusActionTemporaryCooldown
+			return APIKeyStatusActionIgnore
 		}
+	}
+	if statusCode == http.StatusBadRequest {
+		return APIKeyStatusActionIgnore
 	}
 
 	// All other non-200 status codes (404, 405, 422, etc.) that are not explicitly handled above:

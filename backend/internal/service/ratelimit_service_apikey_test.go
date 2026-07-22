@@ -987,9 +987,9 @@ func TestClassifyAPIKeyStatusAction_AnthropicCreditBalance(t *testing.T) {
 			expected: APIKeyStatusActionPermanentDisable,
 		},
 		{
-			name:     "400 unrelated bad request should cooldown",
+			name:     "400 unrelated bad request should not mutate key health",
 			body:     []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens is required"}}`),
-			expected: APIKeyStatusActionTemporaryCooldown,
+			expected: APIKeyStatusActionIgnore,
 		},
 	}
 	for _, tt := range tests {
