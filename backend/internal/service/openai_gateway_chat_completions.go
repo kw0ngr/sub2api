@@ -552,6 +552,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 			req.Header.Set("accept", "application/json")
 		}
 	}
+	// Free Grok Build (cli-chat-proxy) requires Grok CLI identity headers.
+	// Without x-grok-client-version the upstream returns 426 Upgrade Required.
+	if account != nil && account.Platform == PlatformGrok {
+		applyGrokCLIClientHeaders(req.Header, account)
+	}
 	return req, nil
 }
 

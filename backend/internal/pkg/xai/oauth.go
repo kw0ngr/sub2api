@@ -28,6 +28,13 @@ const (
 	DefaultRedirectURI  = "http://127.0.0.1:56121/callback"
 	SessionTTL          = 30 * time.Minute
 
+	// Free Build / Grok CLI path requires these client identity headers.
+	// Without x-grok-client-version, cli-chat-proxy returns 426 Upgrade Required.
+	DefaultCLIClientVersion    = "0.2.93"
+	DefaultCLIClientIdentifier = "grok-shell"
+	DefaultCLITokenAuth        = "xai-grok-cli"
+	DefaultCLIUserAgent        = "grok-shell/0.2.93 (linux; x86_64)"
+
 	EnvAuthorizeURL               = "XAI_OAUTH_AUTHORIZE_URL"
 	EnvTokenURL                   = "XAI_OAUTH_TOKEN_URL"
 	EnvClientID                   = "XAI_OAUTH_CLIENT_ID"
@@ -36,7 +43,30 @@ const (
 	EnvBaseURL                    = "XAI_BASE_URL"
 	EnvAllowUnsafeURLOverrides    = "XAI_ALLOW_UNSAFE_URL_OVERRIDES"
 	EnvUnsafeAllowHighConcurrency = "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE"
+	EnvCLIClientVersion           = "XAI_CLI_CLIENT_VERSION"
 )
+
+// DefaultCLIClientHeaders returns request headers required by cli-chat-proxy.grok.com.
+// Safe to apply on api.x.ai as well (extra headers are ignored).
+func DefaultCLIClientHeaders() map[string]string {
+	version := strings.TrimSpace(os.Getenv(EnvCLIClientVersion))
+	if version == "" {
+		version = DefaultCLIClientVersion
+	}
+	return map[string]string{
+		"x-grok-client-version":    version,
+		"x-xai-token-auth":         DefaultCLITokenAuth,
+		"x-authenticateresponse":   "authenticate-response",
+		"x-grok-client-identifier": DefaultCLIClientIdentifier,
+		"User-Agent":               "grok-shell/" + version + " (linux; x86_64)",
+	}
+}
+
+// IsCLIChatProxyBaseURL reports whether baseURL points at free Build CLI proxy.
+func IsCLIChatProxyBaseURL(baseURL string) bool {
+	u := strings.ToLower(strings.TrimSpace(baseURL))
+	return strings.Contains(u, "cli-chat-proxy.grok.com")
+}
 
 var (
 	oauthEndpointAllowedHosts = []string{"x.ai", "*.x.ai"}

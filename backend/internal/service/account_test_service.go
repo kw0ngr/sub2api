@@ -696,6 +696,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrok() {
 		req.Header.Set("Accept", "application/json, text/event-stream")
+		// cli-chat-proxy requires Grok CLI identity; bare Bearer yields 426.
+		applyGrokCLIClientHeaders(req.Header, account)
 	}
 
 	// Set OAuth-specific headers for ChatGPT internal API

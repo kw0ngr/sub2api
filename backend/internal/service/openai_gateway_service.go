@@ -4039,12 +4039,81 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		enforceCodexIdentityHeaders(req.Header)
 	}
 
+	// Free Grok Build / cli-chat-proxy requires Grok CLI identity headers.
+	// Without them upstream returns 426: "Grok CLI version (none) is outdated".
+	if account != nil && account.Platform == PlatformGrok {
+		applyGrokCLIClientHeaders(req.Header, account)
+	}
+
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
 	}
 
 	return req, nil
+}
+
+// applyGrokCLIClientHeaders injects cli-chat-proxy identity headers for Grok accounts.
+// Prefer credentials/extra overrides when present; otherwise use xai defaults.
+func applyGrokCLIClientHeaders(h http.Header, account *Account) {
+	if h == nil {
+		return
+	}
+	// Always ensure identity headers for Grok oauth/apikey against free Build proxy
+	// (and harmless on api.x.ai).
+	defaults := xai.DefaultCLIClientHeaders()
+
+	// Optional per-account overrides stored in credentials.headers map or flat keys.
+	overrides := map[string]string{}
+	if account != nil {
+		if raw, ok := account.Credentials["headers"]; ok {
+			switch v := raw.(type) {
+			case map[string]any:
+				for k, val := range v {
+					if s, ok := val.(string); ok && strings.TrimSpace(s) != "" {
+						overrides[k] = strings.TrimSpace(s)
+					}
+				}
+			case map[string]string:
+				for k, s := range v {
+					if strings.TrimSpace(s) != "" {
+						overrides[k] = strings.TrimSpace(s)
+					}
+				}
+			}
+		}
+		for _, key := range []string{
+			"x-grok-client-version",
+			"x-xai-token-auth",
+			"x-authenticateresponse",
+			"x-grok-client-identifier",
+			"user_agent",
+			"User-Agent",
+		} {
+			if s := strings.TrimSpace(account.GetCredential(key)); s != "" {
+				overrides[key] = s
+			}
+		}
+	}
+
+	setIfEmpty := func(name, value string) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		if strings.TrimSpace(h.Get(name)) == "" {
+			h.Set(name, value)
+		}
+	}
+	// Prefer explicit overrides (force set), then fill defaults if missing.
+	for k, v := range overrides {
+		if k == "user_agent" {
+			k = "User-Agent"
+		}
+		h.Set(k, v)
+	}
+	for k, v := range defaults {
+		setIfEmpty(k, v)
+	}
 }
 
 func isOpenAIInternalOAuthAccount(account *Account) bool {
