@@ -15,6 +15,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -29,14 +30,17 @@ const (
 )
 
 type GrokQuotaProbeResult struct {
-	Source          string             `json:"source"`
-	Snapshot        *xai.QuotaSnapshot `json:"snapshot,omitempty"`
-	OfficialUsage   *xai.UsageSnapshot `json:"official_usage,omitempty"`
-	StatusCode      int                `json:"status_code,omitempty"`
-	ErrorMessage    string             `json:"error_message,omitempty"`
-	HeadersObserved bool               `json:"headers_observed"`
-	ResetSupported  bool               `json:"reset_supported"`
-	FetchedAt       int64              `json:"fetched_at"`
+	Source               string             `json:"source"`
+	Snapshot             *xai.QuotaSnapshot `json:"snapshot,omitempty"`
+	OfficialUsage        *xai.UsageSnapshot `json:"official_usage,omitempty"`
+	StatusCode           int                `json:"status_code,omitempty"`
+	ModelsStatusCode     int                `json:"models_status_code,omitempty"`
+	InferenceStatusCode  int                `json:"inference_status_code,omitempty"`
+	ManagementStatusCode int                `json:"management_status_code,omitempty"`
+	ErrorMessage         string             `json:"error_message,omitempty"`
+	HeadersObserved      bool               `json:"headers_observed"`
+	ResetSupported       bool               `json:"reset_supported"`
+	FetchedAt            int64              `json:"fetched_at"`
 }
 
 type GrokQuotaResetResult struct {
@@ -174,30 +178,77 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 	}
 
 	snapshot, statusCode, probeErr := s.probeRateLimitHeaders(ctx, account)
+	result.ModelsStatusCode = statusCode
 	result.StatusCode = statusCode
 	if snapshot != nil {
 		result.Snapshot = snapshot
 		result.HeadersObserved = snapshot.HasObservedHeaders()
 	}
-	// GET /models often omits rate-limit headers; try the same minimal Responses
-	// request used by the account health check.
-	if (snapshot == nil || !snapshot.HasObservedHeaders()) && s != nil {
-		if token, tokErr := s.resolveAccessToken(ctx, account); tokErr == nil && strings.TrimSpace(token) != "" {
-			if responsesSnap, responsesStatus, responsesErr := s.probeRateLimitHeadersViaResponses(ctx, account, token); responsesErr == nil && responsesSnap != nil {
-				if responsesSnap.HasObservedHeaders() || snapshot == nil {
-					snapshot = responsesSnap
-					statusCode = responsesStatus
-					result.StatusCode = responsesStatus
-					result.Snapshot = snapshot
-					result.HeadersObserved = responsesSnap.HasObservedHeaders()
-					result.Source = "header_probe_responses"
+
+	// GET /models only proves that the bearer can enumerate capabilities. The
+	// CLI proxy can return 200 here while rejecting every real inference request
+	// with 402/403. For CLI accounts, /responses is therefore always the health
+	// authority. For api.x.ai it remains the fallback when /models has no quota
+	// headers, preserving the existing low-cost fast path.
+	probeInference := xai.IsCLIChatProxyBaseURL(account.GetGrokBaseURL()) || snapshot == nil || !snapshot.HasObservedHeaders()
+	inferenceAuthoritative := false
+	var inferenceHeaders http.Header
+	var inferenceBody []byte
+	if probeInference && s != nil {
+		token, tokErr := s.resolveAccessToken(ctx, account)
+		switch {
+		case tokErr != nil:
+			probeErr = fmt.Errorf("resolve token for xAI inference probe: %w", tokErr)
+			statusCode = 0
+			result.StatusCode = 0
+			result.Source = "header_probe_responses_error"
+		case strings.TrimSpace(token) == "":
+			probeErr = fmt.Errorf("access_token is empty for xAI inference probe")
+			statusCode = 0
+			result.StatusCode = 0
+			result.Source = "header_probe_responses_error"
+		default:
+			responsesSnap, responsesStatus, responsesHeaders, responsesBody, responsesErr := s.probeRateLimitHeadersViaResponses(ctx, account, token)
+			result.InferenceStatusCode = responsesStatus
+			if responsesErr != nil {
+				probeErr = fmt.Errorf("xAI inference probe failed: %w", responsesErr)
+				statusCode = 0
+				result.StatusCode = 0
+				result.Source = "header_probe_responses_error"
+			} else if responsesSnap != nil {
+				// Once an inference response exists it is authoritative even when it
+				// contains no quota headers. This is the key distinction between
+				// health and quota observation.
+				inferenceAuthoritative = true
+				probeErr = nil
+				snapshot = responsesSnap
+				statusCode = responsesStatus
+				inferenceHeaders = responsesHeaders
+				inferenceBody = responsesBody
+				result.StatusCode = responsesStatus
+				result.Snapshot = snapshot
+				result.HeadersObserved = responsesSnap.HasObservedHeaders()
+				result.Source = "header_probe_responses"
+				if responsesStatus < http.StatusOK || responsesStatus >= http.StatusMultipleChoices {
+					result.ErrorMessage = truncateForLog(
+						[]byte(buildAPIKeyRuntimeErrorMessage(responsesStatus, responsesBody, "xAI inference probe failed")),
+						512,
+					)
 				}
 			}
 		}
 	}
-	if snapshot != nil {
+
+	// Never let a successful /models response auto-heal an account when the
+	// required inference probe failed before receiving an HTTP response.
+	authoritativeResultAvailable := !probeInference || inferenceAuthoritative
+	if snapshot != nil && authoritativeResultAvailable {
 		s.persistQuotaSnapshot(ctx, account.ID, snapshot)
-		s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
+		if inferenceAuthoritative {
+			s.applyInferenceProbeSideEffects(ctx, account, snapshot, statusCode, inferenceHeaders, inferenceBody)
+		} else {
+			s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
+		}
 		if snapshot.SubscriptionTier != "" || snapshot.EntitlementStatus != "" {
 			s.persistTierHints(ctx, account.ID, snapshot.SubscriptionTier, snapshot.EntitlementStatus)
 		}
@@ -221,13 +272,14 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 	managementKey, teamID := grokManagementCredentials(account)
 	if managementKey == "" || teamID == "" {
 		if result.HeadersObserved {
-			result.Source = "header_probe"
 			// Keep header success; note management is optional.
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = "未配置 Management API Key / Team ID，跳过官方 USD 用量"
 			}
 		} else {
-			result.Source = "management_api_unconfigured"
+			if result.Source == "" || result.Source == "header_probe" {
+				result.Source = "management_api_unconfigured"
+			}
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = "未配置 xAI Management API Key / Team ID，且未观测到 rate-limit 响应头"
 			}
@@ -236,20 +288,20 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 	}
 
 	usage, mgmtStatus, errMsg, err := s.fetchOfficialUsage(ctx, account, managementKey, teamID)
+	result.ManagementStatusCode = mgmtStatus
 	if err != nil {
 		// Header probe may still be useful; surface management error without failing whole call.
 		if result.ErrorMessage == "" {
 			result.ErrorMessage = err.Error()
 		}
-		if result.HeadersObserved {
-			result.Source = "header_probe"
-		} else {
-			result.Source = "management_api_error"
+		if result.Source != "header_probe_responses_error" {
+			if result.HeadersObserved {
+				result.Source = "header_probe"
+			} else {
+				result.Source = "management_api_error"
+			}
 		}
 		return result, nil
-	}
-	if mgmtStatus > 0 {
-		result.StatusCode = mgmtStatus
 	}
 	result.OfficialUsage = usage
 	if usage != nil {
@@ -261,11 +313,13 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 	switch {
 	case result.HeadersObserved && usage != nil:
 		result.Source = "combined"
-	case usage != nil:
+	case usage != nil && result.InferenceStatusCode == 0:
 		result.Source = "management_api"
 	case result.HeadersObserved:
-		result.Source = "header_probe"
-	default:
+		if result.Source == "" {
+			result.Source = "header_probe"
+		}
+	case result.Source == "":
 		result.Source = "management_api"
 	}
 	return result, nil
@@ -329,7 +383,7 @@ func (s *GrokQuotaService) probeRateLimitHeaders(ctx context.Context, account *A
 // ValidateAccessToken performs a minimal authenticated probe against xAI
 // (GET {baseURL}/models) before AT-only account creation. Accepts 2xx and 429
 // (auth succeeded; rate-limited). Any other status or transport error fails.
-func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken, baseURL, proxyURL string) error {
+func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken, baseURL, proxyURL string, headerOverrides ...map[string]string) error {
 	if s == nil || s.httpUpstream == nil {
 		return fmt.Errorf("access_token upstream validation is not configured")
 	}
@@ -351,7 +405,19 @@ func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken,
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "sub2api-grok-at-validate/1.0")
+	if xai.IsCLIChatProxyBaseURL(base) {
+		credentials := map[string]any{"base_url": base}
+		if len(headerOverrides) > 0 && len(headerOverrides[0]) > 0 {
+			credentials["headers"] = headerOverrides[0]
+		}
+		applyGrokCLIClientHeaders(req.Header, &Account{
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Credentials: credentials,
+		})
+	} else {
+		req.Header.Set("User-Agent", "sub2api-grok-at-validate/1.0")
+	}
 
 	resp, err := s.httpUpstream.Do(req, strings.TrimSpace(proxyURL), 0, 1)
 	if err != nil {
@@ -383,10 +449,11 @@ func (s *GrokQuotaService) ValidateAccessToken(ctx context.Context, accessToken,
 }
 
 // probeRateLimitHeadersViaResponses uses the same minimal request shape as the
-// account health check to elicit rate-limit headers when GET /models omits them.
-func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context, account *Account, token string) (*xai.QuotaSnapshot, int, error) {
+// account health check. The response body is retained so health mutations use
+// the same upstream error classification as normal gateway traffic.
+func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context, account *Account, token string) (*xai.QuotaSnapshot, int, http.Header, []byte, error) {
 	if s == nil || s.httpUpstream == nil {
-		return nil, 0, fmt.Errorf("http upstream not configured")
+		return nil, 0, nil, nil, fmt.Errorf("http upstream not configured")
 	}
 	baseURL := strings.TrimRight(account.GetGrokBaseURL(), "/")
 	if baseURL == "" {
@@ -395,13 +462,13 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context
 	targetURL := baseURL + "/responses"
 	body, err := buildGrokQuotaProbeBody(grokQuotaDefaultModel)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, nil, err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, grokQuotaUpstreamTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
@@ -411,10 +478,11 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context
 	applyGrokCLIRequestHeaders(req.Header, account, grokQuotaDefaultModel)
 	resp, err := s.httpUpstream.Do(req, s.resolveProxyURL(ctx, account), account.ID, maxInt(account.Concurrency, 1))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	responseHeaders := resp.Header.Clone()
 	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe_responses")
 	if snapshot == nil {
 		snapshot = &xai.QuotaSnapshot{StatusCode: resp.StatusCode, ObservationSource: "active_probe_responses", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
@@ -425,7 +493,53 @@ func (s *GrokQuotaService) probeRateLimitHeadersViaResponses(ctx context.Context
 		snapshot.LastHeadersSeenAt = now
 		snapshot.HeadersObserved = true
 	}
-	return snapshot, resp.StatusCode, nil
+	if readErr != nil {
+		return snapshot, resp.StatusCode, responseHeaders, responseBody, readErr
+	}
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		if err := validateGrokInferenceProbeCompletion(responseBody); err != nil {
+			return snapshot, resp.StatusCode, responseHeaders, responseBody, err
+		}
+	}
+	return snapshot, resp.StatusCode, responseHeaders, responseBody, nil
+}
+
+func validateGrokInferenceProbeCompletion(body []byte) error {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return fmt.Errorf("xAI inference probe returned an empty successful response")
+	}
+
+	for _, rawLine := range strings.Split(trimmed, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		eventType := strings.TrimSpace(gjson.Get(payload, "type").String())
+		switch eventType {
+		case "response.completed", "response.done":
+			return nil
+		case "error", "response.failed", "response.incomplete":
+			message := strings.TrimSpace(extractUpstreamErrorMessage([]byte(payload)))
+			if message == "" {
+				message = eventType
+			}
+			return fmt.Errorf("xAI inference stream failed: %s", message)
+		}
+	}
+
+	// Be tolerant of non-streaming compatibility responses even though this
+	// probe requests stream=true.
+	eventType := strings.TrimSpace(gjson.GetBytes(body, "type").String())
+	status := strings.TrimSpace(gjson.GetBytes(body, "status").String())
+	if eventType == "response.completed" || eventType == "response.done" || status == "completed" {
+		return nil
+	}
+	return fmt.Errorf("xAI inference stream ended before response.completed")
 }
 
 func buildGrokQuotaProbeBody(model string) ([]byte, error) {
@@ -515,6 +629,46 @@ func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *A
 			s.recoverGrokAccountAfterSuccessfulProbe(ctx, account)
 		}
 	}
+}
+
+// applyInferenceProbeSideEffects keeps active health probes aligned with real
+// gateway/account-test traffic. In particular, Grok's spending-limit 402 is a
+// model cooldown, while permission-denied 403 is an account health failure.
+func (s *GrokQuotaService) applyInferenceProbeSideEffects(
+	ctx context.Context,
+	account *Account,
+	snapshot *xai.QuotaSnapshot,
+	statusCode int,
+	headers http.Header,
+	responseBody []byte,
+) {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return
+	}
+	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
+		s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
+		return
+	}
+	// Keep the established OAuth-401 probe behavior. RateLimitService's normal
+	// 401 path is intentionally temporary to leave a refresh window, whereas an
+	// explicit quota/account probe has already resolved/refreshed the token.
+	if statusCode == http.StatusUnauthorized {
+		s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
+		return
+	}
+	if statusCode == http.StatusTooManyRequests {
+		s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
+		return
+	}
+
+	(&RateLimitService{accountRepo: s.accountRepo}).HandleUpstreamError(
+		ctx,
+		account,
+		statusCode,
+		headers,
+		responseBody,
+		grokQuotaDefaultModel,
+	)
 }
 
 // recoverGrokAccountAfterSuccessfulProbe restores accounts that were temporarily
@@ -608,6 +762,9 @@ func isRecoverableGrokProbeError(msg string) bool {
 
 func classifyGrokProbeResult(result *GrokQuotaProbeResult) string {
 	if result == nil {
+		return "transient"
+	}
+	if result.Source == "header_probe_responses_error" {
 		return "transient"
 	}
 	switch result.StatusCode {

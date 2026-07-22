@@ -7466,6 +7466,13 @@ func extractUpstreamErrorMessage(body []byte) string {
 		return m
 	}
 
+	// xAI/Grok CLI proxy style:
+	// {"code":"permission-denied","error":"Access to the chat endpoint is denied."}
+	// Here error is a string rather than an object.
+	if e := gjson.GetBytes(body, "error"); e.Type == gjson.String && strings.TrimSpace(e.String()) != "" {
+		return e.String()
+	}
+
 	// ChatGPT 内部 API 风格：{"detail":"..."}
 	if d := gjson.GetBytes(body, "detail").String(); strings.TrimSpace(d) != "" {
 		return d

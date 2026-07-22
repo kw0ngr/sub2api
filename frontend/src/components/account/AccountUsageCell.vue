@@ -340,6 +340,14 @@
         <div v-if="grokDiagnosticText" class="mt-0.5 truncate text-[8px] text-slate-400 dark:text-slate-500" :title="grokDiagnosticText">
           {{ grokDiagnosticText }}
         </div>
+        <div
+          v-if="grokProbeDiagnostic"
+          class="mt-0.5 truncate text-[8px]"
+          :class="grokProbeDiagnostic.failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'"
+          :title="grokProbeDiagnostic.text"
+        >
+          {{ grokProbeDiagnostic.text }}
+        </div>
         <div v-if="grokFriendlyError" class="mt-0.5 truncate text-[8px] text-amber-600 dark:text-amber-400" :title="usageInfo.error">
           {{ grokFriendlyError }}
         </div>
@@ -1181,6 +1189,7 @@ interface GrokQuotaSummaryRow {
 
 const grokLocalBudget = computed(() => usageInfo.value?.grok_local_token_budget ?? null)
 const grokProbeLoading = ref(false)
+const grokProbeDiagnostic = ref<{ text: string; failed: boolean } | null>(null)
 
 const grokHeaderRows = computed(() => {
   const rows: GrokQuotaSummaryRow[] = []
@@ -1306,7 +1315,24 @@ const probeGrokQuota = async () => {
   if (props.account.platform !== 'grok') return
   grokProbeLoading.value = true
   try {
-    await adminAPI.grok.queryQuota(props.account.id)
+    const probe = await adminAPI.grok.queryQuota(props.account.id)
+    const modelsStatus = probe.models_status_code
+    const inferenceStatus = probe.inference_status_code
+    const healthStatus = probe.status_code ?? 0
+    const statusParts: string[] = []
+    if (modelsStatus) statusParts.push(`models=${modelsStatus}`)
+    if (inferenceStatus) statusParts.push(`inference=${inferenceStatus}`)
+    if (statusParts.length === 0 && probe.status_code) statusParts.push(`status=${probe.status_code}`)
+    const failed =
+      probe.source === 'header_probe_responses_error' ||
+      healthStatus === 0 ||
+      healthStatus < 200 ||
+      healthStatus >= 300
+    const detail = failed && probe.error_message ? ` · ${probe.error_message}` : ''
+    grokProbeDiagnostic.value = {
+      text: `探测 ${statusParts.join(' · ') || '无权威推理结果'}${detail}`,
+      failed
+    }
     const result = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
     usageInfo.value = result
     _usageCache.set(props.account.id, { data: result, ts: Date.now() })

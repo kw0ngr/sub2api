@@ -81,6 +81,9 @@ type openAIAccountTestRepo struct {
 	setErrorMessage     string
 	setSchedulableCalls int
 	lastSchedulable     bool
+	modelRateLimitCalls int
+	modelRateLimitKey   string
+	modelRateLimitAt    *time.Time
 }
 
 func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -103,6 +106,13 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, _ int64, message str
 func (r *openAIAccountTestRepo) SetSchedulable(_ context.Context, _ int64, schedulable bool) error {
 	r.setSchedulableCalls++
 	r.lastSchedulable = schedulable
+	return nil
+}
+
+func (r *openAIAccountTestRepo) SetModelRateLimit(_ context.Context, _ int64, model string, resetAt time.Time) error {
+	r.modelRateLimitCalls++
+	r.modelRateLimitKey = model
+	r.modelRateLimitAt = &resetAt
 	return nil
 }
 
@@ -385,6 +395,110 @@ func TestAccountTestService_GrokBuildProbeInvalidCredentialStillDisables(t *test
 	require.Equal(t, 1, repo.setSchedulableCalls)
 	require.False(t, repo.lastSchedulable)
 	require.Nil(t, repo.rateLimitedAt)
+}
+
+func TestAccountTestService_GrokPermissionDeniedDisablesAccount(t *testing.T) {
+	ctx, recorder := newTestContext()
+	resp := newJSONResponse(http.StatusForbidden, `{"code":"permission-denied","error":"Access to the chat endpoint is denied."}`)
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "grok-access-token",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+
+	require.Error(t, err)
+	require.Contains(t, recorder.Body.String(), "permission-denied")
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.setErrorMessage, "Access to the chat endpoint is denied")
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
+	require.Zero(t, repo.modelRateLimitCalls)
+}
+
+func TestAccountTestService_GrokSpendingLimitUsesModelCooldown(t *testing.T) {
+	ctx, recorder := newTestContext()
+	resp := newJSONResponse(http.StatusPaymentRequired, `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription"}`)
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          2106,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "grok-access-token",
+			"base_url":     "https://cli-chat-proxy.grok.com/v1",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+
+	require.Error(t, err)
+	require.Contains(t, recorder.Body.String(), grokSubscriptionSpendingCode)
+	require.Equal(t, 1, repo.modelRateLimitCalls)
+	require.Equal(t, "grok-4.5", repo.modelRateLimitKey)
+	require.NotNil(t, repo.modelRateLimitAt)
+	require.Greater(t, time.Until(*repo.modelRateLimitAt), 5*time.Hour)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+}
+
+func TestAccountTestService_GrokBuildProbe402And403HaveNoHealthSideEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "spending_limit", status: http.StatusPaymentRequired, body: `{"code":"personal-team-blocked:spending-limit","error":"subscription required"}`},
+		{name: "permission_denied", status: http.StatusForbidden, body: `{"code":"permission-denied","error":"chat denied"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := newTestContext()
+			repo := &openAIAccountTestRepo{}
+			upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(tc.status, tc.body)}}
+			svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+			account := &Account{
+				ID:          2108,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"access_token": "grok-access-token",
+					"base_url":     "https://cli-chat-proxy.grok.com/v1",
+					"model_mapping": map[string]any{
+						"grok-build": grokBuildProbeModel,
+					},
+				},
+			}
+
+			err := svc.testOpenAIAccountConnection(ctx, account, "grok-build")
+
+			require.Error(t, err)
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, repo.setSchedulableCalls)
+			require.Zero(t, repo.modelRateLimitCalls)
+			require.Nil(t, repo.rateLimitedAt)
+		})
+	}
 }
 
 func TestAccountTestService_OpenAIStreamEOFBeforeCompletedFails(t *testing.T) {

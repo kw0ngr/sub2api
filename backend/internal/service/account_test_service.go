@@ -753,11 +753,25 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 				account.RateLimitResetAt = resetAt
 			}
 		}
-		if account.IsGrokOAuth() && isGrokInvalidCredentialError(resp.StatusCode, body) && s.accountRepo != nil {
-			errMsg := buildAPIKeyRuntimeErrorMessage(resp.StatusCode, body, "Grok credential rejected during account test")
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
-			if account.Schedulable {
-				_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+		if account.IsGrokOAuth() && s.accountRepo != nil && !requestLocalBuildProbe {
+			// Account tests must mutate health exactly like real gateway traffic.
+			// This keeps permission-denied 403 account-wide, spending-limit 402
+			// model-scoped, and preserves the grok-build noise exemption above.
+			if resp.StatusCode == http.StatusUnauthorized {
+				errMsg := buildAPIKeyRuntimeErrorMessage(resp.StatusCode, body, "Grok credential rejected during account test")
+				_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+				if account.Schedulable {
+					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
+				}
+			} else {
+				(&RateLimitService{accountRepo: s.accountRepo, cfg: s.cfg}).HandleUpstreamError(
+					ctx,
+					account,
+					resp.StatusCode,
+					resp.Header,
+					body,
+					testModelID,
+				)
 			}
 		} else if account.Type == AccountTypeAPIKey && s.accountRepo != nil {
 			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, body)

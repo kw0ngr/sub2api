@@ -34,16 +34,24 @@ func (s grokOAuthClientStub) RefreshToken(ctx context.Context, refreshToken, pro
 
 // grokImportHTTPUpstreamStub is a minimal HTTPUpstream for AT import validation probes.
 type grokImportHTTPUpstreamStub struct {
-	status int
-	body   string
-	err    error
-	last   *http.Request
+	status    int
+	body      string
+	err       error
+	last      *http.Request
+	requests  []*http.Request
+	responses []*http.Response
 }
 
 func (u *grokImportHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	u.last = req
+	u.requests = append(u.requests, req)
 	if u.err != nil {
 		return nil, u.err
+	}
+	if len(u.responses) > 0 {
+		resp := u.responses[0]
+		u.responses = u.responses[1:]
+		return resp, nil
 	}
 	status := u.status
 	if status == 0 {
@@ -58,6 +66,70 @@ func (u *grokImportHTTPUpstreamStub) Do(req *http.Request, proxyURL string, acco
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}, nil
+}
+
+type grokImportHealthRepo struct {
+	service.AccountRepository
+	account             *service.Account
+	setErrorCalls       int
+	setSchedulableCalls []bool
+	modelRateLimitKey   string
+}
+
+func (r *grokImportHealthRepo) GetByID(_ context.Context, id int64) (*service.Account, error) {
+	if r.account == nil || r.account.ID != id {
+		return nil, service.ErrAccountNotFound
+	}
+	return r.account, nil
+}
+
+func (r *grokImportHealthRepo) UpdateExtra(_ context.Context, _ int64, _ map[string]any) error {
+	return nil
+}
+
+func (r *grokImportHealthRepo) SetError(_ context.Context, _ int64, message string) error {
+	r.setErrorCalls++
+	r.account.Status = service.StatusError
+	r.account.ErrorMessage = message
+	return nil
+}
+
+func (r *grokImportHealthRepo) ClearError(_ context.Context, _ int64) error {
+	r.account.Status = service.StatusActive
+	r.account.ErrorMessage = ""
+	return nil
+}
+
+func (r *grokImportHealthRepo) SetSchedulable(_ context.Context, _ int64, schedulable bool) error {
+	r.setSchedulableCalls = append(r.setSchedulableCalls, schedulable)
+	r.account.Schedulable = schedulable
+	return nil
+}
+
+func (r *grokImportHealthRepo) SetModelRateLimit(_ context.Context, _ int64, model string, _ time.Time) error {
+	r.modelRateLimitKey = model
+	return nil
+}
+
+func (r *grokImportHealthRepo) ClearRateLimit(_ context.Context, _ int64) error { return nil }
+func (r *grokImportHealthRepo) ClearTempUnschedulable(_ context.Context, _ int64) error {
+	return nil
+}
+
+type grokImportHealthAdminService struct {
+	*stubAdminService
+	repo *grokImportHealthRepo
+}
+
+func (s *grokImportHealthAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
+	return s.repo.GetByID(context.Background(), id)
+}
+
+func (s *grokImportHealthAdminService) SetAccountSchedulable(_ context.Context, id int64, schedulable bool) (*service.Account, error) {
+	if err := s.repo.SetSchedulable(context.Background(), id, schedulable); err != nil {
+		return nil, err
+	}
+	return s.repo.account, nil
 }
 
 func (u *grokImportHTTPUpstreamStub) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
@@ -140,6 +212,217 @@ func TestGrokImportRefreshTokensCreatesAccounts(t *testing.T) {
 	}
 	if _, ok := byRT["rt-two"]; !ok {
 		t.Fatal("missing rt-two account")
+	}
+}
+
+func TestGrokImportRefreshTokensAppliesDesiredBaseURLAndHeadersBeforeCreate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	adminSvc := newStubAdminService()
+	oauthSvc := service.NewGrokOAuthService(nil, grokOAuthClientStub{
+		refresh: func(_ context.Context, refreshToken, _, _ string) (*xai.TokenResponse, error) {
+			return &xai.TokenResponse{
+				AccessToken:  "access-" + refreshToken,
+				RefreshToken: refreshToken,
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+			}, nil
+		},
+	})
+	handler := NewGrokOAuthHandler(oauthSvc, adminSvc, nil)
+	router := gin.New()
+	router.POST("/admin/grok/oauth/import-refresh-tokens", handler.ImportRefreshTokens)
+	payload := []byte(`{
+		"refresh_tokens":["rt-cli"],
+		"extra":{"desired_base_url":"https://cli-chat-proxy.grok.com/v1"},
+		"headers":{
+			"x-grok-client-version":"0.2.93",
+			"x-xai-token-auth":"xai-grok-cli"
+		}
+	}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/grok/oauth/import-refresh-tokens", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(adminSvc.createdAccounts) != 1 {
+		t.Fatalf("created accounts=%d want 1", len(adminSvc.createdAccounts))
+	}
+	created := adminSvc.createdAccounts[0]
+	if got := created.Credentials["base_url"]; got != xai.DefaultCLIBaseURL {
+		t.Fatalf("base_url=%v want %s", got, xai.DefaultCLIBaseURL)
+	}
+	headers, ok := created.Credentials["headers"].(map[string]string)
+	if !ok {
+		t.Fatalf("credentials.headers type=%T value=%v", created.Credentials["headers"], created.Credentials["headers"])
+	}
+	if headers["X-Grok-Client-Version"] != "0.2.93" || headers["X-Xai-Token-Auth"] != "xai-grok-cli" {
+		t.Fatalf("headers=%v", headers)
+	}
+}
+
+func TestResolveGrokImportBaseURLExplicitValueWinsAndRejectsInvalid(t *testing.T) {
+	baseURL, err := resolveGrokImportBaseURL(GrokImportRefreshTokensRequest{
+		BaseURL: xai.DefaultBaseURL,
+		Extra:   map[string]any{"desired_base_url": xai.DefaultCLIBaseURL},
+	})
+	if err != nil {
+		t.Fatalf("resolve explicit base URL: %v", err)
+	}
+	if baseURL != xai.DefaultBaseURL {
+		t.Fatalf("baseURL=%q want %q", baseURL, xai.DefaultBaseURL)
+	}
+
+	_, err = resolveGrokImportBaseURL(GrokImportRefreshTokensRequest{BaseURL: "https://example.com/v1"})
+	if err == nil {
+		t.Fatal("expected non-xAI base URL to be rejected")
+	}
+}
+
+func TestNormalizeGrokImportHeadersRejectsReservedAndInvalidValues(t *testing.T) {
+	if _, err := normalizeGrokImportHeaders(map[string]string{"Authorization": "Bearer override"}); err == nil {
+		t.Fatal("expected Authorization override to be rejected")
+	}
+	if _, err := normalizeGrokImportHeaders(map[string]string{"x-grok-client-version": "ok\r\ninjected: yes"}); err == nil {
+		t.Fatal("expected newline header injection to be rejected")
+	}
+}
+
+func TestFinalizeGrokImportedAccountHealthPermissionDeniedKeepsAccountOutOfPool(t *testing.T) {
+	account := &service.Account{
+		ID:          300,
+		Platform:    service.PlatformGrok,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokImportHealthRepo{account: account}
+	adminSvc := &grokImportHealthAdminService{stubAdminService: newStubAdminService(), repo: repo}
+	upstream := &grokImportHTTPUpstreamStub{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":[]}`))},
+		{StatusCode: http.StatusForbidden, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"code":"permission-denied","error":"Access to the chat endpoint is denied."}`))},
+	}}
+	quotaSvc := service.NewGrokQuotaService(repo, nil, nil, upstream)
+	handler := NewGrokOAuthHandler(nil, adminSvc, quotaSvc)
+
+	result := handler.finalizeGrokImportedAccountHealth(
+		context.Background(),
+		account,
+		xai.DefaultCLIBaseURL,
+		GrokImportRefreshTokenLineResult{Created: true, AccountID: account.ID},
+	)
+
+	if result.ProbeResult == nil {
+		t.Fatal("missing probe result")
+	}
+	if result.ProbeResult.ModelsStatusCode != http.StatusOK || result.ProbeResult.InferenceStatusCode != http.StatusForbidden {
+		t.Fatalf("probe=%+v", result.ProbeResult)
+	}
+	if account.Status != service.StatusError || account.Schedulable {
+		t.Fatalf("account status/schedulable=%s/%v", account.Status, account.Schedulable)
+	}
+	if repo.setErrorCalls != 1 {
+		t.Fatalf("SetError calls=%d want 1", repo.setErrorCalls)
+	}
+	if len(repo.setSchedulableCalls) != 1 || repo.setSchedulableCalls[0] {
+		t.Fatalf("schedulable calls=%v want [false]", repo.setSchedulableCalls)
+	}
+	if !strings.Contains(result.Warning, "HTTP 403") {
+		t.Fatalf("warning=%q", result.Warning)
+	}
+}
+
+func TestFinalizeGrokImportedAccountHealthSuccessActivatesPendingAccount(t *testing.T) {
+	account := &service.Account{
+		ID:          301,
+		Platform:    service.PlatformGrok,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokImportHealthRepo{account: account}
+	adminSvc := &grokImportHealthAdminService{stubAdminService: newStubAdminService(), repo: repo}
+	upstream := &grokImportHTTPUpstreamStub{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":[]}`))},
+		{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\"}\n\n"))},
+	}}
+	quotaSvc := service.NewGrokQuotaService(repo, nil, nil, upstream)
+	handler := NewGrokOAuthHandler(nil, adminSvc, quotaSvc)
+
+	result := handler.finalizeGrokImportedAccountHealth(
+		context.Background(),
+		account,
+		xai.DefaultCLIBaseURL,
+		GrokImportRefreshTokenLineResult{Created: true, AccountID: account.ID},
+	)
+
+	if result.ProbeResult == nil || result.ProbeResult.InferenceStatusCode != http.StatusOK {
+		t.Fatalf("probe=%+v", result.ProbeResult)
+	}
+	if account.Status != service.StatusActive || !account.Schedulable {
+		t.Fatalf("account status/schedulable=%s/%v", account.Status, account.Schedulable)
+	}
+	if len(repo.setSchedulableCalls) != 2 || repo.setSchedulableCalls[0] || !repo.setSchedulableCalls[1] {
+		t.Fatalf("schedulable calls=%v want [false true]", repo.setSchedulableCalls)
+	}
+	if result.Warning != "" {
+		t.Fatalf("unexpected warning=%q", result.Warning)
+	}
+}
+
+func TestFinalizeGrokImportedAccountHealthIncomplete200StaysPending(t *testing.T) {
+	account := &service.Account{
+		ID:          302,
+		Platform:    service.PlatformGrok,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokImportHealthRepo{account: account}
+	adminSvc := &grokImportHealthAdminService{stubAdminService: newStubAdminService(), repo: repo}
+	upstream := &grokImportHTTPUpstreamStub{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":[]}`))},
+		{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\ndata: [DONE]\n\n"))},
+	}}
+	quotaSvc := service.NewGrokQuotaService(repo, nil, nil, upstream)
+	handler := NewGrokOAuthHandler(nil, adminSvc, quotaSvc)
+
+	result := handler.finalizeGrokImportedAccountHealth(
+		context.Background(),
+		account,
+		xai.DefaultCLIBaseURL,
+		GrokImportRefreshTokenLineResult{Created: true, AccountID: account.ID},
+	)
+
+	if result.ProbeResult == nil || result.ProbeResult.InferenceStatusCode != http.StatusOK || result.ProbeResult.StatusCode != 0 {
+		t.Fatalf("probe=%+v", result.ProbeResult)
+	}
+	if account.Schedulable {
+		t.Fatal("incomplete inference response must not activate account")
+	}
+	if len(repo.setSchedulableCalls) != 1 || repo.setSchedulableCalls[0] {
+		t.Fatalf("schedulable calls=%v want [false]", repo.setSchedulableCalls)
+	}
+	if !strings.Contains(result.Warning, "did not complete") || !strings.Contains(result.Warning, "before response.completed") {
+		t.Fatalf("warning=%q", result.Warning)
 	}
 }
 

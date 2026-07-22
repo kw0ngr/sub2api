@@ -79,6 +79,11 @@ export interface GrokQuotaProbeResult {
   snapshot?: GrokQuotaSnapshot | null
   official_usage?: GrokOfficialUsageSnapshot | null
   status_code?: number
+  /** GET /models transport/auth result; capability listing is not inference health. */
+  models_status_code?: number
+  /** Authoritative /responses result when an inference probe was performed. */
+  inference_status_code?: number
+  management_status_code?: number
   error_message?: string
   headers_observed: boolean
   reset_supported: boolean
@@ -106,6 +111,9 @@ export interface GrokImportRefreshTokensRequest {
   rate_multiplier?: number
   load_factor?: number | null
   model_mapping?: Record<string, string>
+  base_url?: string
+  /** Optional per-account CLI identity overrides; server defaults stay preferred. */
+  headers?: Record<string, string>
   extra?: Record<string, unknown>
   expires_at?: number | null
   auto_pause_on_expired?: boolean
@@ -122,6 +130,7 @@ export interface GrokImportRefreshTokenLineResult {
   email?: string
   created: boolean
   skipped?: boolean
+  probe_result?: GrokQuotaProbeResult
   warning?: string
   error?: string
 }

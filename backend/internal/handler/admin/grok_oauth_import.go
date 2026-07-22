@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,39 +27,42 @@ const (
 )
 
 type GrokImportRefreshTokensRequest struct {
-	RefreshTokens           []string       `json:"refresh_tokens"`
-	AccessTokens            []string       `json:"access_tokens"`
-	RawText                 string         `json:"raw_text"`
-	ClientID                string         `json:"client_id"`
-	ProxyID                 *int64         `json:"proxy_id"`
-	NamePrefix              string         `json:"name_prefix"`
-	Notes                   *string        `json:"notes"`
-	GroupIDs                []int64        `json:"group_ids"`
-	Concurrency             int            `json:"concurrency"`
-	ImportConcurrency       int            `json:"import_concurrency"`
-	Priority                int            `json:"priority"`
-	RateMultiplier          *float64       `json:"rate_multiplier"`
-	LoadFactor              *int           `json:"load_factor"`
-	ModelMapping            map[string]any `json:"model_mapping"`
-	Extra                   map[string]any `json:"extra"`
-	ExpiresAt               *int64         `json:"expires_at"`
-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
-	ConfirmMixedChannelRisk bool           `json:"confirm_mixed_channel_risk"`
+	RefreshTokens           []string          `json:"refresh_tokens"`
+	AccessTokens            []string          `json:"access_tokens"`
+	RawText                 string            `json:"raw_text"`
+	ClientID                string            `json:"client_id"`
+	ProxyID                 *int64            `json:"proxy_id"`
+	NamePrefix              string            `json:"name_prefix"`
+	Notes                   *string           `json:"notes"`
+	GroupIDs                []int64           `json:"group_ids"`
+	Concurrency             int               `json:"concurrency"`
+	ImportConcurrency       int               `json:"import_concurrency"`
+	Priority                int               `json:"priority"`
+	RateMultiplier          *float64          `json:"rate_multiplier"`
+	LoadFactor              *int              `json:"load_factor"`
+	ModelMapping            map[string]any    `json:"model_mapping"`
+	BaseURL                 string            `json:"base_url"`
+	Headers                 map[string]string `json:"headers"`
+	Extra                   map[string]any    `json:"extra"`
+	ExpiresAt               *int64            `json:"expires_at"`
+	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
+	ConfirmMixedChannelRisk bool              `json:"confirm_mixed_channel_risk"`
 	// ImportMode: auto | refresh_token | access_token
 	ImportMode string `json:"import_mode"`
 }
 
 type GrokImportRefreshTokenLineResult struct {
-	Line         int          `json:"line"`
-	TokenPreview string       `json:"token_preview,omitempty"`
-	Kind         string       `json:"kind,omitempty"`
-	AccountID    int64        `json:"account_id,omitempty"`
-	Account      *dto.Account `json:"account,omitempty"`
-	Email        string       `json:"email,omitempty"`
-	Created      bool         `json:"created"`
-	Skipped      bool         `json:"skipped,omitempty"`
-	Warning      string       `json:"warning,omitempty"`
-	Error        string       `json:"error,omitempty"`
+	Line         int                           `json:"line"`
+	TokenPreview string                        `json:"token_preview,omitempty"`
+	Kind         string                        `json:"kind,omitempty"`
+	AccountID    int64                         `json:"account_id,omitempty"`
+	Account      *dto.Account                  `json:"account,omitempty"`
+	Email        string                        `json:"email,omitempty"`
+	Created      bool                          `json:"created"`
+	Skipped      bool                          `json:"skipped,omitempty"`
+	ProbeResult  *service.GrokQuotaProbeResult `json:"probe_result,omitempty"`
+	Warning      string                        `json:"warning,omitempty"`
+	Error        string                        `json:"error,omitempty"`
 }
 
 type GrokImportRefreshTokensResult struct {
@@ -89,12 +94,81 @@ type grokImportAccountNameInput struct {
 	multi  bool
 }
 
+func resolveGrokImportBaseURL(req GrokImportRefreshTokensRequest) (string, error) {
+	raw := strings.TrimSpace(req.BaseURL)
+	if raw == "" && req.Extra != nil {
+		if desired, exists := req.Extra["desired_base_url"]; exists && desired != nil {
+			value, ok := desired.(string)
+			if !ok {
+				return "", fmt.Errorf("extra.desired_base_url must be a string")
+			}
+			raw = strings.TrimSpace(value)
+		}
+	}
+	return xai.ValidatedBaseURL(raw)
+}
+
+func normalizeGrokImportHeaders(headers map[string]string) (map[string]string, error) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	normalized := make(map[string]string, len(headers))
+	for rawName, rawValue := range headers {
+		name := strings.TrimSpace(rawName)
+		value := strings.TrimSpace(rawValue)
+		if name == "" || value == "" {
+			continue
+		}
+		if !httpguts.ValidHeaderFieldName(name) {
+			return nil, fmt.Errorf("invalid header name %q", name)
+		}
+		if !httpguts.ValidHeaderFieldValue(value) {
+			return nil, fmt.Errorf("invalid value for header %q", name)
+		}
+		switch strings.ToLower(name) {
+		case "authorization", "host", "content-length", "content-type", "transfer-encoding", "connection":
+			return nil, fmt.Errorf("reserved header %q cannot be overridden", name)
+		}
+		normalized[http.CanonicalHeaderKey(name)] = value
+	}
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	return normalized, nil
+}
+
+func applyGrokImportCredentialOverrides(credentials map[string]any, req GrokImportRefreshTokensRequest) {
+	if credentials == nil {
+		return
+	}
+	credentials["base_url"] = req.BaseURL
+	if len(req.Headers) > 0 {
+		headers := make(map[string]string, len(req.Headers))
+		for key, value := range req.Headers {
+			headers[key] = value
+		}
+		credentials["headers"] = headers
+	}
+}
+
 func (h *GrokOAuthHandler) ImportRefreshTokens(c *gin.Context) {
 	var req GrokImportRefreshTokensRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	baseURL, err := resolveGrokImportBaseURL(req)
+	if err != nil {
+		response.BadRequest(c, "Invalid Grok base_url: "+err.Error())
+		return
+	}
+	headers, err := normalizeGrokImportHeaders(req.Headers)
+	if err != nil {
+		response.BadRequest(c, "Invalid Grok headers: "+err.Error())
+		return
+	}
+	req.BaseURL = baseURL
+	req.Headers = headers
 	lines := parseGrokImportTokenLines(req)
 	if len(lines) == 0 {
 		response.BadRequest(c, "refresh_tokens, access_tokens, sso tokens or raw_text is required")
@@ -337,6 +411,7 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 		return result
 	}
 	credentials := h.grokOAuthService.BuildAccountCredentials(tokenInfo)
+	applyGrokImportCredentialOverrides(credentials, req)
 	if len(req.ModelMapping) > 0 {
 		credentials["model_mapping"] = req.ModelMapping
 	}
@@ -374,8 +449,7 @@ func (h *GrokOAuthHandler) importGrokRefreshToken(
 	result.AccountID = account.ID
 	result.Account = dto.AccountFromService(account)
 	result.Email = tokenInfo.Email
-	h.scheduleGrokQuotaProbe(account.ID)
-	return result
+	return h.finalizeGrokImportedAccountHealth(ctx, account, req.BaseURL, result)
 }
 
 func (h *GrokOAuthHandler) importGrokSSOToken(
@@ -449,7 +523,7 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 		result.Error = warning
 		return result
 	}
-	if err := h.validateGrokAccessTokenUpstream(ctx, line.token, proxyURL); err != nil {
+	if err := h.validateGrokAccessTokenUpstream(ctx, line.token, req.BaseURL, proxyURL, req.Headers); err != nil {
 		result.Error = err.Error()
 		return result
 	}
@@ -463,8 +537,9 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 		"access_token": line.token,
 		"token_type":   "Bearer",
 		"expires_at":   expiresAt.Format(time.RFC3339),
-		"base_url":     xai.DefaultBaseURL,
+		"base_url":     req.BaseURL,
 	}
+	applyGrokImportCredentialOverrides(credentials, req)
 	if clientID := strings.TrimSpace(req.ClientID); clientID != "" {
 		credentials["client_id"] = clientID
 	} else {
@@ -527,13 +602,12 @@ func (h *GrokOAuthHandler) importGrokAccessToken(
 	result.AccountID = account.ID
 	result.Account = dto.AccountFromService(account)
 	result.Email = email
-	h.scheduleGrokQuotaProbe(account.ID)
 	if warning != "" {
 		result.Warning = warning
 	} else {
 		result.Warning = "access_token only; no refresh_token, cannot auto-renew after expiry"
 	}
-	return result
+	return h.finalizeGrokImportedAccountHealth(ctx, account, req.BaseURL, result)
 }
 
 func parseGrokAccessTokenClaims(token string, now time.Time) (email string, expUnix int64, warning string) {
@@ -608,6 +682,80 @@ func previewGrokRefreshToken(token string) string {
 	return token[:6] + "…" + token[len(token)-4:]
 }
 
+func appendGrokImportWarning(existing, warning string) string {
+	existing = strings.TrimSpace(existing)
+	warning = strings.TrimSpace(warning)
+	if warning == "" {
+		return existing
+	}
+	if existing == "" {
+		return warning
+	}
+	return existing + "; " + warning
+}
+
+// finalizeGrokImportedAccountHealth prevents CLI accounts from entering a
+// production group based only on a successful token refresh or GET /models.
+// They stay unschedulable until a real /responses probe succeeds.
+func (h *GrokOAuthHandler) finalizeGrokImportedAccountHealth(
+	ctx context.Context,
+	account *service.Account,
+	baseURL string,
+	result GrokImportRefreshTokenLineResult,
+) GrokImportRefreshTokenLineResult {
+	if account == nil || account.ID <= 0 {
+		return result
+	}
+	if !xai.IsCLIChatProxyBaseURL(baseURL) {
+		h.scheduleGrokQuotaProbe(account.ID)
+		return result
+	}
+	if h == nil || h.quotaService == nil || h.adminService == nil {
+		result.Warning = appendGrokImportWarning(result.Warning, "CLI account imported without inference health gate: quota probe is not configured")
+		return result
+	}
+
+	if pending, err := h.adminService.SetAccountSchedulable(ctx, account.ID, false); err != nil {
+		result.Warning = appendGrokImportWarning(result.Warning, "failed to set pending health state: "+err.Error())
+	} else if pending != nil {
+		account = pending
+		result.Account = dto.AccountFromService(pending)
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	probe, err := h.quotaService.ProbeHeaders(probeCtx, account.ID)
+	result.ProbeResult = probe
+	if err != nil {
+		result.Warning = appendGrokImportWarning(result.Warning, "CLI inference health probe failed: "+err.Error())
+	} else if probe == nil {
+		result.Warning = appendGrokImportWarning(result.Warning, "CLI inference health probe returned no result")
+	} else {
+		statusCode := probe.StatusCode
+		detail := strings.TrimSpace(probe.ErrorMessage)
+		switch {
+		case statusCode == 0:
+			if detail == "" {
+				detail = "no authoritative inference result"
+			}
+			result.Warning = appendGrokImportWarning(result.Warning, "CLI inference health probe did not complete: "+detail)
+		case statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices:
+			if detail == "" {
+				detail = http.StatusText(statusCode)
+			}
+			result.Warning = appendGrokImportWarning(
+				result.Warning,
+				fmt.Sprintf("CLI inference health probe rejected account (HTTP %d): %s", statusCode, detail),
+			)
+		}
+	}
+
+	if refreshed, getErr := h.adminService.GetAccount(ctx, account.ID); getErr == nil && refreshed != nil {
+		result.Account = dto.AccountFromService(refreshed)
+	}
+	return result
+}
+
 func (h *GrokOAuthHandler) scheduleGrokQuotaProbe(accountID int64) {
 	if h == nil || h.quotaService == nil || accountID <= 0 {
 		return
@@ -620,13 +768,14 @@ func (h *GrokOAuthHandler) scheduleGrokQuotaProbe(accountID int64) {
 	}(accountID)
 }
 
-// validateGrokAccessTokenUpstream probes api.x.ai with the candidate access token
-// before creating an account. Without this, any forged typ=at+jwt JWT would import.
-func (h *GrokOAuthHandler) validateGrokAccessTokenUpstream(ctx context.Context, accessToken, proxyURL string) error {
+// validateGrokAccessTokenUpstream probes the selected xAI upstream with the
+// candidate access token before creating an account. Without this, any forged
+// typ=at+jwt JWT would import.
+func (h *GrokOAuthHandler) validateGrokAccessTokenUpstream(ctx context.Context, accessToken, baseURL, proxyURL string, headers map[string]string) error {
 	if h == nil || h.quotaService == nil {
 		return fmt.Errorf("access_token upstream validation is not configured")
 	}
-	return h.quotaService.ValidateAccessToken(ctx, accessToken, xai.DefaultBaseURL, proxyURL)
+	return h.quotaService.ValidateAccessToken(ctx, accessToken, baseURL, proxyURL, headers)
 }
 
 // isGrokAPIAccessTokenJWT reports whether token looks like an xAI OAuth access token

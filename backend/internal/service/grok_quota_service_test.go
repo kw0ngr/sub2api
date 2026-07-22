@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -28,6 +29,9 @@ type grokQuotaAccountRepoStub struct {
 	clearRateCalls    int
 	setSchedulableTo  *bool
 	setSchedulableN   int
+	modelRateLimitN   int
+	modelRateLimitKey string
+	modelRateLimitAt  *time.Time
 }
 
 func (r *grokQuotaAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -102,6 +106,21 @@ func (r *grokQuotaAccountRepoStub) SetSchedulable(_ context.Context, id int64, s
 	}
 	return nil
 }
+
+func (r *grokQuotaAccountRepoStub) SetModelRateLimit(_ context.Context, _ int64, model string, resetAt time.Time) error {
+	r.modelRateLimitN++
+	r.modelRateLimitKey = model
+	r.modelRateLimitAt = &resetAt
+	return nil
+}
+
+type grokQuotaFailingReadCloser struct{}
+
+func (grokQuotaFailingReadCloser) Read([]byte) (int, error) {
+	return 0, context.DeadlineExceeded
+}
+
+func (grokQuotaFailingReadCloser) Close() error { return nil }
 
 type grokQuotaHTTPUpstreamStub struct {
 	requestBody   string
@@ -225,6 +244,217 @@ func TestGrokQuotaService_ProbeHeadersFallbackUsesResponsesHealthProbe(t *testin
 	require.True(t, gjson.Get(upstream.requestBody, "stream").Bool())
 	require.False(t, gjson.Get(upstream.requestBody, "max_tokens").Exists())
 	require.False(t, gjson.Get(upstream.requestBody, "messages").Exists())
+}
+
+func TestGrokQuotaService_CLIModels200Inference403IsAuthoritative(t *testing.T) {
+	account := &Account{
+		ID:          2108,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	modelsHeaders := http.Header{}
+	modelsHeaders.Set("x-ratelimit-limit-requests", "60")
+	modelsHeaders.Set("x-ratelimit-remaining-requests", "60")
+	upstream := &grokQuotaHTTPUpstreamStub{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     modelsHeaders,
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"grok-4.5"}]}`)),
+		},
+		{
+			StatusCode: http.StatusForbidden,
+			Header:     http.Header{},
+			Body: io.NopCloser(strings.NewReader(
+				`{"code":"permission-denied","error":"Access to the chat endpoint is denied."}`,
+			)),
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	result, err := svc.ProbeHeaders(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, upstream.calls, "CLI health must not stop at /models")
+	require.Equal(t, http.StatusOK, result.ModelsStatusCode)
+	require.Equal(t, http.StatusForbidden, result.InferenceStatusCode)
+	require.Equal(t, http.StatusForbidden, result.StatusCode)
+	require.Equal(t, "header_probe_responses", result.Source)
+	require.NotNil(t, result.Snapshot)
+	require.Equal(t, "active_probe_responses", result.Snapshot.ObservationSource)
+	require.Contains(t, result.ErrorMessage, "Access to the chat endpoint is denied")
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "Access to the chat endpoint is denied")
+	require.Equal(t, 1, repo.setSchedulableN)
+	require.NotNil(t, repo.setSchedulableTo)
+	require.False(t, *repo.setSchedulableTo)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearTempCalls)
+	require.Zero(t, repo.clearRateCalls)
+	require.Zero(t, repo.modelRateLimitN)
+}
+
+func TestGrokQuotaService_CLIModels200Inference402UsesModelCooldown(t *testing.T) {
+	account := &Account{
+		ID:          2106,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	upstream := &grokQuotaHTTPUpstreamStub{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"grok-4.5"}]}`)),
+		},
+		{
+			StatusCode: http.StatusPaymentRequired,
+			Header:     http.Header{},
+			Body: io.NopCloser(strings.NewReader(
+				`{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription"}`,
+			)),
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	result, err := svc.ProbeHeaders(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, result.ModelsStatusCode)
+	require.Equal(t, http.StatusPaymentRequired, result.InferenceStatusCode)
+	require.Equal(t, http.StatusPaymentRequired, result.StatusCode)
+	require.Equal(t, 1, repo.modelRateLimitN)
+	require.Equal(t, grokQuotaDefaultModel, repo.modelRateLimitKey)
+	require.NotNil(t, repo.modelRateLimitAt)
+	require.Greater(t, time.Until(*repo.modelRateLimitAt), 5*time.Hour)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableN)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearTempCalls)
+	require.Zero(t, repo.clearRateCalls)
+}
+
+func TestGrokQuotaService_ManagementSuccessCannotOverwriteInference403(t *testing.T) {
+	account := &Account{
+		ID:          2113,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"access_token":       "token",
+			"base_url":           xai.DefaultCLIBaseURL,
+			"management_api_key": "management-token",
+			"team_id":            "team-1",
+		},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	upstream := &grokQuotaHTTPUpstreamStub{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+		{
+			StatusCode: http.StatusForbidden,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"code":"permission-denied","error":"chat denied"}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"timeSeries":[{"dataPoints":[{"values":[0.5,10]}]}],"limitReached":false}`)),
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	result, err := svc.ProbeUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, result.ModelsStatusCode)
+	require.Equal(t, http.StatusForbidden, result.InferenceStatusCode)
+	require.Equal(t, http.StatusOK, result.ManagementStatusCode)
+	require.Equal(t, http.StatusForbidden, result.StatusCode)
+	require.NotNil(t, result.OfficialUsage)
+	require.Equal(t, "header_probe_responses", result.Source)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Equal(t, 1, repo.setSchedulableN)
+}
+
+func TestGrokQuotaService_CLIInferenceTransportFailureCannotRecoverFromModels200(t *testing.T) {
+	account := &Account{
+		ID:           2112,
+		Platform:     PlatformGrok,
+		Type:         AccountTypeOAuth,
+		Status:       StatusError,
+		Schedulable:  false,
+		ErrorMessage: "grok probe forbidden",
+		Credentials: map[string]any{
+			"access_token": "token",
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+		Concurrency: 1,
+	}
+	repo := &grokQuotaAccountRepoStub{account: account}
+	upstream := &grokQuotaHTTPUpstreamStub{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"grok-4.5"}]}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       grokQuotaFailingReadCloser{},
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, nil, upstream)
+
+	result, err := svc.ProbeHeaders(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, result.ModelsStatusCode)
+	require.Equal(t, http.StatusOK, result.InferenceStatusCode)
+	require.Zero(t, result.StatusCode)
+	require.Equal(t, "header_probe_responses_error", result.Source)
+	require.Contains(t, result.ErrorMessage, "inference probe failed")
+	require.Equal(t, "transient", classifyGrokProbeResult(result))
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearTempCalls)
+	require.Zero(t, repo.clearRateCalls)
+	require.Zero(t, repo.setSchedulableN)
+	require.Equal(t, StatusError, account.Status)
+	require.False(t, account.Schedulable)
+}
+
+func TestValidateGrokInferenceProbeCompletion(t *testing.T) {
+	require.NoError(t, validateGrokInferenceProbeCompletion([]byte("data: {\"type\":\"response.completed\"}\n\n")))
+	require.NoError(t, validateGrokInferenceProbeCompletion([]byte(`{"type":"response","status":"completed"}`)))
+	require.ErrorContains(
+		t,
+		validateGrokInferenceProbeCompletion([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\ndata: [DONE]\n\n")),
+		"before response.completed",
+	)
+	require.ErrorContains(
+		t,
+		validateGrokInferenceProbeCompletion([]byte("data: {\"type\":\"error\",\"error\":{\"message\":\"stream denied\"}}\n\n")),
+		"stream denied",
+	)
 }
 
 func TestGrokQuotaService_ProbeUsage_fetchesOfficialManagementUsage(t *testing.T) {
