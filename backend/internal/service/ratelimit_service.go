@@ -273,6 +273,16 @@ genericRuntimePath:
 		upstreamMsg = truncateForLog([]byte(upstreamMsg), 512)
 	}
 
+	// xAI has emitted the same structured subscription/spending-limit code
+	// with both 402 and 403. Classify by the upstream code before the generic
+	// status handlers so a billing/entitlement response cannot permanently
+	// poison an otherwise valid Grok OAuth account merely because the HTTP
+	// status changed.
+	if (statusCode == http.StatusPaymentRequired || statusCode == http.StatusForbidden) &&
+		s.handleGrokSubscriptionSpendingLimit(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
+		return true
+	}
+
 	switch statusCode {
 	case 400:
 		// "organization has been disabled" → 永久禁用
@@ -353,14 +363,6 @@ genericRuntimePath:
 		if account.Platform == PlatformOpenAI && gjson.GetBytes(responseBody, "detail.code").String() == "deactivated_workspace" {
 			msg := "Workspace deactivated (402): workspace has been deactivated"
 			s.handleAuthError(ctx, account, msg)
-			shouldDisable = true
-			break
-		}
-		// Grok OAuth subscription entitlements are model-specific. In particular,
-		// cli-chat-proxy Free accounts can use grok-4.5 while plan-gated models
-		// return personal-team-blocked:spending-limit. Do not turn that single
-		// model failure into a permanent account-wide error.
-		if s.handleGrokSubscriptionSpendingLimit(ctx, account, responseBody, firstRequestedModel(requestedModel)) {
 			shouldDisable = true
 			break
 		}
@@ -446,7 +448,7 @@ func isIgnorableGrokBuildProbeError(account *Account, statusCode int, responseBo
 	return statusCode >= http.StatusBadRequest && statusCode != http.StatusUnauthorized
 }
 
-func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Context, account *Account, responseBody []byte, requestedModel string) bool {
+func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel string) bool {
 	if account == nil || !account.IsGrokOAuth() || !isGrokSubscriptionSpendingLimit(responseBody) {
 		return false
 	}
@@ -470,6 +472,7 @@ func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Conte
 			"grok_subscription_model_rate_limited",
 			"account_id", account.ID,
 			"model", modelKey,
+			"upstream_status", statusCode,
 			"upstream_code", grokSubscriptionSpendingCode,
 			"reset_at", resetAt,
 			"reset_in", time.Until(resetAt).Truncate(time.Second),
@@ -481,7 +484,7 @@ func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Conte
 	// recovery there as well, but cool down the account briefly to avoid a
 	// tight retry loop until a model-aware request or capability sync occurs.
 	until := time.Now().Add(grokSubscriptionAccountCooldown)
-	reason := "Grok subscription spending limit (402)"
+	reason := fmt.Sprintf("Grok subscription spending limit (%d)", statusCode)
 	if upstreamMsg := strings.TrimSpace(gjson.GetBytes(responseBody, "error").String()); upstreamMsg != "" {
 		reason += ": " + truncateForLog([]byte(sanitizeUpstreamErrorMessage(upstreamMsg)), 512)
 	}
@@ -492,6 +495,7 @@ func (s *RateLimitService) handleGrokSubscriptionSpendingLimit(ctx context.Conte
 	slog.Warn(
 		"grok_subscription_temp_unschedulable",
 		"account_id", account.ID,
+		"upstream_status", statusCode,
 		"upstream_code", grokSubscriptionSpendingCode,
 		"until", until,
 	)

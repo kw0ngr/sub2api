@@ -429,35 +429,40 @@ func TestAccountTestService_GrokPermissionDeniedDisablesAccount(t *testing.T) {
 }
 
 func TestAccountTestService_GrokSpendingLimitUsesModelCooldown(t *testing.T) {
-	ctx, recorder := newTestContext()
-	resp := newJSONResponse(http.StatusPaymentRequired, `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription"}`)
+	for _, statusCode := range []int{http.StatusPaymentRequired, http.StatusForbidden} {
+		statusCode := statusCode
+		t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
+			ctx, recorder := newTestContext()
+			resp := newJSONResponse(statusCode, `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription"}`)
 
-	repo := &openAIAccountTestRepo{}
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
-	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
-	account := &Account{
-		ID:          2106,
-		Platform:    PlatformGrok,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Credentials: map[string]any{
-			"access_token": "grok-access-token",
-			"base_url":     "https://cli-chat-proxy.grok.com/v1",
-		},
+			repo := &openAIAccountTestRepo{}
+			upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+			svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+			account := &Account{
+				ID:          2106,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"access_token": "grok-access-token",
+					"base_url":     "https://cli-chat-proxy.grok.com/v1",
+				},
+			}
+
+			err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+
+			require.Error(t, err)
+			require.Contains(t, recorder.Body.String(), grokSubscriptionSpendingCode)
+			require.Equal(t, 1, repo.modelRateLimitCalls)
+			require.Equal(t, "grok-4.5", repo.modelRateLimitKey)
+			require.NotNil(t, repo.modelRateLimitAt)
+			require.Greater(t, time.Until(*repo.modelRateLimitAt), 5*time.Hour)
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, repo.setSchedulableCalls)
+		})
 	}
-
-	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
-
-	require.Error(t, err)
-	require.Contains(t, recorder.Body.String(), grokSubscriptionSpendingCode)
-	require.Equal(t, 1, repo.modelRateLimitCalls)
-	require.Equal(t, "grok-4.5", repo.modelRateLimitKey)
-	require.NotNil(t, repo.modelRateLimitAt)
-	require.Greater(t, time.Until(*repo.modelRateLimitAt), 5*time.Hour)
-	require.Zero(t, repo.setErrorCalls)
-	require.Zero(t, repo.setSchedulableCalls)
 }
 
 func TestAccountTestService_GrokBuildProbe402And403HaveNoHealthSideEffects(t *testing.T) {

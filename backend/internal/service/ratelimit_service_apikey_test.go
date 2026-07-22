@@ -770,6 +770,41 @@ func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402UsesModelCool
 	require.WithinDuration(t, before.Add(grokSubscriptionModelCooldown), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_GrokOAuthSpendingLimit403UsesModelCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStubWithSchedulable{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:          2091,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"base_url": "https://api.x.ai/v1",
+		},
+	}
+	body := []byte(`{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription."}`)
+
+	before := time.Now()
+	shouldDisable := svc.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		http.Header{},
+		body,
+		"grok-4.5",
+	)
+	after := time.Now()
+
+	require.True(t, shouldDisable, "the current request should fail over")
+	require.Zero(t, repo.setErrorCalls, "a spending-limit 403 must not permanently poison the account")
+	require.Zero(t, repo.setSchedulableCalls, "the account-wide scheduling switch must remain enabled")
+	require.Zero(t, repo.tempCalls)
+	require.Equal(t, []string{"grok-4.5"}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+	require.WithinDuration(t, before.Add(grokSubscriptionModelCooldown), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
+}
+
 func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402WithoutModelUsesTemporaryCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStubWithSchedulable{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
