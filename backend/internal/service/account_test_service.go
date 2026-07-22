@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -68,6 +69,7 @@ type AccountTestService struct {
 	accountRepo               AccountRepository
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
+	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
@@ -80,6 +82,7 @@ func NewAccountTestService(
 	accountRepo AccountRepository,
 	geminiTokenProvider *GeminiTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
+	grokTokenProvider *GrokTokenProvider,
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
@@ -90,6 +93,7 @@ func NewAccountTestService(
 		accountRepo:               accountRepo,
 		geminiTokenProvider:       geminiTokenProvider,
 		claudeTokenProvider:       claudeTokenProvider,
+		grokTokenProvider:         grokTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
@@ -627,7 +631,16 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if account.IsOAuth() {
 		isOAuth = true
-		authToken = account.GetOpenAIAccessToken()
+		if account.IsGrokOAuth() && s.grokTokenProvider != nil {
+			var tokenErr error
+			authToken, tokenErr = s.grokTokenProvider.GetAccessToken(ctx, account)
+			if tokenErr != nil {
+				redactedErr := logredact.RedactText(tokenErr.Error())
+				return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to get Grok access token: %s", redactedErr))
+			}
+		} else {
+			authToken = account.GetOpenAIAccessToken()
+		}
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No access token available")
 		}

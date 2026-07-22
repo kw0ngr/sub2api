@@ -66,6 +66,7 @@ func newCodexModelsHandlerGatewayService(repo service.AccountRepository, schedul
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 }
 

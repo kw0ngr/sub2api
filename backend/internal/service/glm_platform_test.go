@@ -372,7 +372,7 @@ func TestFetchUpstreamSupportedModelsGLMOpenAIModeUsesModelsEndpoint(t *testing.
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"},{"id":"glm-5-turbo"}]}`)),
 	}}
-	svc := NewAccountTestService(nil, nil, nil, nil, upstream, &config.Config{
+	svc := NewAccountTestService(nil, nil, nil, nil, nil, upstream, &config.Config{
 		Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
 	}, nil, nil)
 	account := &Account{
@@ -403,7 +403,7 @@ func TestFetchUpstreamSupportedModelsGLMAnthropicFallbackBuiltIns(t *testing.T) 
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"not found"}}`)),
 	}}
-	svc := NewAccountTestService(nil, nil, nil, nil, upstream, &config.Config{
+	svc := NewAccountTestService(nil, nil, nil, nil, nil, upstream, &config.Config{
 		Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
 	}, nil, nil)
 	account := &Account{

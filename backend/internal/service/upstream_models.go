@@ -276,7 +276,15 @@ func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Contex
 	}
 	apiKey := strings.TrimSpace(account.GetOpenAIApiKey())
 	if apiKey == "" && account.Platform == PlatformGrok && account.Type == AccountTypeOAuth {
-		apiKey = strings.TrimSpace(account.GetOpenAIAccessToken())
+		if s.grokTokenProvider != nil {
+			accessToken, tokenErr := s.grokTokenProvider.GetAccessToken(ctx, account)
+			if tokenErr != nil {
+				return nil, newUpstreamModelSyncUpstreamError("Failed to get Grok access token", tokenErr)
+			}
+			apiKey = strings.TrimSpace(accessToken)
+		} else {
+			apiKey = strings.TrimSpace(account.GetOpenAIAccessToken())
+		}
 	}
 	if apiKey == "" {
 		return nil, newUpstreamModelSyncConfigError("No OpenAI-compatible API key or access token is available", nil)

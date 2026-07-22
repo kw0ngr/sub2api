@@ -76,7 +76,7 @@ func TestOpenAIChatCompletionsCyberPolicyDoesNotSweepAccountPool(t *testing.T) {
 	gatewayService := service.NewOpenAIGatewayService(
 		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
 		service.NewBillingService(cfg, nil), rateLimitService, billingCacheService,
-		upstream, &service.DeferredService{}, nil, nil, nil, nil, nil,
+		upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil,
 	)
 	cache := &concurrencyCacheMock{
 		acquireUserSlotFn:    func(context.Context, int64, int, string) (bool, error) { return true, nil },

@@ -86,6 +86,81 @@ type openAIAccountTestRepo struct {
 	modelRateLimitAt    *time.Time
 }
 
+type grokAccountTestRefreshRepo struct {
+	openAIAccountTestRepo
+	account            *Account
+	updatedCredentials map[string]any
+}
+
+func (r *grokAccountTestRefreshRepo) GetByID(_ context.Context, id int64) (*Account, error) {
+	if r.account == nil || r.account.ID != id {
+		return nil, fmt.Errorf("account %d not found", id)
+	}
+	return r.account, nil
+}
+
+func (r *grokAccountTestRefreshRepo) UpdateCredentials(_ context.Context, id int64, credentials map[string]any) error {
+	if r.account == nil || r.account.ID != id {
+		return fmt.Errorf("account %d not found", id)
+	}
+	r.updatedCredentials = cloneCredentials(credentials)
+	r.account.Credentials = cloneCredentials(credentials)
+	return nil
+}
+
+type grokAccountTestRefreshExecutor struct {
+	credentials  map[string]any
+	err          error
+	refreshCalls int
+}
+
+func (e *grokAccountTestRefreshExecutor) CanRefresh(account *Account) bool {
+	return account != nil && account.IsGrokOAuth()
+}
+
+func (e *grokAccountTestRefreshExecutor) NeedsRefresh(_ *Account, _ time.Duration) bool {
+	return true
+}
+
+func (e *grokAccountTestRefreshExecutor) Refresh(_ context.Context, _ *Account) (map[string]any, error) {
+	e.refreshCalls++
+	if e.err != nil {
+		return nil, e.err
+	}
+	return cloneCredentials(e.credentials), nil
+}
+
+func (e *grokAccountTestRefreshExecutor) CacheKey(account *Account) string {
+	return GrokTokenCacheKey(account)
+}
+
+func newGrokAccountTestRefreshFixture() (*Account, *grokAccountTestRefreshRepo, *grokAccountTestRefreshExecutor, *GrokTokenProvider) {
+	account := &Account{
+		ID:          4201,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "expired-grok-token",
+			"refresh_token": "current-refresh-token",
+			"expires_at":    time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+			"base_url":      "https://cli-chat-proxy.grok.com/v1",
+		},
+	}
+	repo := &grokAccountTestRefreshRepo{account: account}
+	executor := &grokAccountTestRefreshExecutor{credentials: map[string]any{
+		"access_token":  "fresh-grok-token",
+		"refresh_token": "rotated-refresh-token",
+		"expires_at":    time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339),
+		"base_url":      "https://cli-chat-proxy.grok.com/v1",
+	}}
+	provider := NewGrokTokenProvider(repo, nil)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, nil), executor)
+	return account, repo, executor, provider
+}
+
 func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
 	r.updatedExtra = updates
 	return nil
@@ -294,6 +369,48 @@ func TestAccountTestService_GrokUsesSharedResponsesProbe(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "store").Exists())
 	require.False(t, gjson.GetBytes(body, "instructions").Exists())
 	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_GrokOAuthRefreshesExpiredTokenBeforeProbe(t *testing.T) {
+	ctx, recorder := newTestContext()
+	account, repo, executor, provider := newGrokAccountTestRefreshFixture()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = newOpenAISuccessStream("hello from refreshed Grok")
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		accountRepo:       repo,
+		grokTokenProvider: provider,
+		httpUpstream:      upstream,
+		cfg:               &config.Config{},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "grok-4.5")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, executor.refreshCalls)
+	require.Equal(t, "fresh-grok-token", repo.updatedCredentials["access_token"])
+	require.Equal(t, "rotated-refresh-token", repo.updatedCredentials["refresh_token"])
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "Bearer fresh-grok-token", upstream.requests[0].Header.Get("Authorization"))
+	require.NotContains(t, upstream.requests[0].Header.Get("Authorization"), "expired-grok-token")
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_GrokOAuthRefreshesExpiredTokenBeforeModelSync(t *testing.T) {
+	account, repo, executor, provider := newGrokAccountTestRefreshFixture()
+	svc := &AccountTestService{
+		grokTokenProvider: provider,
+		cfg:               &config.Config{},
+	}
+
+	req, err := svc.buildOpenAIUpstreamModelsRequest(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, executor.refreshCalls)
+	require.Equal(t, "fresh-grok-token", repo.updatedCredentials["access_token"])
+	require.Equal(t, "Bearer fresh-grok-token", req.Header.Get("Authorization"))
+	require.NotContains(t, req.Header.Get("Authorization"), "expired-grok-token")
 }
 
 func TestAccountTestService_GrokBuildProbe429DoesNotPersistRateLimit(t *testing.T) {

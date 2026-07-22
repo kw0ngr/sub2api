@@ -54,6 +54,7 @@ func TestAccountHandlerSyncUpstreamModelsPreviewUsesProvidedCredentials(t *testi
 			nil,
 			nil,
 			nil,
+			nil,
 			upstream,
 			accountHandlerUpstreamModelsConfig(),
 			nil,

@@ -141,7 +141,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnInitialUsageLimitEvent(t *testing.T)
 	gatewayService := service.NewOpenAIGatewayService(
 		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
 		service.NewBillingService(cfg, nil), rateLimitService, billingCacheService,
-		nil, &service.DeferredService{}, nil, nil, nil, nil, nil,
+		nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil,
 	)
 	cache := &concurrencyCacheMock{
 		acquireUserSlotFn:    func(context.Context, int64, int, string) (bool, error) { return true, nil },
