@@ -2,7 +2,7 @@
 
 日期：2026-07-22
 
-影响版本：`v0.1.279` 及更早版本；`v0.1.280` 完成第一阶段止血；`v0.1.281` 完成全路径隔离
+影响版本：`v0.1.279` 及更早版本；`v0.1.280` 完成第一阶段止血；`v0.1.281` 完成请求失败路径隔离；`v0.1.282` 封闭测试成功后的恢复旁路
 
 涉及平台：Grok OAuth / `cli-chat-proxy.grok.com`
 
@@ -140,7 +140,16 @@ flowchart TD
 - Messages 缓冲流、Messages 流式桥接、Responses 非流式 SSE/JSON 失败终态没有统一进入 failover。
 - 已经是最终上游名的 `grok-build-0.1` 可能被宽泛通配映射二次改写，导致豁免识别失败。
 
-## 5. `v0.1.281` 修复设计
+### 4.3 发布验收发现的成功恢复旁路
+
+`v0.1.281` 首次部署后的生产验收继续反向审计了所有“清理账号健康状态”的调用点，发现账号测试内部虽然已经跳过 Build 探活成功后的恢复，但还有两个调用方会在测试成功后再次恢复状态：
+
+- 管理端单账号测试 handler 无条件调用 `RecoverAccountAfterSuccessfulTest`。
+- 定时测试 runner 无条件调用 `RecoverAccountState` 清理瞬态状态，并可按 `auto_recover` 清理错误状态。
+
+这两个调用方不会造成“探活失败后禁号”，但会造成相反方向的错误：一次 Build 探活成功可能清掉真实模型产生的错误、限流、过载、临时不可调度或模型级冷却。`v0.1.282` 将实际测试模型带入统一恢复层，在最底层阻止手动测试与定时测试绕过该不变量；显式管理员恢复不携带测试模型，因此仍保持原有行为。
+
+## 5. `v0.1.281`–`v0.1.282` 修复设计
 
 ### 5.1 建立单一探活识别规则
 
@@ -211,6 +220,13 @@ flowchart TD
 - 缺少必要动态 ID 时生成合法 ID。
 - Responses、Chat Completions、后台账号测试与额度探测使用同一套请求身份构造逻辑。
 
+### 5.5 测试成功后的恢复隔离
+
+- `AccountRecoveryOptions` 增加 `SuccessfulTestModel`，只表示“本次成功诊断所使用的模型”。
+- 管理端单账号测试和定时测试都必须把测试模型传入统一恢复层。
+- 统一恢复层在读到 Grok OAuth + `grok-build-0.1`（含账号 alias/wildcard 映射）时返回空恢复结果，不执行任何 `Clear*` 或状态切换。
+- 显式管理员“恢复状态”不设置 `SuccessfulTestModel`，仍可按管理员意图恢复账号。
+
 ## 6. 验证
 
 已执行：
@@ -236,13 +252,14 @@ pnpm exec vue-tsc --noEmit --pretty false
 - 宽泛 wildcard 不能破坏最终模型识别。
 - HTTP 200 + SSE/JSON `response.failed` 在 Responses、Chat 和 Messages 各入口均保留模型上下文。
 - 后台测试 429、成功恢复、transport error、stream timeout 均不改变 Build 探活对应账号健康状态。
+- 管理端 handler 与定时测试 runner 的二次恢复均携带测试模型，并在统一恢复层被拦截。
 - 真实模型错误仍按原策略执行，未扩大豁免范围。
 
 ## 7. 发布后验收
 
-部署 `v0.1.281` 后检查：
+部署 `v0.1.282` 后检查：
 
-1. 服务版本为 `0.1.281` 且 systemd 状态为 `active (running)`。
+1. 服务版本为 `0.1.282` 且 systemd 状态为 `active (running)`。
 2. 启动日志无 migration、panic、端口占用或配置错误。
 3. 自然发生 Build 探活时，应看到以下任一审计日志：
 
@@ -254,6 +271,7 @@ grok_build_probe_temp_unschedulable_skipped
 grok_build_probe_account_test_health_mutation_skipped
 grok_build_probe_transport_health_mutation_skipped
 grok_build_probe_stream_timeout_health_mutation_skipped
+grok_build_probe_post_test_recovery_skipped
 ```
 
 4. 同一请求不应伴随以下由 Build 探活触发的状态日志：

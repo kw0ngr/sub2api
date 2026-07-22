@@ -44,6 +44,11 @@ type AccountRecoveryOptions struct {
 	// after a successful probe; this flag only gates status recovery.
 	RecoverError    bool
 	InvalidateToken bool
+	// SuccessfulTestModel identifies the model that produced the successful
+	// diagnostic result. It is intentionally empty for an explicit operator
+	// recovery. Optional capability probes such as grok-build-0.1 are not valid
+	// evidence for clearing health state created by real inference models.
+	SuccessfulTestModel string
 }
 
 type geminiUsageCacheEntry struct {
@@ -1738,6 +1743,18 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 	}
 
 	result := &SuccessfulTestRecoveryResult{}
+	if strings.TrimSpace(options.SuccessfulTestModel) != "" && isGrokBuildProbeRequest(account, options.SuccessfulTestModel) {
+		// Manual and scheduled test runners both call this recovery layer after a
+		// successful response. Keep the guard here so neither caller can turn an
+		// optional Build capability probe into evidence that real-model errors,
+		// rate limits, overloads, or cooldowns have recovered.
+		slog.Info(
+			"grok_build_probe_post_test_recovery_skipped",
+			"account_id", account.ID,
+			"requested_model", options.SuccessfulTestModel,
+		)
+		return result, nil
+	}
 	if options.RecoverError && account.Status == StatusError {
 		if err := s.accountRepo.ClearError(ctx, accountID); err != nil {
 			return nil, err
@@ -1762,8 +1779,12 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 
 // RecoverAccountAfterSuccessfulTest 将一次成功测试视为正常请求，
 // 按需恢复 error / rate-limit / overload / temp-unsched / model-rate-limit 等运行时状态。
-func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64) (*SuccessfulTestRecoveryResult, error) {
-	return s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{RecoverError: true})
+// requestedModel 为空时保持旧行为；传入模型后，可选能力探活不会触发恢复。
+func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64, requestedModel ...string) (*SuccessfulTestRecoveryResult, error) {
+	return s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{
+		RecoverError:        true,
+		SuccessfulTestModel: firstRequestedModel(requestedModel),
+	})
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {

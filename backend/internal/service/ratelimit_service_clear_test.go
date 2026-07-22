@@ -297,6 +297,74 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 	require.Empty(t, cache.deletedIDs)
 }
 
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_GrokBuildProbeDoesNotClearHealth(t *testing.T) {
+	now := time.Now()
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{
+			ID:                     2108,
+			Platform:               PlatformGrok,
+			Type:                   AccountTypeOAuth,
+			Status:                 StatusError,
+			Schedulable:            false,
+			RateLimitedAt:          &now,
+			OverloadUntil:          &now,
+			TempUnschedulableUntil: &now,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"grok-build": grokBuildProbeModel,
+				},
+			},
+			Extra: map[string]any{
+				"model_rate_limits": map[string]any{grokBuildProbeModel: true},
+			},
+		},
+	}
+	cache := &tempUnschedCacheRecorder{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 2108, "grok-build")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.ClearedError)
+	require.False(t, result.ClearedRateLimit)
+
+	require.Equal(t, 1, repo.getByIDCalls)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearRateLimitCalls)
+	require.Zero(t, repo.clearAntigravityCalls)
+	require.Zero(t, repo.clearModelRateLimitCalls)
+	require.Zero(t, repo.clearTempUnschedCalls)
+	require.Empty(t, cache.deletedIDs)
+}
+
+func TestRateLimitService_RecoverAccountState_ScheduledGrokBuildProbeDoesNotClearHealth(t *testing.T) {
+	now := time.Now()
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{
+			ID:                     2105,
+			Platform:               PlatformGrok,
+			Type:                   AccountTypeOAuth,
+			Status:                 StatusError,
+			RateLimitedAt:          &now,
+			TempUnschedulableUntil: &now,
+			Credentials:            map[string]any{},
+		},
+	}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, &tempUnschedCacheRecorder{})
+
+	result, err := svc.RecoverAccountState(context.Background(), 2105, AccountRecoveryOptions{
+		RecoverError:        true,
+		SuccessfulTestModel: grokBuildProbeModel,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.ClearedError)
+	require.False(t, result.ClearedRateLimit)
+	require.Equal(t, 1, repo.getByIDCalls)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearRateLimitCalls)
+}
+
 func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearErrorFailed(t *testing.T) {
 	repo := &rateLimitClearRepoStub{
 		getByIDAccount: &Account{
