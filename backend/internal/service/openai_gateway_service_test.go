@@ -641,6 +641,34 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForPlatform_OpenRouter(t
 	require.Equal(t, PlatformOpenRouter, selection.Account.Platform)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForPlatform_GeminiAPIKey(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(99002)
+	geminiAccount := Account{ID: 3, Platform: PlatformGemini, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{geminiAccount}},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForPlatform(
+		ctx,
+		PlatformGemini,
+		&groupID,
+		"",
+		"",
+		"gemini-3.6-flash",
+		nil,
+		OpenAIUpstreamTransportAny,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(3), selection.Account.ID)
+	require.Equal(t, PlatformGemini, selection.Account.Platform)
+}
+
 func TestOpenAIGatewayService_ForwardAsChatCompletions_OpenRouterUsesNativeChatEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

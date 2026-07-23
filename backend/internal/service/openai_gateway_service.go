@@ -1816,10 +1816,7 @@ func isSchedulableOpenAICompatibleAccountForPlatform(account *Account, platform 
 	if account.Platform != platform {
 		return false
 	}
-	if platform == PlatformGLM {
-		return account.IsGLMOpenAICompatible()
-	}
-	return account.IsOpenAICompatible()
+	return account.IsOpenAICompatible() || isThirdPartyOpenAICompatibleAccount(account)
 }
 
 func isSchedulableOpenAICompatibleAccountForRequest(ctx context.Context, account *Account, platform string, requestedModel string) bool {
