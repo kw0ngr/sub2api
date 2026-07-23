@@ -17,6 +17,43 @@ vi.mock('@/composables/useClipboard', () => ({
 import UseKeyModal from '../UseKeyModal.vue'
 
 describe('UseKeyModal', () => {
+  it('uses Gemini 3.6 Flash by default and exposes the latest models in OpenCode', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'gemini'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    expect(wrapper.find('pre code').text()).toContain('GEMINI_MODEL="gemini-3.6-flash"')
+    expect(wrapper.find('pre code').text()).not.toContain('gemini-2.0-flash')
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const config = JSON.parse(wrapper.find('pre code').text())
+    const models = config.provider.gemini.models
+    expect(models['gemini-3.6-flash'].name).toBe('Gemini 3.6 Flash')
+    expect(models['gemini-3.5-flash-lite'].name).toBe('Gemini 3.5 Flash Lite')
+    expect(models).not.toHaveProperty('gemini-2.0-flash')
+  })
+
   it('renders GPT-5.4 mini entry in OpenCode config', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

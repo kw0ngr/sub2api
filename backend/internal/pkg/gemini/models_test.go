@@ -12,6 +12,9 @@ func TestDefaultModels_ContainsFallbackCatalogModels(t *testing.T) {
 	}
 
 	required := []string{
+		"models/gemini-3.6-flash",
+		"models/gemini-3.5-flash-lite",
+		"models/gemini-3.1-flash-lite",
 		"models/gemini-2.5-flash-image",
 		"models/gemini-3.5-flash",
 		"models/gemini-3.1-pro-preview-customtools",
@@ -26,6 +29,14 @@ func TestDefaultModels_ContainsFallbackCatalogModels(t *testing.T) {
 		if len(model.SupportedGenerationMethods) == 0 {
 			t.Fatalf("expected fallback model %q to advertise generation methods", name)
 		}
+	}
+}
+
+func TestDefaultModels_DoesNotAdvertiseRetiredGemini20Flash(t *testing.T) {
+	t.Parallel()
+
+	if HasFallbackModel("gemini-2.0-flash") {
+		t.Fatal("retired gemini-2.0-flash must not remain in the fallback catalog")
 	}
 }
 

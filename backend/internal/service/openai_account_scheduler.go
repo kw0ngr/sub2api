@@ -633,6 +633,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
 			continue
 		}
+		if s.service.isOpenAIStreamQuarantined(account) {
+			continue
+		}
 		if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 			continue
 		}

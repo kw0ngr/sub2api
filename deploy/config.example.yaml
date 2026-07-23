@@ -343,6 +343,13 @@ gateway:
   # Stream keepalive interval (seconds), 0=disable
   # 流式 keepalive 间隔（秒），0=禁用
   stream_keepalive_interval: 10
+  # OpenAI-compatible SSE 断流熔断：有代理按 proxy_id 共享隔离，
+  # 无代理按账号隔离；只影响后续调度，不持久化账号错误状态。
+  openai_proxy_stream_circuit:
+    failure_threshold: 2
+    window_seconds: 60
+    account_window_seconds: 300
+    ttl_seconds: 600
   # SSE max line size in bytes (default: 40MB)
   # SSE 单行最大字节数（默认 40MB）
   max_line_size: 41943040

@@ -170,6 +170,57 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	}
 }
 
+func TestLoadOpenAIProxyStreamCircuitConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, 2, cfg.Gateway.OpenAIProxyStreamCircuit.FailureThreshold)
+		require.Equal(t, 60, cfg.Gateway.OpenAIProxyStreamCircuit.WindowSeconds)
+		require.Equal(t, 300, cfg.Gateway.OpenAIProxyStreamCircuit.AccountWindowSeconds)
+		require.Equal(t, 600, cfg.Gateway.OpenAIProxyStreamCircuit.TTLSeconds)
+	})
+
+	t.Run("environment overrides", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("GATEWAY_OPENAI_PROXY_STREAM_CIRCUIT_FAILURE_THRESHOLD", "3")
+		t.Setenv("GATEWAY_OPENAI_PROXY_STREAM_CIRCUIT_WINDOW_SECONDS", "90")
+		t.Setenv("GATEWAY_OPENAI_PROXY_STREAM_CIRCUIT_ACCOUNT_WINDOW_SECONDS", "360")
+		t.Setenv("GATEWAY_OPENAI_PROXY_STREAM_CIRCUIT_TTL_SECONDS", "420")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, 3, cfg.Gateway.OpenAIProxyStreamCircuit.FailureThreshold)
+		require.Equal(t, 90, cfg.Gateway.OpenAIProxyStreamCircuit.WindowSeconds)
+		require.Equal(t, 360, cfg.Gateway.OpenAIProxyStreamCircuit.AccountWindowSeconds)
+		require.Equal(t, 420, cfg.Gateway.OpenAIProxyStreamCircuit.TTLSeconds)
+	})
+}
+
+func TestValidateOpenAIProxyStreamCircuitRejectsNegativeValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{name: "threshold", mutate: func(c *Config) { c.Gateway.OpenAIProxyStreamCircuit.FailureThreshold = -1 }, wantErr: "failure_threshold"},
+		{name: "window", mutate: func(c *Config) { c.Gateway.OpenAIProxyStreamCircuit.WindowSeconds = -1 }, wantErr: "window_seconds"},
+		{name: "account window", mutate: func(c *Config) { c.Gateway.OpenAIProxyStreamCircuit.AccountWindowSeconds = -1 }, wantErr: "account_window_seconds"},
+		{name: "ttl", mutate: func(c *Config) { c.Gateway.OpenAIProxyStreamCircuit.TTLSeconds = -1 }, wantErr: "ttl_seconds"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.wantErr)
+		})
+	}
+}
+
 func TestLoadOpenAIWSStickyTTLCompatibility(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("GATEWAY_OPENAI_WS_STICKY_RESPONSE_ID_TTL_SECONDS", "0")

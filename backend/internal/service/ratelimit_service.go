@@ -79,6 +79,7 @@ const (
 const (
 	grokSubscriptionModelCooldown   = 6 * time.Hour
 	grokSubscriptionAccountCooldown = 30 * time.Minute
+	grokPaymentRequiredCooldown     = 30 * time.Minute
 	grokSubscriptionSpendingCode    = "personal-team-blocked:spending-limit"
 	grokBuildProbeModel             = "grok-build-0.1"
 )
@@ -176,6 +177,13 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 				"status_code", statusCode,
 				"model", grokBuildProbeModel,
 			)
+			return true
+		}
+		if account.Platform == PlatformGrok && statusCode == http.StatusPaymentRequired {
+			if s.handleGrokSubscriptionSpendingLimit(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
+				return true
+			}
+			s.handleGrokPaymentRequiredCooldown(ctx, account, responseBody)
 			return true
 		}
 		customErrorCodesDisabledPool := account.IsPoolMode() && !account.IsCustomErrorCodesEnabled()
@@ -507,6 +515,29 @@ func isGrokSubscriptionSpendingLimit(responseBody []byte) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(string(responseBody)), grokSubscriptionSpendingCode)
+}
+
+func (s *RateLimitService) handleGrokPaymentRequiredCooldown(ctx context.Context, account *Account, responseBody []byte) {
+	if s == nil || account == nil || s.accountRepo == nil {
+		return
+	}
+	until := time.Now().Add(grokPaymentRequiredCooldown)
+	reason := "Grok payment required (402)"
+	if upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody)); upstreamMsg != "" {
+		reason += ": " + truncateForLog([]byte(sanitizeUpstreamErrorMessage(upstreamMsg)), 512)
+	}
+	account.TempUnschedulableUntil = &until
+	account.TempUnschedulableReason = reason
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("grok_payment_required_temp_unschedulable_failed", "account_id", account.ID, "error", err)
+		return
+	}
+	slog.Warn(
+		"grok_payment_required_temp_unschedulable",
+		"account_id", account.ID,
+		"until", until,
+		"reset_in", grokPaymentRequiredCooldown,
+	)
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.

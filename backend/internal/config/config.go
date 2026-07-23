@@ -368,6 +368,9 @@ type GatewayConfig struct {
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
+	// OpenAIProxyStreamCircuit: OpenAI-compatible SSE 断流熔断策略。
+	// 有代理时按 proxy_id 隔离；无代理时按账号隔离，覆盖第三方 Grok/GLM/OpenAI-compatible 上游。
+	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -438,6 +441,19 @@ type GatewayConfig struct {
 	// UserMessageQueue: 用户消息串行队列配置
 	// 对 role:"user" 的真实用户消息实施账号级串行化 + RPM 自适应延迟
 	UserMessageQueue UserMessageQueueConfig `mapstructure:"user_message_queue"`
+}
+
+// GatewayOpenAIProxyStreamCircuitConfig controls the bounded in-process
+// circuit used for incomplete OpenAI-compatible SSE streams.
+type GatewayOpenAIProxyStreamCircuitConfig struct {
+	// FailureThreshold: 统计窗口内多少次真实上游断流后隔离目标。
+	FailureThreshold int `mapstructure:"failure_threshold"`
+	// WindowSeconds: 断流统计窗口（秒）。
+	WindowSeconds int `mapstructure:"window_seconds"`
+	// AccountWindowSeconds: 无代理账号的断流统计窗口（秒）。长流故障常在 60 秒后才暴露，默认窗口更长。
+	AccountWindowSeconds int `mapstructure:"account_window_seconds"`
+	// TTLSeconds: 代理或账号隔离持续时间（秒）。
+	TTLSeconds int `mapstructure:"ttl_seconds"`
 }
 
 // UserMessageQueueConfig 用户消息串行队列配置
@@ -1429,6 +1445,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.queue", 0.7)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.error_rate", 0.8)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.ttft", 0.5)
+	viper.SetDefault("gateway.openai_proxy_stream_circuit.failure_threshold", 2)
+	viper.SetDefault("gateway.openai_proxy_stream_circuit.window_seconds", 60)
+	viper.SetDefault("gateway.openai_proxy_stream_circuit.account_window_seconds", 300)
+	viper.SetDefault("gateway.openai_proxy_stream_circuit.ttl_seconds", 600)
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
@@ -2010,6 +2030,18 @@ func (c *Config) Validate() error {
 	if c.Gateway.StreamKeepaliveInterval != 0 &&
 		(c.Gateway.StreamKeepaliveInterval < 5 || c.Gateway.StreamKeepaliveInterval > 30) {
 		return fmt.Errorf("gateway.stream_keepalive_interval must be 0 or between 5-30 seconds")
+	}
+	if c.Gateway.OpenAIProxyStreamCircuit.FailureThreshold < 0 {
+		return fmt.Errorf("gateway.openai_proxy_stream_circuit.failure_threshold must be non-negative")
+	}
+	if c.Gateway.OpenAIProxyStreamCircuit.WindowSeconds < 0 {
+		return fmt.Errorf("gateway.openai_proxy_stream_circuit.window_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIProxyStreamCircuit.AccountWindowSeconds < 0 {
+		return fmt.Errorf("gateway.openai_proxy_stream_circuit.account_window_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIProxyStreamCircuit.TTLSeconds < 0 {
+		return fmt.Errorf("gateway.openai_proxy_stream_circuit.ttl_seconds must be non-negative")
 	}
 	// 兼容旧键 sticky_previous_response_ttl_seconds
 	if c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds <= 0 && c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds > 0 {

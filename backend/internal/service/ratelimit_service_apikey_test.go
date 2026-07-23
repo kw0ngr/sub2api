@@ -855,7 +855,7 @@ func TestRateLimitService_HandleUpstreamError_GrokOAuthPlanGated402WithoutModelU
 	require.WithinDuration(t, before.Add(grokSubscriptionAccountCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
 }
 
-func TestRateLimitService_HandleUpstreamError_GrokOAuthGeneric402StillDisablesAccount(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_GrokOAuthGeneric402UsesTemporaryCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStubWithSchedulable{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	account := &Account{
@@ -867,6 +867,7 @@ func TestRateLimitService_HandleUpstreamError_GrokOAuthGeneric402StillDisablesAc
 	}
 	body := []byte(`{"error":{"message":"account billing is inactive","code":"billing_inactive"}}`)
 
+	before := time.Now()
 	shouldDisable := svc.HandleUpstreamError(
 		context.Background(),
 		account,
@@ -875,11 +876,14 @@ func TestRateLimitService_HandleUpstreamError_GrokOAuthGeneric402StillDisablesAc
 		body,
 		"grok-4.5",
 	)
+	after := time.Now()
 
 	require.True(t, shouldDisable)
-	require.Equal(t, 1, repo.setErrorCalls)
-	require.Equal(t, 1, repo.setSchedulableCalls)
-	require.False(t, repo.lastSchedulable)
+	require.Zero(t, repo.setErrorCalls, "a generic Grok 402 must not permanently poison the account")
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Equal(t, 1, repo.tempCalls)
+	require.NotNil(t, repo.lastTempUntil)
+	require.WithinDuration(t, before.Add(grokPaymentRequiredCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
 	require.Empty(t, repo.modelRateLimitScopes)
 }
 

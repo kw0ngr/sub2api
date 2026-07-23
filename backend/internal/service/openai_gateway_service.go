@@ -353,12 +353,14 @@ type OpenAIGatewayService struct {
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
 	openaiSchedulerOnce           sync.Once
+	openaiStreamCircuitOnce       sync.Once
 	openaiWSPassthroughDialerOnce sync.Once
 	openaiWSPool                  *openAIWSConnPool
 	openaiWSStateStore            OpenAIWSStateStore
 	openaiScheduler               OpenAIAccountScheduler
 	openaiWSPassthroughDialer     openAIWSClientDialer
 	openaiAccountStats            *openAIAccountRuntimeStats
+	openaiStreamCircuit           *openAIStreamCircuit
 
 	openaiWSFallbackUntil sync.Map // key: int64(accountID), value: time.Time
 	openaiWSRetryMetrics  openAIWSRetryMetrics
@@ -1765,6 +1767,9 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountForPlatform(c
 	if requestedModel != "" && !fresh.IsModelSupported(requestedModel) {
 		return nil
 	}
+	if s.isOpenAIStreamQuarantined(fresh) {
+		return nil
+	}
 	return fresh
 }
 
@@ -1781,6 +1786,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForPlatform(ctx
 		if !isSchedulableOpenAICompatibleAccountForRequest(ctx, account, platform, requestedModel) {
 			return nil
 		}
+		if s.isOpenAIStreamQuarantined(account) {
+			return nil
+		}
 		return account
 	}
 
@@ -1792,6 +1800,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBForPlatform(ctx
 		return nil
 	}
 	if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
+		return nil
+	}
+	if s.isOpenAIStreamQuarantined(latest) {
 		return nil
 	}
 	return latest
@@ -3774,6 +3785,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	if err := scanner.Err(); err != nil {
 		if sawTerminalEvent && !sawFailedEvent {
+			s.clearOpenAIStreamDisconnect(account)
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
 		}
 		if sawFailedEvent {
@@ -3797,6 +3809,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if clientDisconnected {
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
+		s.recordOpenAIStreamDisconnect(account, err, upstreamRequestID)
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
 			account.ID,
@@ -3818,7 +3831,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", requestedModel...)
 		}
+		s.recordOpenAIStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, errors.New("stream usage incomplete: missing terminal event")
+	}
+	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
+		s.clearOpenAIStreamDisconnect(account)
 	}
 
 	return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
@@ -4475,6 +4492,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 					mappedModel,
 				)
 			}
+			if !clientDisconnected {
+				s.recordOpenAIStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
+			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
@@ -4490,6 +4510,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				lastDownstreamWriteAt = time.Now()
 			}
 		}
+		if !sawFailedEvent {
+			s.clearOpenAIStreamDisconnect(account)
+		}
 		return resultWithUsage(), nil
 	}
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
@@ -4497,6 +4520,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return nil, nil, false
 		}
 		if sawTerminalEvent && !sawFailedEvent {
+			s.clearOpenAIStreamDisconnect(account)
 			logger.LegacyPrintf("service.openai_gateway", "Upstream scan ended after terminal event: %v", scanErr)
 			return resultWithUsage(), nil, true
 		}
@@ -4524,6 +4548,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
+		s.recordOpenAIStreamDisconnect(account, scanErr, upstreamRequestID)
 		sendErrorEvent("stream_read_error")
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
 	}
