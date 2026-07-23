@@ -33,3 +33,22 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.NotNil(t, got.Extra["model_rate_limits"])
 	require.Nil(t, got.Extra["unused_large_field"])
 }
+
+func TestBuildSchedulerMetadataAccount_KeepsProtocolRoutingCredentials(t *testing.T) {
+	account := service.Account{
+		Platform: service.PlatformGLM,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":      "glm-key",
+			"base_url":     "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode":  service.GLMCompatModeOpenAI,
+			"access_token": "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.True(t, got.IsGLMOpenAICompatible())
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4", got.GetCredential("base_url"))
+	require.Empty(t, got.GetCredential("access_token"))
+}
