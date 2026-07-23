@@ -487,7 +487,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		usage = &OpenAIUsage{}
 	}
 
-	reasoningEffort := extractOpenAIReasoningEffortFromBody(chatBody, upstreamModel, billingModel, originalModel)
+	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, chatBody, upstreamModel, billingModel, originalModel)
 	return &OpenAIForwardResult{
 		RequestID:       resp.Header.Get("x-request-id"),
 		Usage:           *usage,

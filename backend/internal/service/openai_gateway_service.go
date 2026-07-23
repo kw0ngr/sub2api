@@ -6438,6 +6438,29 @@ func extractOpenAIReasoningEffortFromBody(body []byte, modelCandidates ...string
 	return &value
 }
 
+// extractEffectiveOpenAIReasoningEffortFromBody returns the effort that was
+// actually sent to the selected upstream. GLM's OpenAI-compatible endpoint has
+// a smaller effort vocabulary than OpenAI: low/medium/high collapse to high,
+// while xhigh/extrahigh/max collapse to max.
+func extractEffectiveOpenAIReasoningEffortFromBody(account *Account, body []byte, modelCandidates ...string) *string {
+	if account == nil || !account.IsGLMOpenAICompatible() {
+		return extractOpenAIReasoningEffortFromBody(body, modelCandidates...)
+	}
+
+	raw := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	if raw == "" {
+		raw = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
+	}
+	if raw == "" {
+		raw = deriveOpenAIReasoningEffortFromModelCandidates(modelCandidates)
+	}
+	mapped := normalizeGLMOpenAIReasoningEffort(raw)
+	if mapped == "" {
+		return nil
+	}
+	return &mapped
+}
+
 func extractOpenAIServiceTier(reqBody map[string]any) *string {
 	if reqBody == nil {
 		return nil

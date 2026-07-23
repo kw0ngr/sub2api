@@ -149,6 +149,32 @@ func TestExtractOpenAIReasoningEffortFromBodyModelCandidates(t *testing.T) {
 	require.Equal(t, "max", *got)
 }
 
+func TestExtractEffectiveOpenAIReasoningEffortFromBodyForGLM(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"compat_mode": GLMCompatModeOpenAI,
+		},
+	}
+
+	got := extractEffectiveOpenAIReasoningEffortFromBody(
+		account,
+		[]byte(`{"model":"glm-5.2","reasoning_effort":"xhigh"}`),
+		"glm-5.2",
+	)
+	require.NotNil(t, got)
+	require.Equal(t, "max", *got)
+
+	got = extractEffectiveOpenAIReasoningEffortFromBody(
+		account,
+		[]byte(`{"model":"glm-5.2","reasoning":{"effort":"medium"}}`),
+		"glm-5.2",
+	)
+	require.NotNil(t, got)
+	require.Equal(t, "high", *got)
+}
+
 func TestGetOpenAIRequestBodyMap_UsesContextCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

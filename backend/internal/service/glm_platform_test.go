@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -261,6 +262,27 @@ func TestGatewayServiceSelectGLMAnthropicModeOnly(t *testing.T) {
 	require.True(t, account.IsGLMAnthropicCompatible())
 }
 
+func TestGatewayServiceLoadAwarePlatformGateRejectsGLMOpenAICompanion(t *testing.T) {
+	svc := &GatewayService{}
+	openAICompanion := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"compat_mode": GLMCompatModeOpenAI,
+		},
+	}
+	anthropicAccount := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"compat_mode": GLMCompatModeAnthropic,
+		},
+	}
+
+	require.False(t, svc.isAccountAllowedForPlatform(openAICompanion, PlatformGLM, false))
+	require.True(t, svc.isAccountAllowedForPlatform(anthropicAccount, PlatformGLM, false))
+}
+
 func TestOpenAIGatewayServiceSelectGLMOpenAIModeOnly(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(41002)
@@ -350,7 +372,7 @@ func TestOpenAIGatewayServiceForwardGLMOpenAIUsesChatCompletionsEndpoint(t *test
 		context.Background(),
 		c,
 		account,
-		[]byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		[]byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"stream":false,"reasoning_effort":"xhigh"}`),
 		"",
 		"",
 	)
@@ -361,6 +383,9 @@ func TestOpenAIGatewayServiceForwardGLMOpenAIUsesChatCompletionsEndpoint(t *test
 	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-glm-test", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "max", *result.ReasoningEffort)
 	require.Equal(t, 6, result.Usage.InputTokens)
 	require.Equal(t, 2, result.Usage.OutputTokens)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -542,6 +567,125 @@ func TestGLMOpenAIAccountConnectionDisablesThinking(t *testing.T) {
 	require.Equal(t, int64(256), gjson.GetBytes(upstream.bodies[0], "max_tokens").Int())
 	require.Equal(t, "disabled", gjson.GetBytes(upstream.bodies[0], "thinking.type").String())
 	require.Contains(t, recorder.Body.String(), `"type":"test_complete"`)
+}
+
+type glmConnectionStateRepo struct {
+	stubOpenAIAccountRepo
+	setErrorCalls       int
+	setSchedulableCalls int
+	lastSchedulable     bool
+	tempCooldownCalls   int
+}
+
+func (r *glmConnectionStateRepo) SetError(_ context.Context, _ int64, _ string) error {
+	r.setErrorCalls++
+	return nil
+}
+
+func (r *glmConnectionStateRepo) SetSchedulable(_ context.Context, _ int64, value bool) error {
+	r.setSchedulableCalls++
+	r.lastSchedulable = value
+	return nil
+}
+
+func (r *glmConnectionStateRepo) SetTempUnschedulable(_ context.Context, _ int64, _ time.Time, _ string) error {
+	r.tempCooldownCalls++
+	return nil
+}
+
+func (r *glmConnectionStateRepo) ClearError(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (r *glmConnectionStateRepo) ClearRateLimit(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (r *glmConnectionStateRepo) ClearModelRateLimits(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (r *glmConnectionStateRepo) ClearTempUnschedulable(_ context.Context, _ int64) error {
+	return nil
+}
+
+func TestGLMOpenAIAccountConnectionCustomPromptAcceptsNonEmptyResponseAndRecoversAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &glmConnectionStateRepo{}
+	upstream := &glmProbeHTTPUpstream{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"GLM_ACCOUNT_OK"}}]}`)),
+	}}}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		}},
+	}
+	account := &Account{
+		ID:           14,
+		Platform:     PlatformGLM,
+		Type:         AccountTypeAPIKey,
+		Status:       StatusError,
+		Schedulable:  false,
+		ErrorMessage: "stale runtime probe error",
+		Concurrency:  1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode": GLMCompatModeOpenAI,
+		},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/test", nil)
+
+	require.NoError(t, svc.testGLMOpenAIAccountConnection(c, account, "glm-5.2", "Reply with exactly GLM_ACCOUNT_OK"))
+	require.Zero(t, repo.setErrorCalls)
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.True(t, repo.lastSchedulable)
+	require.Contains(t, recorder.Body.String(), `"type":"test_complete"`)
+}
+
+func TestGLMOpenAIAccountConnectionTemporary429IsDiagnosticOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &glmConnectionStateRepo{}
+	upstream := &glmProbeHTTPUpstream{responses: []*http.Response{{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "Retry-After": []string{"18000"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"You've reached the request rate limit for your account."}}`)),
+	}}}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		}},
+	}
+	account := &Account{
+		ID:          15,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":     "sk-glm-test",
+			"base_url":    "https://open.bigmodel.cn/api/paas/v4",
+			"compat_mode": GLMCompatModeOpenAI,
+		},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/test", nil)
+
+	require.Error(t, svc.testGLMOpenAIAccountConnection(c, account, "glm-5.2", ""))
+	require.Zero(t, repo.tempCooldownCalls)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Contains(t, recorder.Body.String(), "API returned 429")
 }
 
 type glmProbeHTTPUpstream struct {

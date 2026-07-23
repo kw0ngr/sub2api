@@ -291,6 +291,44 @@ func TestAccountTestService_RestoreGrokOAuthKeepsManualUnschedulable(t *testing.
 	require.Nil(t, repo.schedulableSet)
 }
 
+func TestAccountTestService_RestoreAPIKeyAfterSuccessfulTestWhenRuntimeDisabled(t *testing.T) {
+	repo := &restoreRuntimeAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{
+		ID:           2003,
+		Platform:     PlatformGLM,
+		Type:         AccountTypeAPIKey,
+		Status:       StatusError,
+		Schedulable:  false,
+		ErrorMessage: "temporary upstream probe failure",
+	}
+
+	svc.restoreAPIKeySchedulingAfterSuccessfulTest(context.Background(), account)
+
+	require.Equal(t, 1, repo.clearErrorCalls)
+	require.Equal(t, 1, repo.clearTempCalls)
+	require.Equal(t, 1, repo.clearRateCalls)
+	require.Equal(t, 1, repo.clearModelCalls)
+	require.NotNil(t, repo.schedulableSet)
+	require.True(t, *repo.schedulableSet)
+}
+
+func TestAccountTestService_RestoreAPIKeyKeepsManualUnschedulable(t *testing.T) {
+	repo := &restoreRuntimeAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{
+		ID:          2004,
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: false,
+	}
+
+	svc.restoreAPIKeySchedulingAfterSuccessfulTest(context.Background(), account)
+
+	require.Nil(t, repo.schedulableSet)
+}
+
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()

@@ -2568,7 +2568,7 @@ func (s *GatewayService) isAccountAllowedForPlatform(account *Account, platform 
 	if useMixed {
 		return shouldIncludeMixedSchedulingAccount(platform, account)
 	}
-	return account.Platform == platform
+	return accountMatchesGatewaySinglePlatformRequest(platform, account)
 }
 
 func (s *GatewayService) isAccountSchedulableForSelection(account *Account) bool {

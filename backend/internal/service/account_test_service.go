@@ -224,16 +224,16 @@ func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx cont
 	if s == nil || s.accountRepo == nil || account == nil || account.Status == StatusDisabled {
 		return
 	}
+	recoverableRuntimeState := account.Status == StatusError ||
+		strings.TrimSpace(account.ErrorMessage) != "" ||
+		strings.TrimSpace(account.TempUnschedulableReason) != "" ||
+		hasRecoverableRuntimeState(account)
 	if account.Type != AccountTypeAPIKey {
-		hasRecoverableRuntimeState := account.Status == StatusError ||
-			strings.TrimSpace(account.ErrorMessage) != "" ||
-			account.TempUnschedulableUntil != nil ||
-			strings.TrimSpace(account.TempUnschedulableReason) != ""
 		// A successful real inference test is stronger evidence than the stale
 		// runtime error text. Recover Grok OAuth accounts from any machine-generated
 		// error/cooldown, while preserving an active account that an admin manually
 		// made unschedulable (it has no runtime state to clear).
-		if !account.IsGrokOAuth() || !hasRecoverableRuntimeState {
+		if !account.IsGrokOAuth() || !recoverableRuntimeState {
 			return
 		}
 	}
@@ -249,7 +249,7 @@ func (s *AccountTestService) restoreAPIKeySchedulingAfterSuccessfulTest(ctx cont
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
 		log.Printf("[WARN] failed to clear account temporary cooldown after successful test: account=%d err=%v", account.ID, err)
 	}
-	if account.IsGrokOAuth() && !account.Schedulable {
+	if !account.Schedulable && recoverableRuntimeState {
 		if err := s.accountRepo.SetSchedulable(ctx, account.ID, true); err != nil {
 			log.Printf("[WARN] failed to restore account schedulable after successful test: account=%d err=%v", account.ID, err)
 		}
@@ -1585,7 +1585,8 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 	c.Writer.Flush()
 
 	userPrompt := strings.TrimSpace(prompt)
-	if userPrompt == "" {
+	requireExpectedOutput := userPrompt == ""
+	if requireExpectedOutput {
 		userPrompt = testConnectionPrompt
 	}
 	payload := map[string]any{
@@ -1628,16 +1629,7 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-			action := ClassifyAPIKeyStatusAction(account, resp.StatusCode, respBody)
-			switch action {
-			case APIKeyStatusActionPermanentDisable:
-				_ = s.accountRepo.SetError(ctx, account.ID, buildAPIKeyRuntimeErrorMessage(resp.StatusCode, respBody, "API key permanently disabled after test connection"))
-				if account.Schedulable {
-					_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
-				}
-			case APIKeyStatusActionTemporaryCooldown:
-				_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, time.Now().Add(apiKeyProbeCooldown), buildAPIKeyRuntimeErrorMessage(resp.StatusCode, respBody, "API key temporary cooldown after test connection"))
-			}
+			applyTestConnectionAction(ctx, s.accountRepo, account, resp.StatusCode, resp.Header, respBody, testModelID)
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, sanitizeUpstreamErrorMessage(string(respBody))))
 	}
@@ -1657,7 +1649,10 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 	if text != "" {
 		s.sendEvent(c, TestEvent{Type: "response", Text: text})
 	}
-	if !strings.Contains(strings.ToLower(text), testExpectedOutput) {
+	if text == "" {
+		return s.sendErrorAndEnd(c, "model returned an empty response")
+	}
+	if requireExpectedOutput && !strings.Contains(strings.ToLower(text), testExpectedOutput) {
 		errMsg := fmt.Sprintf("model did not return expected output %q (got: %q)", testExpectedOutput, text)
 		if account != nil && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, "test connection: "+errMsg)
@@ -1667,6 +1662,7 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 		}
 		return s.sendErrorAndEnd(c, errMsg)
 	}
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }

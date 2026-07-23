@@ -732,6 +732,26 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 	rankedCandidates := selectTopKOpenAICandidates(candidates, topK)
 	selectionOrder := buildOpenAIWeightedSelectionOrder(rankedCandidates, req)
+	// top-K is an optimization and distribution window, not an availability
+	// boundary. Snapshot candidates may become model-cooled between bucket
+	// rebuilds, and busy healthy accounts can score below idle cooled accounts.
+	// If every top-K candidate is stale or full, continue through the remaining
+	// ranked candidates before returning a wait plan/no-available error.
+	if len(rankedCandidates) < len(candidates) {
+		topIDs := make(map[int64]struct{}, len(rankedCandidates))
+		for _, candidate := range rankedCandidates {
+			topIDs[candidate.account.ID] = struct{}{}
+		}
+		remaining := make([]openAIAccountCandidateScore, 0, len(candidates)-len(rankedCandidates))
+		for _, candidate := range candidates {
+			if _, exists := topIDs[candidate.account.ID]; exists {
+				continue
+			}
+			remaining = append(remaining, candidate)
+		}
+		rankedRemaining := selectTopKOpenAICandidates(remaining, len(remaining))
+		selectionOrder = append(selectionOrder, buildOpenAIWeightedSelectionOrder(rankedRemaining, req)...)
+	}
 
 	for i := 0; i < len(selectionOrder); i++ {
 		candidate := selectionOrder[i]

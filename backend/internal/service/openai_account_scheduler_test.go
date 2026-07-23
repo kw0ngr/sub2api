@@ -597,6 +597,96 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceTopKFallback
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_FallsBackOutsideTopKWhenTopCandidatesUnavailable(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11001)
+	model := "grok-4.5"
+	future := time.Now().Add(time.Hour).Format(time.RFC3339)
+	accounts := []Account{
+		{
+			ID:          6101,
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+		},
+		{
+			ID:          6102,
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				modelRateLimitsKey: map[string]any{
+					model: map[string]any{"rate_limit_reset_at": future},
+				},
+			},
+		},
+		{
+			ID:          6103,
+			Platform:    PlatformGrok,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 10,
+			Priority:    1,
+		},
+	}
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 10
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 1
+
+	concurrencyCache := stubConcurrencyCache{
+		loadMap: map[int64]*AccountLoadInfo{
+			6101: {AccountID: 6101, LoadRate: 100, WaitingCount: 1},
+			6102: {AccountID: 6102, LoadRate: 0, WaitingCount: 0},
+			6103: {AccountID: 6103, LoadRate: 0, WaitingCount: 0},
+		},
+		acquireResults: map[int64]bool{
+			6101: false,
+			6103: true,
+		},
+	}
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		cache:              &stubGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForPlatform(
+		ctx,
+		PlatformGrok,
+		&groupID,
+		"",
+		"",
+		model,
+		nil,
+		OpenAIUpstreamTransportAny,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.True(t, selection.Acquired)
+	require.Equal(t, int64(6103), selection.Account.ID)
+	require.Equal(t, 3, decision.CandidateCount)
+	require.Equal(t, 2, decision.TopK)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_OpenAIAccountSchedulerMetrics(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(12)

@@ -149,7 +149,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 
 	billingModel := resolveOpenAIForwardModel(account, originalModel, "")
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	reasoningEffort := extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
+	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, body, upstreamModel, billingModel, originalModel)
 	chatReq.Model = upstreamModel
 	chatReq.Stream = clientStream
 	if clientStream {
