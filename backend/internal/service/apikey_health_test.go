@@ -117,6 +117,13 @@ func TestClassifyAPIKeyStatusAction_GLMResettableQuotaIsTemporaryCooldown(t *tes
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, action)
 }
 
+func TestClassifyAPIKeyStatusAction_GLMExpiredCodingPlanDisables(t *testing.T) {
+	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"code":"InvalidSubscription","message":"Your account does not have a valid CodingPlan subscription, or your subscription has expired."}}`)
+
+	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(account, http.StatusBadRequest, body))
+}
+
 func TestClassifyAPIKeyStatusAction_OpenAIContentPolicyServerErrorIgnored(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 

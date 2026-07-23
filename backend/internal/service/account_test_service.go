@@ -1591,7 +1591,7 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 	payload := map[string]any{
 		"model":      testModelID,
 		"stream":     false,
-		"max_tokens": 32,
+		"max_tokens": 256,
 		"thinking":   map[string]string{"type": "disabled"},
 		"messages": []map[string]string{
 			{"role": "user", "content": userPrompt},

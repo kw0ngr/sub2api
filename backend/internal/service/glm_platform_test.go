@@ -539,6 +539,7 @@ func TestGLMOpenAIAccountConnectionDisablesThinking(t *testing.T) {
 
 	require.NoError(t, svc.testGLMOpenAIAccountConnection(c, account, "glm-5.2", ""))
 	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, int64(256), gjson.GetBytes(upstream.bodies[0], "max_tokens").Int())
 	require.Equal(t, "disabled", gjson.GetBytes(upstream.bodies[0], "thinking.type").String())
 	require.Contains(t, recorder.Body.String(), `"type":"test_complete"`)
 }

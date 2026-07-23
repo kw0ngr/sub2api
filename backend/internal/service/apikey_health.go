@@ -359,7 +359,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 		case http.StatusTooManyRequests:
 			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusBadRequest:
-			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error") ||
+			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error", "invalidsubscription") ||
 				containsAny(msg,
 					"invalid api key",
 					"incorrect api key",
@@ -374,6 +374,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 					"credits exhausted",
 					"resource package",
 					"no available resource",
+					"does not have a valid codingplan subscription",
 					"资源包",
 					"余额不足",
 				) {
