@@ -46,6 +46,21 @@ func applyGrokCLIClientHeaders(h http.Header, account *Account) {
 	if h == nil {
 		return
 	}
+	for _, name := range []string{
+		"chatgpt-account-id",
+		"conversation_id",
+		"OpenAI-Beta",
+		"originator",
+		"session_id",
+		"x-codex-turn-metadata",
+		"x-codex-turn-state",
+	} {
+		h.Del(name)
+	}
+	if userAgent := strings.TrimSpace(h.Get("User-Agent")); userAgent != "" &&
+		!strings.HasPrefix(strings.ToLower(userAgent), "grok-shell/") {
+		h.Del("User-Agent")
+	}
 	defaults := xai.DefaultCLIClientHeaders()
 
 	// Optional per-account overrides stored in credentials.headers or flat

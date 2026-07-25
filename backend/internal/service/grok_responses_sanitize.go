@@ -51,7 +51,7 @@ func sanitizeGrokResponsesBody(body []byte, upstreamModel string) ([]byte, bool,
 	if err != nil {
 		return nil, false, err
 	}
-	for _, field := range []string{"prompt_cache_retention", "safety_identifier"} {
+	for _, field := range []string{"max_completion_tokens", "metadata", "prompt_cache_retention", "safety_identifier"} {
 		if gjson.GetBytes(out, field).Exists() {
 			out, err = sjson.DeleteBytes(out, field)
 			if err != nil {

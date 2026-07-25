@@ -34,11 +34,11 @@ const (
 	// xai-grok-version crate. Incoming official CLI versions are preserved by
 	// the gateway, while this value is the fallback for non-CLI callers such as
 	// account tests and quota probes.
-	DefaultCLIClientVersion    = "0.2.109"
+	DefaultCLIClientVersion    = "0.2.111"
 	DefaultCLIClientIdentifier = "grok-shell"
 	DefaultCLIClientMode       = "interactive"
 	DefaultCLITokenAuth        = "xai-grok-cli"
-	DefaultCLIUserAgent        = "grok-shell/0.2.109 (linux; x86_64)"
+	DefaultCLIUserAgent        = "grok-shell/0.2.111 (linux; x86_64)"
 
 	EnvAuthorizeURL               = "XAI_OAUTH_AUTHORIZE_URL"
 	EnvTokenURL                   = "XAI_OAUTH_TOKEN_URL"

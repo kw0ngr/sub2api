@@ -9,6 +9,8 @@ import (
 func TestSanitizeGrokResponsesBodyDropsUnsupportedFields(t *testing.T) {
 	body := []byte(`{
 		"model":"grok",
+		"max_completion_tokens":128,
+		"metadata":{"audit":"drop"},
 		"prompt_cache_retention":"24h",
 		"safety_identifier":"user",
 		"presence_penalty":0.5,
@@ -24,7 +26,7 @@ func TestSanitizeGrokResponsesBodyDropsUnsupportedFields(t *testing.T) {
 	if !changed {
 		t.Fatal("sanitizeGrokResponsesBody changed=false, want true")
 	}
-	for _, path := range []string{"prompt_cache_retention", "safety_identifier", "presence_penalty", "stop", "input.0.content.0.external_web_access"} {
+	for _, path := range []string{"max_completion_tokens", "metadata", "prompt_cache_retention", "safety_identifier", "presence_penalty", "stop", "input.0.content.0.external_web_access"} {
 		if gjson.GetBytes(out, path).Exists() {
 			t.Fatalf("sanitized body still contains %s: %s", path, string(out))
 		}

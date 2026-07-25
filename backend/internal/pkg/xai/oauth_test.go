@@ -9,8 +9,8 @@ func TestDefaultCLIClientHeadersMatchesCurrentGrokBuildWireIdentity(t *testing.T
 	if got := headers["x-grok-client-version"]; got != DefaultCLIClientVersion {
 		t.Fatalf("x-grok-client-version = %q, want %q", got, DefaultCLIClientVersion)
 	}
-	if DefaultCLIClientVersion != "0.2.109" {
-		t.Fatalf("DefaultCLIClientVersion = %q, want current official version 0.2.109", DefaultCLIClientVersion)
+	if DefaultCLIClientVersion != "0.2.111" {
+		t.Fatalf("DefaultCLIClientVersion = %q, want current official version 0.2.111", DefaultCLIClientVersion)
 	}
 	if got := headers["x-grok-client-mode"]; got != DefaultCLIClientMode {
 		t.Fatalf("x-grok-client-mode = %q, want %q", got, DefaultCLIClientMode)
