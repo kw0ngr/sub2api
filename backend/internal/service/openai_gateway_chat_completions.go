@@ -387,6 +387,17 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	if err != nil {
 		return nil, fmt.Errorf("rewrite chat completions model: %w", err)
 	}
+	if account.IsGLMOpenAICompatible() {
+		for i, message := range gjson.GetBytes(chatBody, "messages").Array() {
+			if !message.Get("model_id").Exists() {
+				continue
+			}
+			chatBody, err = sjson.DeleteBytes(chatBody, fmt.Sprintf("messages.%d.model_id", i))
+			if err != nil {
+				return nil, fmt.Errorf("remove unsupported GLM message model_id: %w", err)
+			}
+		}
+	}
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
 	}

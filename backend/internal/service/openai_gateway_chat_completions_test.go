@@ -155,10 +155,10 @@ func TestNormalizeResponsesBodyServiceTier(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "service_tier").Exists())
 }
 
-func TestForwardAsChatCompletions_GLMOpenAINormalizesReasoningEffort(t *testing.T) {
+func TestForwardAsChatCompletions_GLMOpenAINormalizesRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	body := []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"reasoning":{"effort":"xhigh"}}`)
+	body := []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi","model_id":"grok-4.5"},{"role":"assistant","content":"hello","model_id":"gpt-5.6-sol"}],"reasoning":{"effort":"xhigh"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -188,6 +188,8 @@ func TestForwardAsChatCompletions_GLMOpenAINormalizesReasoningEffort(t *testing.
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.lastReq.URL.String())
 	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "messages.0.model_id").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "messages.1.model_id").Exists())
 }
 
 func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(t *testing.T) {
