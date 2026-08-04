@@ -67,6 +67,7 @@ const (
 	apiKey429Cooldown              = 60 * time.Minute
 	apiKey529Cooldown              = 120 * time.Minute
 	apiKeyServerErrorCooldown      = 60 * time.Minute
+	apiKeyDeepSeekBusyCooldown     = 30 * time.Second
 	apiKeyGLMGeneric429Cooldown    = 15 * time.Minute
 	apiKeyGLMModelOverloadCooldown = 5 * time.Minute
 )
@@ -228,7 +229,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 				s.handleAPIKeyPermanentDisable(ctx, account, statusCode, responseBody)
 				return true
 			case APIKeyStatusActionTemporaryCooldown:
-				s.handleAPIKeyTemporaryCooldown(ctx, account, statusCode, headers, responseBody)
+				s.handleAPIKeyTemporaryCooldown(ctx, account, statusCode, headers, responseBody, requestedModel...)
 				return true
 			default:
 				// Ignore or Valid: do not fall through to OAuth-oriented logic below.
@@ -941,7 +942,7 @@ func (s *RateLimitService) handleAPIKeyPermanentDisable(ctx context.Context, acc
 	s.handleAuthError(ctx, account, msg)
 }
 
-func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
+func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) {
 	switch statusCode {
 	case http.StatusTooManyRequests:
 		if account.Platform == PlatformOpenAI {
@@ -976,7 +977,22 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		}
 		slog.Info("apikey_overloaded", "account_id", account.ID, "status_code", statusCode, "until", until)
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		until := time.Now().Add(apiKeyServerErrorCooldown)
+		now := time.Now()
+		until := now.Add(apiKeyServerErrorCooldown)
+		if account.Platform == PlatformDeepSeek && statusCode == http.StatusServiceUnavailable {
+			until = now.Add(apiKeyDeepSeekBusyCooldown)
+			if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
+				until = *parsed
+			}
+			if model := strings.TrimSpace(account.GetMappedModel(firstRequestedModel(requestedModel))); model != "" {
+				if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, model, until); err != nil {
+					slog.Warn("deepseek_busy_model_cooldown_failed", "account_id", account.ID, "model", model, "error", err)
+					return
+				}
+				slog.Info("deepseek_busy_model_cooldown", "account_id", account.ID, "model", model, "until", until)
+				return
+			}
+		}
 		reason := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "API key temporary cooldown after upstream server error")
 		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
 			slog.Warn("apikey_temp_unsched_set_failed", "account_id", account.ID, "status_code", statusCode, "error", err)

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
@@ -18,9 +20,19 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	if requestedModel == "" {
 		return availableByDefault()
 	}
+	if s.accountRepo == nil {
+		return availableByDefault()
+	}
 
-	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
-	if err != nil {
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	queryGroupID := groupID
+	includeGrouped := false
+	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		queryGroupID = nil
+		includeGrouped = true
+	}
+	accounts, ok := listModelAvailabilityCandidates(ctx, s.accountRepo, queryGroupID, []string{platform}, includeGrouped)
+	if !ok {
 		return availableByDefault()
 	}
 

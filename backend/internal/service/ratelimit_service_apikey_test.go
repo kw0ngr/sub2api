@@ -436,6 +436,42 @@ func TestRateLimitService_HandleUpstreamError_APIKey503UsesTemporaryCooldown(t *
 	require.WithinDuration(t, before.Add(apiKeyServerErrorCooldown), *repo.lastTempUntil, after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_DeepSeekBusy503UsesShortModelCooldown(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  http.Header
+		cooldown time.Duration
+	}{
+		{name: "fallback", headers: http.Header{}, cooldown: 30 * time.Second},
+		{name: "retry after", headers: http.Header{"Retry-After": []string{"17"}}, cooldown: 17 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &rateLimitAccountRepoStub{}
+			svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			account := &Account{ID: 1908, Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}
+
+			before := time.Now()
+			handled := svc.HandleUpstreamError(
+				context.Background(),
+				account,
+				http.StatusServiceUnavailable,
+				tt.headers,
+				[]byte(`{"error":{"message":"Service is too busy. We advise users to temporarily switch to alternative LLM API service providers."}}`),
+				"deepseek-v4-flash",
+			)
+			after := time.Now()
+
+			require.True(t, handled)
+			require.Zero(t, repo.tempCalls, "a transient model overload must not cool down the whole DeepSeek account for an hour")
+			require.Equal(t, []string{"deepseek-v4-flash"}, repo.modelRateLimitScopes)
+			require.Len(t, repo.modelRateLimitResets, 1)
+			require.WithinDuration(t, before.Add(tt.cooldown), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
+		})
+	}
+}
+
 func TestRateLimitService_HandleUpstreamError_OpenAIContentPolicyServerErrorDoesNotCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
