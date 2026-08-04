@@ -71,6 +71,9 @@ func (s *GatewayService) ForwardAsChatCompletions(
 		}
 	}
 	anthropicReq.Model = mappedModel
+	if ResolveThinkingProtocol(mappedModel) == ThinkingProtocolPassbackRequired {
+		apicompat.RestoreAnthropicThinkingBlocks(anthropicReq)
+	}
 
 	logger.L().Debug("gateway forward_as_chat_completions: model mapping applied",
 		zap.Int64("account_id", account.ID),

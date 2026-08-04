@@ -67,6 +67,57 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 	return out, nil
 }
 
+// RestoreAnthropicThinkingBlocks converts the leading <thinking> sentinel used
+// to carry Chat Completions reasoning_content through Responses conversion back
+// into native Anthropic thinking blocks. Callers must only use this for
+// passback-based upstreams; Claude requires signed thinking blocks instead.
+func RestoreAnthropicThinkingBlocks(req *AnthropicRequest) bool {
+	if req == nil || req.Thinking == nil || (req.Thinking.Type != "enabled" && req.Thinking.Type != "adaptive") {
+		return false
+	}
+
+	restored := false
+	for i := range req.Messages {
+		message := &req.Messages[i]
+		if message.Role != "assistant" {
+			continue
+		}
+
+		blocks := parseContentBlocks(message.Content)
+		updated := make([]AnthropicContentBlock, 0, len(blocks)+1)
+		changed := false
+		for _, block := range blocks {
+			if block.Type != "text" || !strings.HasPrefix(block.Text, "<thinking>") {
+				updated = append(updated, block)
+				continue
+			}
+
+			thinking, remainder, ok := strings.Cut(strings.TrimPrefix(block.Text, "<thinking>"), "</thinking>")
+			if !ok || thinking == "" {
+				updated = append(updated, block)
+				continue
+			}
+
+			thinkingBlock := AnthropicContentBlock{Type: "thinking", Thinking: thinking}
+			remainder = strings.TrimPrefix(remainder, "\n")
+			if remainder == "" {
+				thinkingBlock.CacheControl = block.CacheControl
+			}
+			updated = append(updated, thinkingBlock)
+			if remainder != "" {
+				updated = append(updated, AnthropicContentBlock{Type: "text", Text: remainder, CacheControl: block.CacheControl})
+			}
+			changed = true
+		}
+
+		if changed {
+			message.Content, _ = json.Marshal(updated)
+			restored = true
+		}
+	}
+	return restored
+}
+
 // defaultThinkingBudget returns a sensible thinking budget based on effort level.
 func defaultThinkingBudget(effort string) int {
 	switch effort {
