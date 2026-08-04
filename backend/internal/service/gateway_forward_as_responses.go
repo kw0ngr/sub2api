@@ -198,7 +198,7 @@ func ExtractResponsesReasoningEffortFromBody(body []byte) *string {
 		return nil
 	}
 	model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-	normalized := normalizeOpenAIReasoningEffortForModel(raw, model)
+	normalized := normalizeGatewayReasoningEffortForModel(raw, model)
 	if normalized == "" {
 		return nil
 	}

@@ -52,3 +52,11 @@ func ShouldRectifyThinkingSignatureError(modelID string) bool {
 func ShouldApplyRetryFilters(modelID string) bool {
 	return ResolveThinkingProtocol(modelID) == ThinkingProtocolAnthropicStrict
 }
+
+func normalizeGatewayReasoningEffortForModel(raw, modelID string) string {
+	effort := normalizeOpenAIReasoningEffortForModel(raw, modelID)
+	if effort == "xhigh" && ResolveThinkingProtocol(modelID) == ThinkingProtocolPassbackRequired {
+		return "max"
+	}
+	return effort
+}

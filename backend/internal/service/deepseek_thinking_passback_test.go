@@ -83,3 +83,9 @@ func TestForwardAsChatCompletions_RestoresDeepSeekThinkingBeforeToolHistory(t *t
 	require.Equal(t, "text", toolTurn[1].Type)
 	require.Equal(t, "Running it.", toolTurn[1].Text)
 }
+
+func TestExtractCCReasoningEffort_PreservesDeepSeekMax(t *testing.T) {
+	effort := extractCCReasoningEffortFromBody([]byte(`{"model":"deepseek-v4-flash","reasoning_effort":"max"}`))
+	require.NotNil(t, effort)
+	require.Equal(t, "max", *effort)
+}
