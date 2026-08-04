@@ -210,6 +210,9 @@ func chatAssistantToResponses(m ChatMessage, callIDs map[string]string) ([]Respo
 
 	// Emit one function_call item per tool_call.
 	for _, tc := range m.ToolCalls {
+		if strings.TrimSpace(tc.Function.Name) == "" {
+			continue
+		}
 		args := tc.Function.Arguments
 		if args == "" {
 			args = "{}"
