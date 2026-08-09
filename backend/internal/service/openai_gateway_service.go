@@ -4559,6 +4559,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			if normalizedData := normalizeGeminiOpenAIFinishReasons(account, dataBytes); !bytes.Equal(normalizedData, dataBytes) {
+				dataBytes = normalizedData
+				data = string(normalizedData)
+				line = "data: " + data
+			}
 			if openAIStreamEventIsTerminal(data) {
 				sawTerminalEvent = true
 			}
@@ -4986,6 +4991,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
 		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
+	body = normalizeGeminiOpenAIFinishReasons(account, body)
 	if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "status").String()), "failed") ||
 		strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "type").String()), "response.failed") {
 		return nil, s.newOpenAIStreamFailoverError(
