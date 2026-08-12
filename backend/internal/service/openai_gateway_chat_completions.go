@@ -401,6 +401,16 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
 	}
+	if account.Platform == PlatformGrok {
+		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())
+		normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, upstreamModel)
+		if normalizedEffort != "" && normalizedEffort != rawEffort {
+			chatBody, err = sjson.SetBytes(chatBody, "reasoning_effort", normalizedEffort)
+			if err != nil {
+				return nil, fmt.Errorf("normalize Grok chat reasoning effort: %w", err)
+			}
+		}
+	}
 	if chatReq != nil && chatReq.Stream {
 		chatBody, err = ensureOpenAIChatStreamUsage(chatBody)
 		if err != nil {

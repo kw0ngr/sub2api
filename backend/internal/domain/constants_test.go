@@ -62,6 +62,9 @@ func TestDefaultGrokModelMappingAliases(t *testing.T) {
 	if got := DefaultGrokModelMapping["grok"]; got != "grok-4.5" {
 		t.Fatalf("DefaultGrokModelMapping[grok] = %q, want grok-4.5", got)
 	}
+	if got := DefaultGrokModelMapping["grok-4.6"]; got != "grok-4.6" {
+		t.Fatalf("DefaultGrokModelMapping[grok-4.6] = %q, want identity mapping", got)
+	}
 	if got := DefaultGrokModelMapping["grok-4.20-reasoning"]; got != "grok-4.20-0309-reasoning" {
 		t.Fatalf("DefaultGrokModelMapping[grok-4.20-reasoning] = %q", got)
 	}

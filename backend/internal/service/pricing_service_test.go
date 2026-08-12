@@ -184,6 +184,23 @@ func TestGetModelPricing_GLMOfficialStaticFallbacks(t *testing.T) {
 	}
 }
 
+func TestGetModelPricing_Grok46UsesOfficialStaticFallbackWhenRemoteMissing(t *testing.T) {
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{}}
+
+	got := svc.GetModelPricing("grok-4.6")
+
+	require.NotNil(t, got)
+	require.Equal(t, "xai", got.LiteLLMProvider)
+	require.Equal(t, "chat", got.Mode)
+	require.True(t, got.SupportsPromptCaching)
+	require.InDelta(t, 2e-6, got.InputCostPerToken, 1e-12)
+	require.InDelta(t, 0.5e-6, got.CacheReadInputTokenCost, 1e-12)
+	require.InDelta(t, 6e-6, got.OutputCostPerToken, 1e-12)
+	require.Equal(t, 200000, got.LongContextInputTokenThreshold)
+	require.InDelta(t, 2.0, got.LongContextInputCostMultiplier, 1e-12)
+	require.InDelta(t, 2.0, got.LongContextOutputCostMultiplier, 1e-12)
+}
+
 func TestParsePricingData_PreservesPriorityAndServiceTierFields(t *testing.T) {
 	raw := map[string]any{
 		"gpt-5.4": map[string]any{

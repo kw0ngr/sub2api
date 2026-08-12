@@ -7121,6 +7121,9 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 
 	switch value {
 	case "none", "minimal":
+		if openAIBaseModelIDForEffortSupport(model) == "grok-4.6" {
+			return "low"
+		}
 		return ""
 	case "low", "medium", "high":
 		return value

@@ -192,6 +192,52 @@ func TestForwardAsChatCompletions_GLMOpenAINormalizesRequest(t *testing.T) {
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages.1.model_id").Exists())
 }
 
+func TestForwardAsChatCompletions_Grok46NormalizesReasoningEffort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "none uses minimum supported effort", in: "none", want: "low"},
+		{name: "max uses highest supported effort", in: "max", want: "xhigh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"` + tt.in + `"}`)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"stop after forwarding"}}`)),
+			}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			account := &Account{
+				ID:       2162,
+				Name:     "grok-4.6",
+				Platform: PlatformGrok,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"api_key":  "grok-key",
+					"base_url": "https://api.x.ai/v1",
+				},
+			}
+
+			result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "grok-4.6")
+
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Equal(t, tt.want, gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+		})
+	}
+}
+
 func TestForwardAsChatCompletions_APIKeyPropagatesPromptCacheKeyInResponsesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

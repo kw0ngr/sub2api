@@ -50,6 +50,21 @@ var (
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
+	xAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		// xAI GET /v1/models/grok-4.6 reports USD $2/$0.50/$6 per MTok
+		// for input/cache-read/output and doubles all three above 200k input tokens.
+		"grok-4.6": {
+			InputCostPerToken:               2e-6,
+			OutputCostPerToken:              6e-6,
+			CacheReadInputTokenCost:         0.5e-6,
+			LongContextInputTokenThreshold:  200000,
+			LongContextInputCostMultiplier:  2.0,
+			LongContextOutputCostMultiplier: 2.0,
+			LiteLLMProvider:                 "xai",
+			Mode:                            "chat",
+			SupportsPromptCaching:           true,
+		},
+	}
 	glmOfficialStaticPricing = map[string]*LiteLLMModelPricing{
 		// Z.AI official pricing, USD per token (official table is USD / 1M tokens).
 		// Keep this static fallback because the LiteLLM mirror often lags new GLM releases.
@@ -604,6 +619,11 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 
 	if pricing := s.matchGLMModel(lookupCandidates); pricing != nil {
 		return pricing
+	}
+	for _, candidate := range lookupCandidates {
+		if pricing, ok := xAIOfficialStaticPricing[candidate]; ok {
+			return pricing
+		}
 	}
 
 	return nil
