@@ -40,6 +40,12 @@ func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
 			return true
 		}
 	}
+	// Some compatible providers qualify the phrase with their own name, for
+	// example `Unknown Umans model`, so the words are not contiguous.
+	fields := strings.Fields(strings.NewReplacer("-", " ", "_", " ").Replace(message))
+	if len(fields) >= 3 && fields[0] == "unknown" && fields[2] == "model" {
+		return true
+	}
 	// DeepSeek-compatible upstreams return 404 with the compact form `model: <id>`.
 	return statusCode == http.StatusNotFound &&
 		strings.HasPrefix(message, "model:") &&

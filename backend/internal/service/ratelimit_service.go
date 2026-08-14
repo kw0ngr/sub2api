@@ -70,6 +70,7 @@ const (
 	apiKeyDeepSeekBusyCooldown     = 30 * time.Second
 	apiKeyGLMGeneric429Cooldown    = 15 * time.Minute
 	apiKeyGLMModelOverloadCooldown = 5 * time.Minute
+	apiKeyGLMNetworkErrorCooldown  = 30 * time.Second
 )
 
 const (
@@ -1005,7 +1006,17 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		now := time.Now()
 		until := now.Add(apiKeyServerErrorCooldown)
 		if account.Platform == PlatformGLM {
-			if isGLMModelOverloadedError(responseBody) {
+			if isGLMTransientNetworkError(statusCode, responseBody) {
+				until = now.Add(apiKeyGLMNetworkErrorCooldown)
+				if model := strings.TrimSpace(account.GetMappedModel(firstRequestedModel(requestedModel))); model != "" {
+					if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, model, until); err != nil {
+						slog.Warn("glm_network_error_model_cooldown_failed", "account_id", account.ID, "model", model, "error", err)
+						return
+					}
+					slog.Info("glm_network_error_model_cooled_down", "account_id", account.ID, "model", model, "reset_at", until)
+					return
+				}
+			} else if isGLMModelOverloadedError(responseBody) {
 				until = now.Add(apiKeyGLMModelOverloadCooldown)
 			} else if isGLMResettableQuotaError(responseBody) {
 				if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
@@ -1020,6 +1031,16 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		}
 		slog.Info("apikey_temp_unschedulable", "account_id", account.ID, "status_code", statusCode, "until", until)
 	}
+}
+
+func isGLMTransientNetworkError(statusCode int, responseBody []byte) bool {
+	if statusCode != http.StatusForbidden {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	errType := strings.ToLower(strings.TrimSpace(extractUpstreamErrorType(responseBody)))
+	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	return code == "1234" && errType == "overloaded_error" && containsAny(message, "network error", "网络错误")
 }
 
 // handle403 处理 403 Forbidden 错误

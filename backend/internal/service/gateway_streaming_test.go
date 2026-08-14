@@ -445,7 +445,7 @@ func TestStreamSSEErrorFailoverRecordsOpsEvent(t *testing.T) {
 	resp := &http.Response{Header: http.Header{"X-Request-Id": []string{"rid-stream-error"}}}
 	account := &Account{ID: 42, Name: "acc-stream", Platform: PlatformAnthropic}
 
-	failoverErr := svc.streamSSEErrorFailover(context.Background(), c, account, resp, &streamSSEError{body: body})
+	failoverErr := svc.streamSSEErrorFailover(context.Background(), c, account, resp, &streamSSEError{body: body}, "model")
 
 	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
 	require.Equal(t, body, failoverErr.ResponseBody)

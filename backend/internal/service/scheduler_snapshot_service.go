@@ -136,7 +136,7 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		}
 	}
 
-	return accounts, useMixed, nil
+	return filterSchedulableAccountValues(accounts), useMixed, nil
 }
 
 func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int64) (*Account, error) {
@@ -641,9 +641,28 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 	if s.isRunModeSimple() {
 		groupID = 0
 	}
+	platforms := []string{bucket.Platform}
+	if useMixed {
+		platforms = mixedSchedulingPlatformsForGateway(bucket.Platform)
+	}
+	var queryGroupID *int64
+	if groupID > 0 {
+		queryGroupID = &groupID
+	}
+	if accounts, ok := listModelAvailabilityCandidates(ctx, s.accountRepo, queryGroupID, platforms, s.isRunModeSimple()); ok {
+		if !useMixed {
+			return accounts, nil
+		}
+		filtered := make([]Account, 0, len(accounts))
+		for _, acc := range accounts {
+			if shouldIncludeMixedSchedulingAccount(bucket.Platform, &acc) {
+				filtered = append(filtered, acc)
+			}
+		}
+		return filtered, nil
+	}
 
 	if useMixed {
-		platforms := mixedSchedulingPlatformsForGateway(bucket.Platform)
 		var accounts []Account
 		var err error
 		if groupID > 0 {
@@ -833,10 +852,20 @@ func derefAccounts(accounts []*Account) []Account {
 	}
 	out := make([]Account, 0, len(accounts))
 	for _, account := range accounts {
-		if account == nil {
+		if account == nil || !account.IsSchedulable() {
 			continue
 		}
 		out = append(out, *account)
+	}
+	return out
+}
+
+func filterSchedulableAccountValues(accounts []Account) []Account {
+	out := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		if accounts[i].IsSchedulable() {
+			out = append(out, accounts[i])
+		}
 	}
 	return out
 }

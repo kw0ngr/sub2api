@@ -687,7 +687,7 @@ type streamSSEError struct {
 
 func (e *streamSSEError) Error() string { return "have error in stream" }
 
-func (s *GatewayService) streamSSEErrorFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, sseErr *streamSSEError) *UpstreamFailoverError {
+func (s *GatewayService) streamSSEErrorFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, sseErr *streamSSEError, requestedModel string) *UpstreamFailoverError {
 	body := sseErr.body
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	upstreamDetail := ""
@@ -711,7 +711,7 @@ func (s *GatewayService) streamSSEErrorFailover(ctx context.Context, c *gin.Cont
 			Detail:             upstreamDetail,
 		})
 		if s != nil && s.rateLimitService != nil && resp != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusForbidden, resp.Header, body)
+			s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusForbidden, resp.Header, body, requestedModel)
 		}
 	}
 	return &UpstreamFailoverError{
@@ -5226,7 +5226,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			var sseErr *streamSSEError
 			if errors.As(err, &sseErr) {
-				return nil, s.streamSSEErrorFailover(ctx, c, account, resp, sseErr)
+				return nil, s.streamSSEErrorFailover(ctx, c, account, resp, sseErr, originalModel)
 			}
 			return nil, err
 		}
