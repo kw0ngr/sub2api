@@ -101,9 +101,13 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
+	// GatewayHandler also serves /v1/messages, whose queue keepalive is an
+	// Anthropic ping. OpenAI-compatible streams must use an SSE comment instead.
+	concurrencyHelper := *h.concurrencyHelper
+	concurrencyHelper.pingFormat = SSEPingFormatComment
 
 	maxWait := service.CalculateMaxWait(subject.Concurrency)
-	canWait, err := h.concurrencyHelper.IncrementWaitCount(requestCtx, subject.UserID, maxWait)
+	canWait, err := concurrencyHelper.IncrementWaitCount(requestCtx, subject.UserID, maxWait)
 	waitCounted := false
 	if err != nil {
 		reqLog.Warn(spec.logPrefix+".user_wait_counter_increment_failed", zap.Error(err))
@@ -116,18 +120,18 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 	}
 	defer func() {
 		if waitCounted {
-			h.concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
+			concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
 		}
 	}()
 
-	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted)
+	userReleaseFunc, err := concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted)
 	if err != nil {
 		reqLog.Warn(spec.logPrefix+".user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", streamStarted)
 		return
 	}
 	if waitCounted {
-		h.concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
+		concurrencyHelper.DecrementWaitCount(requestCtx, subject.UserID)
 		waitCounted = false
 	}
 	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
@@ -201,7 +205,7 @@ func (h *GatewayHandler) handleOpenAICompatEndpoint(c *gin.Context, spec openAIC
 				spec.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
-			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+			accountReleaseFunc, err = concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 				c,
 				account.ID,
 				selection.WaitPlan.MaxConcurrency,

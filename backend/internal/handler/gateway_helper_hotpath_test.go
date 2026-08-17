@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -278,6 +280,32 @@ func TestWaitForSlotWithPingTimeout_TimeoutAndStreamPing(t *testing.T) {
 		require.True(t, streamStarted)
 		require.Contains(t, rec.Body.String(), ":\n\n")
 	})
+}
+
+func TestOpenAICompatWaitUsesSSECommentInsteadOfAnthropicPing(t *testing.T) {
+	cache := &helperConcurrencyCacheStub{}
+	h := &GatewayHandler{
+		gatewayService:    &service.GatewayService{},
+		concurrencyHelper: NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatClaude, 5*time.Millisecond),
+	}
+
+	c, rec := newHelperTestContext(http.MethodPost, EndpointChatCompletions)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Millisecond)
+	defer cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointChatCompletions, strings.NewReader(`{"model":"deepseek-v4-pro","stream":true}`)).WithContext(ctx)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 3})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 1, Concurrency: 1})
+
+	h.handleOpenAICompatEndpoint(c, openAICompatEndpointSpec{
+		logName:       "test.openai_compat",
+		logPrefix:     "test.openai_compat",
+		parseKind:     "chat_completions",
+		errorResponse: h.chatCompletionsErrorResponse,
+	})
+
+	require.Contains(t, rec.Body.String(), ":\n\n")
+	require.NotContains(t, rec.Body.String(), `data: {"type": "ping"}`)
+	require.Equal(t, SSEPingFormatClaude, h.concurrencyHelper.pingFormat, "native Anthropic keepalive must remain unchanged")
 }
 
 func TestWaitForSlotWithPingTimeout_AcquireError(t *testing.T) {
