@@ -29,6 +29,8 @@ type OpenAIAccountScheduleRequest struct {
 	PreviousResponseID string
 	RequestedModel     string
 	RequiredTransport  OpenAIUpstreamTransport
+	RequiredCapability OpenAIEndpointCapability
+	RequireCompact     bool
 	ExcludedIDs        map[int64]struct{}
 }
 
@@ -248,7 +250,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return nil, decision, err
 		}
 		if selection != nil && selection.Account != nil {
-			if !s.isAccountTransportCompatible(selection.Account, req.RequiredTransport) {
+			if !s.isAccountTransportCompatible(selection.Account, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, selection.Account, req) {
 				selection = nil
 			}
 		}
@@ -333,7 +335,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
 		return nil, nil
 	}
-	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+	if !s.isAccountTransportCompatible(account, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, account, req) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
@@ -342,7 +344,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
-	if !openAIStickyAccountMatchesGroup(account, req.GroupID) {
+	if !openAIStickyAccountMatchesGroup(account, req.GroupID) || !s.isAccountRequestCompatible(ctx, account, req) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, nil
 	}
@@ -636,7 +638,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if s.service.isOpenAIStreamQuarantined(account) {
 			continue
 		}
-		if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+		if !s.isAccountTransportCompatible(account, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, account, req) {
 			continue
 		}
 		filtered = append(filtered, account)
@@ -759,11 +761,11 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	for i := 0; i < len(selectionOrder); i++ {
 		candidate := selectionOrder[i]
 		fresh := s.service.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, candidate.account, req.RequestedModel, req.Platform)
-		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
+		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
 		fresh = s.service.recheckSelectedOpenAIAccountFromDBForPlatform(ctx, fresh, req.RequestedModel, req.Platform)
-		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
+		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
@@ -786,7 +788,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	for _, candidate := range selectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccountForPlatform(ctx, candidate.account, req.RequestedModel, req.Platform)
-		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
+		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
 		return &AccountSelectionResult{
@@ -801,6 +803,39 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	return nil, len(candidates), topK, loadSkew, ErrNoAvailableAccounts
+}
+
+func openAICompactSupportTier(account *Account) int {
+	if account == nil {
+		return 0
+	}
+	if account.IsGrok() {
+		return 2
+	}
+	if !account.IsOpenAI() {
+		return 0
+	}
+	supported, known := account.OpenAICompactSupportKnown()
+	if !known {
+		return 1
+	}
+	if supported {
+		return 2
+	}
+	return 0
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) bool {
+	if req.RequiredCapability != "" && !account.SupportsOpenAIEndpointCapability(req.RequiredCapability) {
+		return false
+	}
+	if req.RequireCompact && openAICompactSupportTier(account) == 0 {
+		return false
+	}
+	if req.GroupID != nil && s != nil && s.service != nil && s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) && s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel) {
+		return false
+	}
+	return true
 }
 
 func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Account, requiredTransport OpenAIUpstreamTransport) bool {
@@ -895,6 +930,21 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForPlatform(
 	excludedIDs map[int64]struct{},
 	requiredTransport OpenAIUpstreamTransport,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.SelectAccountWithSchedulerForPlatformAndCapability(ctx, platform, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", false)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForPlatformAndCapability(
+	ctx context.Context,
+	platform string,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
 	scheduler := s.getOpenAIAccountScheduler()
@@ -919,6 +969,8 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForPlatform(
 		PreviousResponseID: previousResponseID,
 		RequestedModel:     requestedModel,
 		RequiredTransport:  requiredTransport,
+		RequiredCapability: requiredCapability,
+		RequireCompact:     requireCompact,
 		ExcludedIDs:        excludedIDs,
 	})
 }

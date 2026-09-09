@@ -81,7 +81,11 @@ func serviceTierCostMultiplier(serviceTier string) float64 {
 	switch normalizeBillingServiceTier(serviceTier) {
 	case "priority":
 		return 2.0
+	case "fast":
+		return 2.0
 	case "flex":
+		return 0.5
+	case "batch":
 		return 0.5
 	default:
 		return 1.0
@@ -112,6 +116,26 @@ type CostBreakdown struct {
 }
 
 var ErrModelPricingUnavailable = errors.New("pricing not found")
+
+func newOpenAIOfficialModelPricing(inputPerMTok, cacheReadPerMTok, cacheWritePerMTok, outputPerMTok float64) *ModelPricing {
+	input := inputPerMTok / 1_000_000
+	cacheRead := cacheReadPerMTok / 1_000_000
+	cacheWrite := cacheWritePerMTok / 1_000_000
+	output := outputPerMTok / 1_000_000
+	return &ModelPricing{
+		InputPricePerToken:             input,
+		InputPricePerTokenPriority:     input * 2,
+		OutputPricePerToken:            output,
+		OutputPricePerTokenPriority:    output * 2,
+		CacheCreationPricePerToken:     cacheWrite,
+		CacheReadPricePerToken:         cacheRead,
+		CacheReadPricePerTokenPriority: cacheRead * 2,
+		LongContextInputThreshold:      openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
+		SupportsCacheBreakdown:         false,
+	}
+}
 
 // BillingService 计费服务
 type BillingService struct {
@@ -248,9 +272,12 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerToken: 2e-8,
 		SupportsCacheBreakdown: false,
 	}
-	s.fallbackPrices["gpt-5.6-sol"] = s.fallbackPrices["gpt-5.4"]
-	s.fallbackPrices["gpt-5.6-terra"] = s.fallbackPrices["gpt-5.4"]
-	s.fallbackPrices["gpt-5.6-luna"] = s.fallbackPrices["gpt-5.4"]
+	// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
+	s.fallbackPrices["gpt-6-astra"] = newOpenAIOfficialModelPricing(10, 1, 12.5, 50)
+	// gpt-5.6-sol promotion price, same source/retrieval date as above.
+	s.fallbackPrices["gpt-5.6-sol"] = newOpenAIOfficialModelPricing(4, 0.4, 5, 20)
+	s.fallbackPrices["gpt-5.6-terra"] = newOpenAIOfficialModelPricing(2, 0.2, 2.5, 12)
+	s.fallbackPrices["gpt-5.6-luna"] = newOpenAIOfficialModelPricing(0.2, 0.02, 0.25, 1.2)
 	// OpenAI GPT-5.2（本地兜底）
 	s.fallbackPrices["gpt-5.2"] = &ModelPricing{
 		InputPricePerToken:             1.75e-6,
@@ -347,9 +374,12 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	// OpenAI 仅匹配已知 GPT-5/Codex 族，避免未知 OpenAI 型号误计价。
-	if strings.Contains(modelLower, "gpt-5") || strings.Contains(modelLower, "codex") {
+	if strings.Contains(modelLower, "gpt-5") || strings.Contains(modelLower, "gpt5") ||
+		strings.Contains(modelLower, "gpt-6") || strings.Contains(modelLower, "codex") {
 		normalized := normalizeCodexModel(modelLower)
 		switch normalized {
+		case "gpt-6-astra":
+			return s.fallbackPrices["gpt-6-astra"]
 		case "gpt-5.6-sol":
 			return s.fallbackPrices["gpt-5.6-sol"]
 		case "gpt-5.6-terra":
@@ -378,6 +408,23 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	return nil
+}
+
+func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
+	if s == nil {
+		return false
+	}
+	model = normalizedResponseBillingModel(model)
+	if model == "" {
+		return false
+	}
+	if s.pricingService != nil {
+		if pricing := s.pricingService.GetIdentifiedModelPricing(model); pricing != nil {
+			return true
+		}
+	}
+	pricing, ok := s.fallbackPrices[model]
+	return ok && pricing != nil
 }
 
 // GetModelPricing 获取模型价格配置
@@ -548,6 +595,7 @@ func (s *BillingService) computeTokenBreakdown(
 	tierMultiplier := 1.0
 
 	if usePriorityServiceTierPricing(serviceTier, pricing) {
+		cacheCreationMultiplier = serviceTierCostMultiplier(serviceTier)
 		if pricing.InputPricePerTokenPriority > 0 {
 			inputPrice = pricing.InputPricePerTokenPriority
 		}
@@ -565,7 +613,7 @@ func (s *BillingService) computeTokenBreakdown(
 		inputPrice *= pricing.LongContextInputMultiplier
 		outputPrice *= pricing.LongContextOutputMultiplier
 		cacheReadPrice *= pricing.LongContextInputMultiplier
-		cacheCreationMultiplier = pricing.LongContextInputMultiplier
+		cacheCreationMultiplier *= pricing.LongContextInputMultiplier
 	}
 
 	bd := &CostBreakdown{}
@@ -712,12 +760,9 @@ func (s *BillingService) shouldApplySessionLongContextPricing(tokens UsageTokens
 }
 
 func isOpenAIGPT54Model(model string) bool {
-	model = strings.TrimSpace(strings.ToLower(model))
-	if !strings.HasPrefix(model, "gpt-") {
-		return false
-	}
-	normalized := normalizeCodexModel(model)
+	normalized := normalizeCodexModel(strings.TrimSpace(strings.ToLower(model)))
 	return normalized == "gpt-5.4" ||
+		normalized == "gpt-6-astra" ||
 		normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" || normalized == "gpt-5.6-luna"
 }
 

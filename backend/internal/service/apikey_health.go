@@ -124,6 +124,11 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
 	bodyUpper := strings.ToUpper(string(responseBody))
 
+	if account.Platform == PlatformOpenAI &&
+		statusCode == http.StatusForbidden &&
+		strings.HasPrefix(msg, "previous_response_id is not available for this ") {
+		return APIKeyStatusActionIgnore
+	}
 	if account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(statusCode, responseBody) {
 		return APIKeyStatusActionIgnore
 	}

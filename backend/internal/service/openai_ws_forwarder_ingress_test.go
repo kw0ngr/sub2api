@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -752,18 +753,100 @@ func TestSetOpenAIWSPayloadInputSequence(t *testing.T) {
 	})
 }
 
-func TestCloneOpenAIWSRawMessages(t *testing.T) {
+func TestOpenAIWSReplaySequenceSharesBodies(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil_slice", func(t *testing.T) {
-		cloned := cloneOpenAIWSRawMessages(nil)
-		require.Nil(t, cloned)
+	t.Run("extract_shares_payload_backing_array", func(t *testing.T) {
+		t.Parallel()
+
+		// Given
+		payload := []byte(`{"input":[{"type":"input_text","text":"hello"},{"type":"input_text","text":"world"}]}`)
+
+		// When
+		items, exists, err := openAIWSExtractNormalizedInputSequence(payload)
+
+		// Then
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 2)
+		for _, item := range items {
+			start := bytes.Index(payload, []byte(item))
+			require.GreaterOrEqual(t, start, 0)
+			require.Same(t, &payload[start], &item[0])
+		}
 	})
 
-	t.Run("empty_slice", func(t *testing.T) {
-		items := make([]json.RawMessage, 0)
-		cloned := cloneOpenAIWSRawMessages(items)
-		require.NotNil(t, cloned)
-		require.Len(t, cloned, 0)
+	t.Run("build_transfers_current_items_ownership", func(t *testing.T) {
+		t.Parallel()
+
+		// Given
+		payload := []byte(`{"input":[{"type":"input_text","text":"hello"}]}`)
+
+		// When
+		items, exists, err := buildOpenAIWSReplayInputSequence(nil, false, payload, false)
+
+		// Then
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 1)
+		start := bytes.Index(payload, []byte(items[0]))
+		require.GreaterOrEqual(t, start, 0)
+		require.Same(t, &payload[start], &items[0][0])
 	})
+
+	t.Run("build_merge_clones_header_and_shares_bodies", func(t *testing.T) {
+		t.Parallel()
+
+		// Given
+		history := []json.RawMessage{json.RawMessage(`{"type":"input_text","text":"hello"}`)}
+		payload := []byte(`{"previous_response_id":"resp_1","input":[{"type":"input_text","text":"world"}]}`)
+
+		// When
+		items, exists, err := buildOpenAIWSReplayInputSequence(history, true, payload, true)
+
+		// Then
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 2)
+		require.NotSame(t, &history[0], &items[0])
+		require.Same(t, &history[0][0], &items[0][0])
+		start := bytes.Index(payload, []byte(items[1]))
+		require.GreaterOrEqual(t, start, 0)
+		require.Same(t, &payload[start], &items[1][0])
+	})
+
+	t.Run("build_prefix_hit_transfers_current_items", func(t *testing.T) {
+		t.Parallel()
+
+		// Given
+		history := []json.RawMessage{json.RawMessage(`{"type":"input_text","text":"hello"}`)}
+		payload := []byte(`{"previous_response_id":"resp_1","input":[{"type":"input_text","text":"hello"},{"type":"input_text","text":"world"}]}`)
+
+		// When
+		items, exists, err := buildOpenAIWSReplayInputSequence(history, true, payload, true)
+
+		// Then
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 2)
+		require.NotSame(t, &history[0], &items[0])
+		start := bytes.Index(payload, []byte(items[1]))
+		require.GreaterOrEqual(t, start, 0)
+		require.Same(t, &payload[start], &items[1][0])
+	})
+}
+
+func TestOpenAIWSExtractNormalizedInputSequenceRejectsMalformedArray(t *testing.T) {
+	t.Parallel()
+
+	// Given
+	payload := []byte(`{"input":[}`)
+
+	// When
+	items, exists, err := openAIWSExtractNormalizedInputSequence(payload)
+
+	// Then
+	require.Error(t, err)
+	require.True(t, exists)
+	require.Nil(t, items)
 }

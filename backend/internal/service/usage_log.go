@@ -104,6 +104,10 @@ type UsageLog struct {
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Nil means no mapping was applied (requested model was used as-is).
 	UpstreamModel *string
+	// UpstreamResponseModel is the model declared by the successful upstream response.
+	UpstreamResponseModel *string
+	// UpstreamModelMismatch compares UpstreamResponseModel with the model sent upstream.
+	UpstreamModelMismatch *bool
 	// ChannelID 渠道 ID
 	ChannelID *int64
 	// ModelMappingChain 模型映射链，如 "a→b→c"

@@ -7,6 +7,7 @@ import (
 )
 
 var codexModelMap = map[string]string{
+	"gpt-6-astra":                "gpt-6-astra",
 	"gpt-5.6-sol":                "gpt-5.6-sol",
 	"gpt-5.6-terra":              "gpt-5.6-terra",
 	"gpt-5.6-luna":               "gpt-5.6-luna",
@@ -58,6 +59,7 @@ var codexVersionModelPrefixes = []struct {
 	prefix string
 	target string
 }{
+	{prefix: "gpt-6-astra", target: "gpt-6-astra"},
 	{prefix: "gpt-5.6-sol", target: "gpt-5.6-sol"},
 	{prefix: "gpt-5.6-terra", target: "gpt-5.6-terra"},
 	{prefix: "gpt-5.6-luna", target: "gpt-5.6-luna"},
@@ -512,28 +514,8 @@ func normalizeKnownCodexModel(model string) (string, bool) {
 	if isOpenAIImageGenerationModel(model) {
 		return model, true
 	}
-
-	modelID := model
-	if strings.Contains(modelID, "/") {
-		parts := strings.Split(modelID, "/")
-		modelID = parts[len(parts)-1]
-	}
-
-	key := codexModelLookupKey(modelID)
-	if key == "" {
-		return "", false
-	}
-	if mapped := getNormalizedCodexModel(key); mapped != "" {
-		return mapped, true
-	}
-	for _, item := range codexVersionModelPrefixes {
-		if key == item.prefix {
-			return item.target, true
-		}
-		suffix, ok := strings.CutPrefix(key, item.prefix+"-")
-		if ok && isKnownCodexModelSuffix(suffix) {
-			return item.target, true
-		}
+	if normalized := normalizeKnownOpenAICodexModel(model); normalized != "" {
+		return normalized, true
 	}
 	return "", false
 }
@@ -543,10 +525,10 @@ func codexModelLookupKey(modelID string) string {
 	if modelID == "" {
 		return ""
 	}
-	if strings.Contains(modelID, "/") {
-		parts := strings.Split(modelID, "/")
-		modelID = parts[len(parts)-1]
+	if canonical := canonicalizeOpenAIModelAliasSpelling(modelID); canonical != "" {
+		return canonical
 	}
+	modelID = lastOpenAIModelSegment(modelID)
 	return strings.ToLower(strings.Join(strings.Fields(modelID), "-"))
 }
 

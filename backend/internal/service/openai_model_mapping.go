@@ -25,9 +25,6 @@ func isOpenAIOAuthServableModel(requestedModel string) bool {
 	if model == "" {
 		return true
 	}
-	if strings.EqualFold(model, "gpt-5.6") {
-		return true
-	}
 	if claudeMessagesDispatchFamily(model) != "" {
 		return true
 	}
@@ -35,9 +32,8 @@ func isOpenAIOAuthServableModel(requestedModel string) bool {
 		return true
 	}
 	if normalized := NormalizeOpenAICompatRequestedModel(model); normalized != model {
-		if _, ok := normalizeKnownCodexModel(normalized); ok {
-			return true
-		}
+		_, ok := normalizeKnownCodexModel(normalized)
+		return ok
 	}
 	return false
 }

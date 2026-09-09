@@ -17,6 +17,7 @@ import (
 const upstreamModelsBodyLimit int64 = 8 << 20
 
 var builtinGLMModelIDs = []string{
+	"glm-5.3",
 	"glm-5.2",
 	"glm-5-turbo",
 	"glm-5",
@@ -43,6 +44,7 @@ const (
 	UpstreamModelSyncErrorConfiguration UpstreamModelSyncErrorKind = "configuration"
 	UpstreamModelSyncErrorUnsupported   UpstreamModelSyncErrorKind = "unsupported"
 	UpstreamModelSyncErrorUpstream      UpstreamModelSyncErrorKind = "upstream"
+	UpstreamModelSyncErrorInternal      UpstreamModelSyncErrorKind = "internal"
 )
 
 // UpstreamModelSyncError keeps internal failure details wrapped while exposing a safe client message.
@@ -87,6 +89,10 @@ func newUpstreamModelSyncUnsupportedError(message string, err error) error {
 
 func newUpstreamModelSyncUpstreamError(message string, err error) error {
 	return &UpstreamModelSyncError{Kind: UpstreamModelSyncErrorUpstream, Message: message, Err: err}
+}
+
+func newUpstreamModelSyncInternalError(message string, err error) error {
+	return &UpstreamModelSyncError{Kind: UpstreamModelSyncErrorInternal, Message: message, Err: err}
 }
 
 // FetchUpstreamSupportedModels fetches the live model list from the account's upstream API format.
@@ -141,6 +147,9 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	}
 	if len(models) == 0 {
 		return nil, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+	}
+	if err := s.persistUpstreamModelMetadata(ctx, account, models, body); err != nil {
+		return nil, err
 	}
 
 	return models, nil
@@ -557,6 +566,7 @@ func buildGLMAnthropicMessagesURL(base string) string {
 
 type upstreamModelEntry struct {
 	ID   string `json:"id"`
+	Slug string `json:"slug"`
 	Name string `json:"name"`
 }
 
@@ -600,6 +610,9 @@ func extractUpstreamModelIDs(body []byte) ([]string, error) {
 
 func upstreamModelEntryID(entry upstreamModelEntry) string {
 	modelID := strings.TrimSpace(entry.ID)
+	if modelID == "" {
+		modelID = strings.TrimSpace(entry.Slug)
+	}
 	if modelID == "" {
 		modelID = strings.TrimSpace(entry.Name)
 	}

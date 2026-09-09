@@ -131,3 +131,46 @@ func TestOpenAIGatewayServiceForwardRetriesRejectedMaxOutputTokens(t *testing.T)
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "max_output_tokens").Exists())
 }
+
+func TestNormalizeOpenAIResponsesRejectedFieldRetryBody_AstraSamplingFieldRejection(t *testing.T) {
+	body := []byte(`{"model":"gpt-6-astra","input":"hi","temperature":0.7,"top_p":0.8,"top_logprobs":2,"logprobs":true,"include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
+	responseBody := []byte(`{"error":{"code":"unsupported_parameter","message":"Unsupported parameter: temperature."}}`)
+
+	retryBody, reason, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(http.StatusBadRequest, body, responseBody)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "unsupported reasoning sampling parameter rejection", reason)
+	for _, field := range []string{"temperature", "top_p", "top_logprobs", "logprobs"} {
+		require.False(t, gjson.GetBytes(retryBody, field).Exists(), "%s should be stripped", field)
+	}
+	require.NotContains(t, string(retryBody), "message.output_text.logprobs")
+	require.Contains(t, string(retryBody), "reasoning.encrypted_content")
+}
+
+func TestNormalizeOpenAIResponsesRejectedFieldRetryBody_AstraIncludeRejectionFromMessage(t *testing.T) {
+	// Given
+	body := []byte(`{"model":"gpt-6-astra","input":"hi","include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
+	responseBody := []byte(`{"error":{"code":"unsupported_parameter","message":"Unsupported parameter: include. message.output_text.logprobs is not supported."}}`)
+
+	// When
+	retryBody, reason, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(http.StatusBadRequest, body, responseBody)
+
+	// Then
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "unsupported reasoning sampling parameter rejection", reason)
+	require.NotContains(t, string(retryBody), "message.output_text.logprobs")
+	require.Contains(t, string(retryBody), "reasoning.encrypted_content")
+}
+
+func TestNormalizeOpenAIResponsesRejectedFieldRetryBody_GrokSamplingFieldRejectionNotRetried(t *testing.T) {
+	body := []byte(`{"model":"grok-4.6","input":"hi","temperature":0.7}`)
+	responseBody := []byte(`{"error":{"code":"unsupported_parameter","message":"Unsupported parameter: temperature."}}`)
+
+	retryBody, _, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(http.StatusBadRequest, body, responseBody)
+
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Nil(t, retryBody)
+}

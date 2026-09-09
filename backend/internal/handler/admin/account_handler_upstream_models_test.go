@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,4 +102,35 @@ func TestAccountHandlerSyncUpstreamModelsPreviewRejectsMissingAPIKey(t *testing.
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+type task6AdminModelMetadataRepoStub struct {
+	service.AccountRepository
+	updates map[string]any
+}
+
+func (r *task6AdminModelMetadataRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	r.updates = updates
+	return nil
+}
+
+func TestAccountHandlerSyncUpstreamModelsPersistsModelMetadataSnapshot(t *testing.T) {
+	// Given
+	gin.SetMode(gin.TestMode)
+	repo := &task6AdminModelMetadataRepoStub{}
+	upstream := &accountHandlerUpstreamModelsHTTP{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"gpt-6-astra"}]}`))}}
+	adminSvc := &availableModelsAdminService{stubAdminService: newStubAdminService(), account: service.Account{ID: 708, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Credentials: map[string]any{"api_key": "openai-key", "base_url": "https://api.openai.example/v1"}}}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, service.NewAccountTestService(repo, nil, nil, nil, nil, upstream, accountHandlerUpstreamModelsConfig(), nil, nil), nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/admin/accounts/:id/models/sync-upstream", handler.SyncUpstreamModels)
+
+	// When
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/accounts/708/models/sync-upstream", nil)
+	router.ServeHTTP(w, req)
+
+	// Then
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"models":["gpt-6-astra"]`)
+	require.Contains(t, repo.updates, "upstream_model_metadata")
 }

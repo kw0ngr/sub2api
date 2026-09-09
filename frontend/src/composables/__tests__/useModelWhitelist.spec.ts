@@ -10,7 +10,23 @@ describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.6 官方模型', () => {
     const models = getModelsByPlatform('openai')
 
-    expect(models.slice(0, 3)).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+    expect(models.slice(1, 4)).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+  })
+
+  it('openai 模型列表只广告 canonical GPT-6 Astra', () => {
+    const models = getModelsByPlatform('openai')
+
+    expect(models.filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
+    expect(models).not.toContain('gpt-6')
+    expect(models).not.toContain('gpt5.6')
+    expect(models).not.toContain('gpt-5.6')
+  })
+
+  it('openai 预设映射只广告 canonical GPT-6 Astra', () => {
+    const presets = getPresetMappingsByPlatform('openai')
+
+    expect(presets.filter((preset) => preset.from === 'gpt-6-astra')).toHaveLength(1)
+    expect(presets).not.toContainEqual(expect.objectContaining({ from: 'gpt-6' }))
   })
 
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -71,10 +87,11 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('deepseek-v4-flash')
   })
 
-  it('glm 模型列表优先包含 5.x 和 4.7 系列', () => {
+  it('GLM 模型列表优先包含 5.x 和 4.7 系列', () => {
     const models = getModelsByPlatform('glm')
 
-    expect(models.slice(0, 5)).toEqual([
+    expect(models.slice(0, 6)).toEqual([
+      'glm-5.3',
       'glm-5.2',
       'glm-5-turbo',
       'glm-5',

@@ -84,6 +84,9 @@ func FilterRedactedThinkingBlocks(body []byte) []byte {
 }
 
 func DisableGLMAnthropicThinkingByDefault(body []byte) []byte {
+	if isGLM53Model(gjson.GetBytes(body, "model").String()) {
+		return body
+	}
 	if gjson.GetBytes(body, "thinking").Exists() {
 		return body
 	}

@@ -71,7 +71,7 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 	// /v1/chat/completions; keep it instead of only honoring the flat legacy field.
 	if req.Reasoning != nil && strings.TrimSpace(req.Reasoning.Effort) != "" {
 		out.Reasoning = &ResponsesReasoning{
-			Effort:  strings.TrimSpace(req.Reasoning.Effort),
+			Effort:  normalizeResponsesReasoningEffortForModel(req.Reasoning.Effort, req.Model),
 			Summary: req.Reasoning.Summary,
 		}
 		if out.Reasoning.Summary == "" {
@@ -80,7 +80,7 @@ func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest,
 	}
 	if req.ReasoningEffort != "" {
 		out.Reasoning = &ResponsesReasoning{
-			Effort:  req.ReasoningEffort,
+			Effort:  normalizeResponsesReasoningEffortForModel(req.ReasoningEffort, req.Model),
 			Summary: "auto",
 		}
 	}

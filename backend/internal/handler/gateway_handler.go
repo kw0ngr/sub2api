@@ -290,6 +290,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 判断是否真的绑定了粘性会话：有 sessionKey 且已经绑定到某个账号
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 
+	sessionSlots := newSessionSlotReleaseTracker()
+	releaseSessionSlot := func(account *service.Account) {
+		h.gatewayService.ReleaseAccountSession(context.WithoutCancel(c.Request.Context()), account, sessionKey)
+	}
+	defer func() {
+		sessionSlots.releaseAll(releaseSessionSlot)
+	}()
+
 	if platform == service.PlatformGemini {
 		fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
 
@@ -353,7 +361,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					return
 				}
 			}
-
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
@@ -624,6 +631,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 
+			sessionSlots.add(account)
+
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
@@ -800,6 +809,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							h.handleStreamingAwareError(c, status, code, message, streamStarted)
 							return
 						}
+						sessionSlots.releaseAll(releaseSessionSlot)
+						sessionSlots = newSessionSlotReleaseTracker()
 						// 兜底重试按"直接请求兜底分组"处理：清除强制平台，允许按分组平台调度
 						ctx := context.WithValue(c.Request.Context(), ctxkey.ForcePlatform, "")
 						c.Request = c.Request.WithContext(ctx)
@@ -816,12 +827,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
 					if c.Writer.Size() != writerSizeBeforeForward {
+						sessionSlots.retain()
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 					switch action {
 					case FailoverContinue:
+						sessionSlots.release(account, releaseSessionSlot)
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
@@ -854,6 +867,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					forwardFailedFields = append(forwardFailedFields, zap.Int64p("proxy_id", account.ProxyID))
 				}
 				reqLog.Error("gateway.forward_failed", forwardFailedFields...)
+				if result != nil {
+					sessionSlots.retain()
+				}
 				return
 			}
 
@@ -907,6 +923,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					).Error("gateway.record_usage_failed", zap.Error(err))
 				}
 			})
+			sessionSlots.retain()
 			return
 		}
 		if !retryWithFallback {
@@ -1636,6 +1653,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	if err := h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, parsedReq); err != nil {
 		reqLog.Error("gateway.count_tokens_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		// 错误响应已在 ForwardCountTokens 中处理
+		h.gatewayService.ReleaseAccountSession(context.WithoutCancel(c.Request.Context()), account, sessionHash)
 		return
 	}
 }

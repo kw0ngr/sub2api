@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 const grokTokenRefreshSkew = time.Hour
@@ -49,6 +51,15 @@ func (r *GrokTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	}
 	newCredentials := r.grokOAuthService.BuildAccountCredentials(tokenInfo)
 	newCredentials = MergeCredentials(account.Credentials, newCredentials)
+	if tier := xai.SubscriptionTierFromJWT(strings.TrimSpace(tokenInfo.AccessToken)); tier != "" {
+		newCredentials["subscription_tier"] = tier
+	}
+	if tier := xai.NormalizeSubscriptionTier(account.GetCredential("subscription_tier")); tier != "" {
+		newCredentials["subscription_tier"] = tier
+	}
+	if tier := xai.NormalizeSubscriptionTier(account.GetExtraString("subscription_tier")); tier != "" {
+		newCredentials["subscription_tier"] = tier
+	}
 	if baseURL := strings.TrimSpace(account.GetCredential("base_url")); baseURL != "" {
 		newCredentials["base_url"] = baseURL
 	}

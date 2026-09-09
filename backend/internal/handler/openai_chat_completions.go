@@ -128,7 +128,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			apiKey.GroupID,
 			"",
 			sessionHash,
-			reqModel,
+			openAIChannelForwardModelForScheduler(reqModel, channelMapping),
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 		)

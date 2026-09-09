@@ -1204,3 +1204,26 @@ func TestOpenAIGatewayService_OAuthPassthrough_AllowTimeoutHeadersWhenConfigured
 	require.Equal(t, "120000", upstream.lastReq.Header.Get("x-stainless-timeout"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Test"))
 }
+
+func TestOpenAIGatewayService_AstraPassthroughPreservesConfigurationUpdateAndAsyncTools(t *testing.T) {
+	// Given
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	originalBody := []byte(`{"model":"gpt-6-astra","stream":false,"input":[{"type":"configuration_update","session":{"instructions":"keep","tool_choice":"auto"}},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"tools":[{"type":"function","name":"shell","async":true,"parameters":{"type":"object","properties":{"cmd":{"type":"string"}}}}]}`)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"output":[],"usage":{"input_tokens":1,"output_tokens":1}}`))}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 607, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{"api_key": "api-key", "base_url": "https://api.openai.com"}, Extra: map[string]any{"openai_passthrough": true}, Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1)}
+
+	// When
+	result, err := svc.Forward(context.Background(), ctx, account, originalBody)
+
+	// Then
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, originalBody, upstream.lastBody)
+	require.Equal(t, gjson.GetBytes(originalBody, "input.0").Raw, gjson.GetBytes(upstream.lastBody, "input.0").Raw)
+	require.Equal(t, gjson.GetBytes(originalBody, "tools.0").Raw, gjson.GetBytes(upstream.lastBody, "tools.0").Raw)
+	require.Equal(t, "gpt-6-astra", gjson.GetBytes(upstream.lastBody, "model").String())
+}

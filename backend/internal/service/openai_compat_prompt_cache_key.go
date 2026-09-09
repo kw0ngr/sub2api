@@ -12,12 +12,8 @@ import (
 const compatPromptCacheKeyPrefix = "compat_cc_"
 
 func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
-	trimmed := strings.TrimSpace(strings.ToLower(model))
-	if !strings.Contains(trimmed, "gpt-5") && !strings.Contains(trimmed, "codex") {
-		return false
-	}
-	normalized := strings.TrimSpace(strings.ToLower(normalizeCodexModel(trimmed)))
-	return strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
+	normalized := strings.TrimSpace(strings.ToLower(normalizeCodexModel(model)))
+	return normalized == "gpt-6-astra" || strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
 }
 
 func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedModel string) string {

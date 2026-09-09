@@ -50,6 +50,14 @@ var (
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
+	openAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
+		"gpt-6-astra": newOpenAIOfficialLiteLLMPricing(10, 1, 12.5, 50),
+		// gpt-5.6-sol promotion price, same source/retrieval date as above.
+		"gpt-5.6-sol":   newOpenAIOfficialLiteLLMPricing(4, 0.4, 5, 20),
+		"gpt-5.6-terra": newOpenAIOfficialLiteLLMPricing(2, 0.2, 2.5, 12),
+		"gpt-5.6-luna":  newOpenAIOfficialLiteLLMPricing(0.2, 0.02, 0.25, 1.2),
+	}
 	xAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
 		// xAI GET /v1/models/grok-4.6 reports USD $2/$0.50/$6 per MTok
 		// for input/cache-read/output and doubles all three above 200k input tokens.
@@ -84,6 +92,29 @@ var (
 		"glm-4-32b-0414-128k": newGLMTokenPricing(0.1, 0, 0.1),
 	}
 )
+
+func newOpenAIOfficialLiteLLMPricing(inputPerMTok, cacheReadPerMTok, cacheWritePerMTok, outputPerMTok float64) *LiteLLMModelPricing {
+	input := inputPerMTok / 1_000_000
+	cacheRead := cacheReadPerMTok / 1_000_000
+	cacheWrite := cacheWritePerMTok / 1_000_000
+	output := outputPerMTok / 1_000_000
+	return &LiteLLMModelPricing{
+		InputCostPerToken:               input,
+		InputCostPerTokenPriority:       input * 2,
+		OutputCostPerToken:              output,
+		OutputCostPerTokenPriority:      output * 2,
+		CacheCreationInputTokenCost:     cacheWrite,
+		CacheReadInputTokenCost:         cacheRead,
+		CacheReadInputTokenCostPriority: cacheRead * 2,
+		LongContextInputTokenThreshold:  openAIGPT54LongContextInputThreshold,
+		LongContextInputCostMultiplier:  openAIGPT54LongContextInputMultiplier,
+		LongContextOutputCostMultiplier: openAIGPT54LongContextOutputMultiplier,
+		LiteLLMProvider:                 "openai",
+		Mode:                            "chat",
+		SupportsPromptCaching:           true,
+		SupportsServiceTier:             true,
+	}
+}
 
 func newGLMTokenPricing(inputPerMTok, cacheReadPerMTok, outputPerMTok float64) *LiteLLMModelPricing {
 	return &LiteLLMModelPricing{
@@ -578,33 +609,8 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
-	// 1. 精确匹配
-	for _, candidate := range lookupCandidates {
-		if candidate == "" {
-			continue
-		}
-		if pricing, ok := s.pricingData[candidate]; ok {
-			return pricing
-		}
-	}
-
-	// 2. 处理常见的模型名称变体
-	// claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
-	for _, candidate := range lookupCandidates {
-		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
-		if pricing, ok := s.pricingData[normalized]; ok {
-			return pricing
-		}
-	}
-
-	// 3. 尝试模糊匹配（去掉版本号后缀）
-	// claude-opus-4-5-20251101 -> claude-opus-4.5
-	baseName := s.extractBaseName(lookupCandidates[0])
-	for key, pricing := range s.pricingData {
-		keyBase := s.extractBaseName(strings.ToLower(key))
-		if keyBase == baseName {
-			return pricing
-		}
+	if pricing := s.lookupIdentifiedModelPricingLocked(lookupCandidates); pricing != nil {
+		return pricing
 	}
 
 	// 4. 基于模型系列匹配（Claude）
@@ -629,12 +635,56 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	return nil
 }
 
+func (s *PricingService) lookupIdentifiedModelPricingLocked(lookupCandidates []string) *LiteLLMModelPricing {
+	if len(lookupCandidates) == 0 {
+		return nil
+	}
+	for _, candidate := range lookupCandidates {
+		if candidate == "" {
+			continue
+		}
+		if pricing, ok := s.pricingData[candidate]; ok {
+			return pricing
+		}
+	}
+	for _, candidate := range lookupCandidates {
+		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
+		if pricing, ok := s.pricingData[normalized]; ok {
+			return pricing
+		}
+	}
+	baseName := s.extractBaseName(lookupCandidates[0])
+	for key, pricing := range s.pricingData {
+		if s.extractBaseName(strings.ToLower(key)) == baseName {
+			return pricing
+		}
+	}
+	return nil
+}
+
+func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMModelPricing {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	modelLower := strings.ToLower(strings.TrimSpace(modelName))
+	if modelLower == "" {
+		return nil
+	}
+	return s.lookupIdentifiedModelPricingLocked(s.buildModelLookupCandidates(modelLower))
+}
+
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {
 	// Prefer canonical model name first (this also improves billing compatibility with "models/xxx").
-	candidates := []string{
+	candidates := make([]string, 0, 6)
+	if canonical := normalizeKnownOpenAICodexModel(modelLower); canonical != "" {
+		candidates = append(candidates, canonical)
+	}
+	candidates = append(candidates,
 		normalizeModelNameForPricing(modelLower),
 		modelLower,
-	}
+	)
 	candidates = append(candidates,
 		strings.TrimPrefix(modelLower, "models/"),
 		lastSegment(modelLower),
@@ -836,6 +886,17 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 // 5. gpt-5.6* / gpt-5.5* / gpt-5.4* -> 业务静态兜底价
 // 6. 最终回退到 DefaultTestModel (gpt-5.1-codex)
 func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
+	if canonical := normalizeKnownOpenAICodexModel(model); canonical != "" {
+		if pricing, ok := openAIOfficialStaticPricing[canonical]; ok {
+			logger.With(zap.String("component", "service.pricing")).
+				Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s(static)", model, canonical))
+			return pricing
+		}
+	}
+	if strings.HasPrefix(model, "gpt-6") || strings.HasPrefix(model, "gpt-5.6") {
+		return nil
+	}
+
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
 			logger.LegacyPrintf("service.pricing", "[Pricing][SparkBilling] %s -> %s billing", model, "gpt-5.1-codex")
@@ -843,12 +904,6 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 				Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.1-codex"))
 			return pricing
 		}
-	}
-
-	if strings.HasPrefix(model, "gpt-5.6") {
-		logger.With(zap.String("component", "service.pricing")).
-			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.4(static)"))
-		return openAIGPT54FallbackPricing
 	}
 
 	if strings.HasPrefix(model, "gpt-5.5") {

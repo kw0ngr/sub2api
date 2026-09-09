@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIWSHTTPBridgeConfigAndPayload(t *testing.T) {
@@ -95,4 +96,18 @@ func TestProxyOpenAIWSHTTPBridgeTurnStreamsResponsesSSEToClientWS(t *testing.T) 
 	require.Contains(t, clientMessages[0], "response.output_text.delta")
 	require.Contains(t, clientMessages[1], "response.completed")
 	require.JSONEq(t, `{"model":"gpt-5.4","input":"hi","stream":true}`, string(upstream.lastBody))
+}
+
+func TestOpenAIWSHTTPBridge_AstraPreservesConfigurationUpdateAndAsyncTools(t *testing.T) {
+	// Given
+	payload := []byte(`{"type":"response.create","model":"gpt-6-astra","input":[{"type":"configuration_update","session":{"instructions":"keep","tool_choice":"auto"}},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"tools":[{"type":"function","name":"shell","async":true,"parameters":{"type":"object","properties":{"cmd":{"type":"string"}}}}],"generate":true,"previous_response_id":"resp_old","stream":false}`)
+
+	// When
+	body, err := prepareOpenAIWSHTTPBridgeBody(payload)
+
+	// Then
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"gpt-6-astra","input":[{"type":"configuration_update","session":{"instructions":"keep","tool_choice":"auto"}},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"tools":[{"type":"function","name":"shell","async":true,"parameters":{"type":"object","properties":{"cmd":{"type":"string"}}}}],"stream":true}`, string(body))
+	require.Equal(t, gjson.GetBytes(payload, "input.0").Raw, gjson.GetBytes(body, "input.0").Raw)
+	require.Equal(t, gjson.GetBytes(payload, "tools.0").Raw, gjson.GetBytes(body, "tools.0").Raw)
 }

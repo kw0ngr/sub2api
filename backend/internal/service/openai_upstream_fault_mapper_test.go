@@ -76,7 +76,6 @@ func TestOpenAIGatewayService_ClientValidation400DoesNotFailoverOrCooldown(t *te
 
 func TestOpenAIGatewayService_ForwardAsChatCompletions_UsesMappedFault(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -113,7 +112,6 @@ func TestOpenAIGatewayService_ForwardAsChatCompletions_UsesMappedFault(t *testin
 
 func TestOpenAIGatewayService_ForwardAsAnthropic_UsesMappedFault(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

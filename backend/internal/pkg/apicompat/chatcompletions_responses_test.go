@@ -1722,3 +1722,70 @@ func TestBufferedResponseAccumulator_IgnoresNonFunctionCallItems(t *testing.T) {
 
 	assert.False(t, acc.HasContent())
 }
+
+func TestChatCompletionsToResponses_AstraNormalizesNestedReasoningAndStripsSampling(t *testing.T) {
+	temp := 0.7
+	req := &ChatCompletionsRequest{
+		Model:       "gpt-6-astra",
+		Messages:    []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		Reasoning:   &ResponsesReasoning{Effort: "none"},
+		Temperature: &temp,
+		TopP:        &temp,
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Reasoning)
+	assert.Equal(t, "low", resp.Reasoning.Effort)
+	assert.Nil(t, resp.Temperature)
+	assert.Nil(t, resp.TopP)
+}
+
+func TestChatCompletionsToResponses_AstraNormalizesFlatReasoningEffort(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model:           "gpt-6-astra",
+		Messages:        []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		ReasoningEffort: "minimal",
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Reasoning)
+	assert.Equal(t, "low", resp.Reasoning.Effort)
+}
+
+func TestChatCompletionsToResponses_GPT56PreservesNoneAndMaxReasoning(t *testing.T) {
+	for _, effort := range []string{"none", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			req := &ChatCompletionsRequest{
+				Model:           "gpt-5.6-sol",
+				Messages:        []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+				ReasoningEffort: effort,
+			}
+
+			resp, err := ChatCompletionsToResponses(req)
+
+			require.NoError(t, err)
+			require.NotNil(t, resp.Reasoning)
+			assert.Equal(t, effort, resp.Reasoning.Effort)
+		})
+	}
+}
+
+func TestChatCompletionsToResponses_NonReasoningSamplingFieldsRemain(t *testing.T) {
+	temp := 0.7
+	req := &ChatCompletionsRequest{
+		Model:       "gpt-4o",
+		Messages:    []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		Temperature: &temp,
+		TopP:        &temp,
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, &temp, resp.Temperature)
+	assert.Equal(t, &temp, resp.TopP)
+}

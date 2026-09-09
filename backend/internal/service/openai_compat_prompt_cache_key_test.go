@@ -135,3 +135,33 @@ func TestDeriveAnthropicCompatPromptCacheKey_UsesCacheControlAnchors(t *testing.
 	require.True(t, strings.HasPrefix(k1, "anthropic-cache-"))
 	require.False(t, strings.HasPrefix(k1, compatPromptCacheKeyPrefix))
 }
+
+func TestShouldAutoInjectPromptCacheKeyForCompat_GPT6AstraForms(t *testing.T) {
+	// Given / When / Then
+	for _, model := range []string{"gpt-6", "gpt-6-astra", "openai/gpt-6", "provider/gpt-6-astra"} {
+		require.True(t, shouldAutoInjectPromptCacheKeyForCompat(model), model)
+	}
+	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-6-other"))
+	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-6-astral"))
+}
+
+func TestOpenAICompatPromptCacheIdentity_GPT56AliasesCanonicalizeToSol(t *testing.T) {
+	// Given
+	req := &apicompat.ChatCompletionsRequest{
+		Model: "gpt-5.6",
+		Messages: []apicompat.ChatMessage{
+			{Role: "system", Content: mustRawJSON(t, `"repo"`)},
+			{Role: "user", Content: mustRawJSON(t, `"hello"`)},
+			{Role: "assistant", Content: mustRawJSON(t, `"hi"`)},
+			{Role: "user", Content: mustRawJSON(t, `"next"`)},
+		},
+	}
+	solKey := deriveCompatPromptCacheKey(req, "gpt-5.6-sol")
+
+	// When / Then
+	for _, model := range []string{"gpt-5.6", "openai/gpt-5.6", "provider/gpt-5.6-max", "gpt-5.6-sol"} {
+		require.Equal(t, solKey, deriveCompatPromptCacheKey(req, model), model)
+	}
+	require.NotEqual(t, solKey, deriveCompatPromptCacheKey(req, "gpt-5.6-terra"))
+	require.NotEqual(t, solKey, deriveCompatPromptCacheKey(req, "gpt-5.6-luna"))
+}

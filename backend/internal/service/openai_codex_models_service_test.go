@@ -141,8 +141,8 @@ func TestBuildLocalCodexModelsManifestUsesAPIKeyMappingsAndAdvertisesSolMax(t *t
 	sol := envelope.Models[0]
 	require.Equal(t, "GPT-5.6 Sol", sol.DisplayName)
 	require.Equal(t, "low", sol.DefaultReasoningLevel)
-	require.Equal(t, 272000, sol.ContextWindow)
-	require.Equal(t, 1000000, sol.MaxContextWindow)
+	require.Equal(t, 1050000, sol.ContextWindow)
+	require.Equal(t, 1050000, sol.MaxContextWindow)
 	efforts := make([]string, 0, len(sol.SupportedReasoningLevels))
 	for _, level := range sol.SupportedReasoningLevels {
 		efforts = append(efforts, level.Effort)
@@ -191,4 +191,38 @@ func TestBuildLocalCodexModelsManifestRequiresAPIKeyAccount(t *testing.T) {
 	manifest, err := svc.BuildLocalCodexModelsManifest(context.Background(), &groupID, "")
 	require.ErrorIs(t, err, ErrNoAvailableAccounts)
 	require.Nil(t, manifest)
+}
+
+func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT56KeepsMax(t *testing.T) {
+	groupID := int64(11)
+	svc := &OpenAIGatewayService{accountRepo: localCodexModelsAccountRepoStub{accounts: []Account{{
+		ID: 621, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gpt-6-astra": "gpt-6-astra",
+			"gpt-5.6-sol": "gpt-5.6-sol",
+		}},
+	}}}}
+
+	manifest, err := svc.BuildLocalCodexModelsManifest(context.Background(), &groupID, "")
+
+	require.NoError(t, err)
+	var envelope struct {
+		Models []localCodexModel `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(manifest.Body, &envelope))
+	bySlug := map[string]localCodexModel{}
+	for _, model := range envelope.Models {
+		bySlug[model.Slug] = model
+	}
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-6-astra"]))
+	require.NotContains(t, localCodexModelEfforts(bySlug["gpt-6-astra"]), "none")
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-5.6-sol"]))
+}
+
+func localCodexModelEfforts(model localCodexModel) []string {
+	efforts := make([]string, 0, len(model.SupportedReasoningLevels))
+	for _, level := range model.SupportedReasoningLevels {
+		efforts = append(efforts, level.Effort)
+	}
+	return efforts
 }

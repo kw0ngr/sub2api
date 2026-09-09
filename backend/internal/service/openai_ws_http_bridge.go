@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,7 +53,7 @@ func (s *OpenAIGatewayService) shouldBridgeOpenAIWSHTTP(payloadBytes int, previo
 }
 
 func prepareOpenAIWSHTTPBridgeBody(payload []byte) ([]byte, error) {
-	var body map[string]any
+	var body map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &body); err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func prepareOpenAIWSHTTPBridgeBody(payload []byte) ([]byte, error) {
 	delete(body, "type")
 	delete(body, "generate")
 	delete(body, "previous_response_id")
-	body["stream"] = true
+	body["stream"] = json.RawMessage("true")
 	return json.Marshal(body)
 }
 
@@ -87,7 +88,7 @@ func (c *openAIWSToolCallReplayCollector) AddEvent(eventType string, message []b
 }
 
 func (c *openAIWSToolCallReplayCollector) Items() []json.RawMessage {
-	return cloneOpenAIWSRawMessages(c.items)
+	return slices.Clone(c.items)
 }
 
 func (c *openAIWSToolCallReplayCollector) addItem(item gjson.Result) {

@@ -185,7 +185,7 @@ func createTestPayload(modelID string) (map[string]any, error) {
 // TestAccountConnection tests an account's connection by sending a test request
 // All account types use full Claude Code client characteristics, only auth header differs
 // modelID is optional - if empty, defaults to claude.DefaultTestModel
-func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string) error {
+func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, modes ...string) error {
 	ctx := c.Request.Context()
 
 	// Get account
@@ -196,7 +196,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	// Route to platform-specific test method
 	if account.IsOpenAI() || account.IsGrok() {
-		return s.testOpenAIAccountConnection(c, account, modelID, prompt)
+		mode := ""
+		if len(modes) > 0 {
+			mode = modes[0]
+		}
+		return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 	}
 
 	if account.IsGemini() {
@@ -590,8 +594,12 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account *Account, modelID string, prompts ...string) error {
 	ctx := c.Request.Context()
 	prompt := ""
+	mode := AccountTestModeDefault
 	if len(prompts) > 0 {
 		prompt = prompts[0]
+	}
+	if len(prompts) > 1 {
+		mode = normalizeAccountTestMode(prompts[1])
 	}
 
 	// Default to openai.DefaultTestModel for OpenAI testing
@@ -610,6 +618,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// sees.
 	if account.Type == AccountTypeAPIKey || account.IsGrokOAuth() {
 		testModelID = account.GetMappedModel(testModelID)
+	}
+	if account.IsOpenAI() && mode == AccountTestModeCompact {
+		return s.testOpenAICompactConnection(c, account, testModelID)
 	}
 
 	if isOpenAIImageModel(testModelID) {

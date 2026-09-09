@@ -59,3 +59,18 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI responses handler", path)
 	}
 }
+
+func TestGatewayRoutesCodexModelsPathsRegistered(t *testing.T) {
+	// Given
+	routes := newGatewayRoutesTestRouter().Routes()
+	seen := map[string]bool{}
+
+	// When
+	for _, route := range routes {
+		seen[route.Method+" "+route.Path] = true
+	}
+
+	// Then
+	require.True(t, seen[http.MethodGet+" /v1/models"])
+	require.True(t, seen[http.MethodGet+" /backend-api/codex/models"])
+}

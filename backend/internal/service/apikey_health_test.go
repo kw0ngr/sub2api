@@ -338,8 +338,8 @@ func TestNormalizeOpenAIReasoningEffort_MaxPreservedForGPT56FamilyOnly(t *testin
 	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-terra"))
 	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6-luna"))
 	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "openai/gpt-5.6-sol-max"))
-	// Bare gpt-5.6 is NOT a real upstream model ID.
-	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6"))
+	// Bare gpt-5.6 routes to canonical Sol before effort support is checked.
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.6"))
 	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.5"))
 	require.Equal(t, "xhigh", normalizeOpenAIReasoningEffortForModel("max", "gpt-5.4"))
 	require.Equal(t, "high", normalizeOpenAIReasoningEffortForModel("high", "gpt-5.5"))
@@ -350,6 +350,6 @@ func TestOpenAIBaseModelIDForEffortSupport(t *testing.T) {
 	require.Equal(t, "gpt-5.6-sol", openAIBaseModelIDForEffortSupport("openai/gpt-5.6-sol-max"))
 	require.Equal(t, "gpt-5.6-terra", openAIBaseModelIDForEffortSupport("gpt-5.6-terra-xhigh"))
 	require.Equal(t, "gpt-5.5", openAIBaseModelIDForEffortSupport("gpt-5.5"))
-	require.False(t, openAIModelSupportsMaxReasoning("gpt-5.6"))
+	require.True(t, openAIModelSupportsMaxReasoning("gpt-5.6"))
 	require.True(t, openAIModelSupportsMaxReasoning("gpt-5.6-sol"))
 }

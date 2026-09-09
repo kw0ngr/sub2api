@@ -16,7 +16,7 @@ const maxOpenAIResponsesRejectedFieldRetries = 6
 
 var (
 	openAIResponsesRejectedNamespaceParamPattern = regexp.MustCompile(`(?i)^input\[(\d+)\]\.namespace$`)
-	openAIResponsesRejectedMessageParamPattern   = regexp.MustCompile(`(?i)(?:unknown|unsupported)[ _-]+parameter\s*(?::|=|is)?\s*["']?(max_output_tokens|input\[\d+\]\.namespace)(?:["']|\b)`)
+	openAIResponsesRejectedMessageParamPattern   = regexp.MustCompile(`(?i)(?:unknown|unsupported)[ _-]+parameter\s*(?::|=|is)?\s*["']?(max_output_tokens|input\[\d+\]\.namespace|temperature|top_p|top_logprobs|logprobs|include)(?:["']|\b)`)
 )
 
 type openAIResponsesRejectedFieldRetryState struct {
@@ -72,6 +72,15 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 	}
 	if index, ok := openAIResponsesRejectedNamespaceIndex(param); ok {
 		return removeOpenAIResponsesRejectedNamespaceAtIndex(body, index)
+	}
+	if shouldRetryOpenAIResponsesReasoningRejectedField(body, param, message) {
+		retryBody, changed, err := stripOpenAIResponsesReasoningUnsupportedFieldsBytes(body, gjson.GetBytes(body, "model").String())
+		if err != nil {
+			return nil, "", false, err
+		}
+		if changed {
+			return retryBody, "unsupported reasoning sampling parameter rejection", true, nil
+		}
 	}
 	if param == "max_output_tokens" && gjson.GetBytes(body, "max_output_tokens").Exists() {
 		retryBody, err := sjson.DeleteBytes(body, "max_output_tokens")
@@ -130,4 +139,18 @@ func removeOpenAIResponsesRejectedNamespaceAtIndex(body []byte, index int) ([]by
 		return nil, "", false, fmt.Errorf("delete rejected namespace at input[%d]: %w", index, err)
 	}
 	return retryBody, "indexed namespace parameter rejection", true, nil
+}
+
+func shouldRetryOpenAIResponsesReasoningRejectedField(body []byte, param string, message string) bool {
+	if !openAIModelUsesResponsesReasoningParameterRestrictions(gjson.GetBytes(body, "model").String()) {
+		return false
+	}
+	switch strings.TrimSpace(param) {
+	case "temperature", "top_p", "top_logprobs", "logprobs":
+		return true
+	case "include":
+		return strings.Contains(message, "message.output_text.logprobs")
+	default:
+		return strings.Contains(message, "message.output_text.logprobs")
+	}
 }

@@ -250,7 +250,7 @@ func (s *GrokQuotaService) probeAccount(ctx context.Context, account *Account, i
 			s.applyProbeSideEffects(ctx, account, snapshot, statusCode)
 		}
 		if snapshot.SubscriptionTier != "" || snapshot.EntitlementStatus != "" {
-			s.persistTierHints(ctx, account.ID, snapshot.SubscriptionTier, snapshot.EntitlementStatus)
+			s.persistTierHints(ctx, account, snapshot.SubscriptionTier, snapshot.EntitlementStatus)
 		}
 	}
 	if probeErr != nil && result.ErrorMessage == "" {
@@ -578,12 +578,12 @@ func (s *GrokQuotaService) persistQuotaSnapshot(ctx context.Context, accountID i
 	_ = s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{grokQuotaSnapshotExtraKey: snapshot})
 }
 
-func (s *GrokQuotaService) persistTierHints(ctx context.Context, accountID int64, tier, entitlement string) {
-	if s == nil || s.accountRepo == nil || accountID <= 0 {
+func (s *GrokQuotaService) persistTierHints(ctx context.Context, account *Account, tier, entitlement string) {
+	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
 		return
 	}
 	updates := map[string]any{}
-	if strings.TrimSpace(tier) != "" {
+	if strings.TrimSpace(tier) != "" && strings.TrimSpace(account.GetExtraString("subscription_tier")) == "" {
 		updates["subscription_tier"] = strings.TrimSpace(tier)
 	}
 	if strings.TrimSpace(entitlement) != "" {
@@ -592,7 +592,7 @@ func (s *GrokQuotaService) persistTierHints(ctx context.Context, accountID int64
 	if len(updates) == 0 {
 		return
 	}
-	_ = s.accountRepo.UpdateExtra(ctx, accountID, updates)
+	_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 }
 
 func (s *GrokQuotaService) applyProbeSideEffects(ctx context.Context, account *Account, snapshot *xai.QuotaSnapshot, statusCode int) {

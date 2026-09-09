@@ -83,7 +83,7 @@ func parseQuotaHeaders(headers http.Header, statusCode int, source string, keepE
 	if retryAfter := parseRetryAfter(headers.Get("retry-after")); retryAfter != nil {
 		snapshot.RetryAfterSeconds = retryAfter
 	}
-	snapshot.SubscriptionTier = firstHeader(headers, "xai-subscription-tier", "x-subscription-tier")
+	snapshot.SubscriptionTier = NormalizeSubscriptionTier(firstHeader(headers, "xai-subscription-tier", "x-subscription-tier"))
 	snapshot.EntitlementStatus = firstHeader(headers, "xai-entitlement-status", "x-entitlement-status")
 
 	for _, name := range quotaHeaderAllowlist {

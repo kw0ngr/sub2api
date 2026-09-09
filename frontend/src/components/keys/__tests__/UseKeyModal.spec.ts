@@ -54,6 +54,44 @@ describe('UseKeyModal', () => {
     expect(models).not.toHaveProperty('gemini-2.0-flash')
   })
 
+  it('renders GPT-6 Astra once and no legacy GPT-6 OpenCode config', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const config = JSON.parse(wrapper.find('pre code').text())
+    const models = config.provider.openai.models
+    expect(Object.keys(models).filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
+    expect(models['gpt-6-astra'].name).toBe('GPT-6 Astra')
+    expect(models['gpt-6-astra'].variants).toHaveProperty('max')
+    expect(models['gpt-5.6-sol'].variants).toHaveProperty('max')
+    expect(models).not.toHaveProperty('gpt-6')
+    expect(models).not.toHaveProperty('gpt-5.6')
+  })
+
   it('renders GPT-5.4 mini entry in OpenCode config', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
@@ -128,5 +166,31 @@ describe('UseKeyModal', () => {
     expect(fable.limit).toEqual({ context: 1048576, output: 128000 })
     expect(fable.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
+  })
+
+  it('renders Codex OpenAI config with one Astra and max reasoning', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const code = wrapper.find('pre code').text()
+    expect(code.match(/gpt-6-astra/g)).toHaveLength(1)
+    expect(code).not.toMatch(/model = "gpt-6"/)
+    expect(code).toContain('model_reasoning_effort = "max"')
   })
 })

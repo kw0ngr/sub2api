@@ -78,7 +78,6 @@ func TestApplyOpenAICompatModelNormalization(t *testing.T) {
 
 func TestForwardAsAnthropic_NormalizesRoutingAndEffortForGpt54XHigh(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -301,7 +300,6 @@ func TestForwardAsAnthropic_BufferedEventNamedTerminalReturns(t *testing.T) {
 
 func TestForwardAsAnthropic_ForcedCodexInstructionsTemplatePrependsRenderedInstructions(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	templateDir := t.TempDir()
 	templatePath := filepath.Join(templateDir, "codex-instructions.md.tmpl")
@@ -352,7 +350,6 @@ func TestForwardAsAnthropic_ForcedCodexInstructionsTemplatePrependsRenderedInstr
 
 func TestForwardAsAnthropic_ForcedCodexInstructionsTemplateUsesCachedTemplateContent(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -395,4 +392,270 @@ func TestForwardAsAnthropic_ForcedCodexInstructionsTemplateUsesCachedTemplateCon
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "cached-prefix\n\nclient-system", gjson.GetBytes(upstream.lastBody, "instructions").String())
+}
+
+func TestForwardAsAnthropic_GPT6AstraPromptCacheIdentityStableAcrossAppendedTurns(t *testing.T) {
+	// Given
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          606,
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+	}
+	firstBody := []byte(`{"model":"gpt-6","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"open repo"}]}`)
+	secondBody := []byte(`{"model":"gpt-6","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"open repo"},{"role":"assistant","content":"opened"},{"role":"user","content":"run tests"}]}`)
+
+	// When
+	upstream.resp = task7AnthropicCompatResponse("resp_first")
+	firstCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	firstCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(firstBody))
+	firstResult, firstErr := svc.ForwardAsAnthropic(context.Background(), firstCtx, account, firstBody, "", "gpt-5.4")
+	firstSession := upstream.lastReq.Header.Get("session_id")
+
+	upstream.resp = task7AnthropicCompatResponse("resp_second")
+	secondCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	secondCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(secondBody))
+	secondResult, secondErr := svc.ForwardAsAnthropic(context.Background(), secondCtx, account, secondBody, "", "gpt-5.4")
+	secondSession := upstream.lastReq.Header.Get("session_id")
+
+	// Then
+	require.NoError(t, firstErr)
+	require.NotNil(t, firstResult)
+	require.NoError(t, secondErr)
+	require.NotNil(t, secondResult)
+	require.NotEmpty(t, firstSession)
+	require.Equal(t, firstSession, secondSession)
+	require.Equal(t, "gpt-6", firstResult.Model)
+	require.Equal(t, "gpt-6-astra", firstResult.UpstreamModel)
+	require.Equal(t, "gpt-6-astra", secondResult.UpstreamModel)
+}
+
+func task7AnthropicCompatResponse(responseID string) *http.Response {
+	body := strings.Join([]string{
+		`data: {"type":"response.completed","response":{"id":"` + responseID + `","object":"response","model":"gpt-6-astra","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func TestForwardAsAnthropic_ReplaysFullToolHistoryWhenPreviousResponseUnavailable(t *testing.T) {
+	// Given
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
+		openAICompatContinuationErrorResponse(http.StatusBadRequest, "previous_response_id is not available for this user"),
+		openAICompatCompletedResponse("resp_replayed", "gpt-6-astra"),
+	}}
+	repo := &grokProbeStreamAccountRepo{}
+	svc := &OpenAIGatewayService{
+		httpUpstream:     upstream,
+		rateLimitService: NewRateLimitService(repo, nil, nil, nil, nil),
+		cfg:              &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := task10OpenAIAstraAPIKeyAccount(10)
+	svc.bindOpenAICompatSessionResponseID(context.Background(), nil, account, "stable-cache-key", "resp_stale")
+	body := []byte(`{"model":"gpt-6-astra","max_tokens":16,"messages":[{"role":"user","content":"first"},{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"lookup","input":{"q":"first"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"found"},{"type":"text","text":"second"}]}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+
+	// When
+	result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "stable-cache-key", "gpt-6-astra")
+
+	// Then
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.reqs, 2)
+	require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, "stable-cache-key", gjson.GetBytes(upstream.bodies[0], "prompt_cache_key").String())
+	second := upstream.bodies[1]
+	require.False(t, gjson.GetBytes(second, "previous_response_id").Exists())
+	require.Equal(t, "stable-cache-key", gjson.GetBytes(second, "prompt_cache_key").String())
+	require.Equal(t, int64(5), gjson.GetBytes(second, "input.#").Int())
+	require.Contains(t, gjson.GetBytes(second, "input.0.content.0.text").String(), "<sub2api-claude-code-todo-guard>")
+	require.Equal(t, "first", gjson.GetBytes(second, "input.1.content.0.text").String())
+	require.Equal(t, "function_call", gjson.GetBytes(second, "input.2.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(second, "input.2.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(second, "input.3.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(second, "input.3.call_id").String())
+	require.Equal(t, "found", gjson.GetBytes(second, "input.3.output").String())
+	require.Equal(t, "second", gjson.GetBytes(second, "input.4.content.0.text").String())
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.setSchedulableCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.modelCooldownCalls)
+}
+
+func TestForwardAsAnthropic_PreviousResponseUnavailableRetryFailureStops(t *testing.T) {
+	// Given
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
+		openAICompatContinuationErrorResponse(http.StatusBadRequest, "previous_response_id is not available for this user"),
+		openAICompatContinuationErrorResponse(http.StatusBadRequest, "previous_response_id is not available for this user"),
+	}}
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := task10OpenAIAstraAPIKeyAccount(11)
+	svc.bindOpenAICompatSessionResponseID(context.Background(), nil, account, "stable-cache-key", "resp_stale")
+	body := []byte(`{"model":"gpt-6-astra","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+
+	// When
+	result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "stable-cache-key", "gpt-6-astra")
+
+	// Then
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, upstream.reqs, 2)
+	require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+}
+
+func TestForwardAsAnthropic_PreviousResponseNearFormsDoNotRetry(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		message string
+	}{
+		{name: "forbidden exact unavailable", status: http.StatusForbidden, message: "previous_response_id is not available for this user"},
+		{name: "project near match", status: http.StatusBadRequest, message: "previous_response_id is not available for this project"},
+		{name: "model near match", status: http.StatusBadRequest, message: "The model is not available for this user"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			gin.SetMode(gin.TestMode)
+			upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
+				openAICompatContinuationErrorResponse(tt.status, tt.message),
+				openAICompatCompletedResponse("resp_should_not_be_used", "gpt-6-astra"),
+			}}
+			svc := &OpenAIGatewayService{
+				httpUpstream: upstream,
+				cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+			}
+			account := task10OpenAIAstraAPIKeyAccount(12)
+			svc.bindOpenAICompatSessionResponseID(context.Background(), nil, account, "stable-cache-key", "resp_stale")
+			body := []byte(`{"model":"gpt-6-astra","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+
+			// When
+			_, _ = svc.ForwardAsAnthropic(context.Background(), c, account, body, "stable-cache-key", "gpt-6-astra")
+
+			// Then
+			require.Len(t, upstream.reqs, 1)
+			require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+		})
+	}
+}
+
+func TestOpenAICompatPreviousResponseContinuationRecognitionForAstraHTTPForms(t *testing.T) {
+	// Given
+	body := []byte(`{"error":{"message":"previous_response_id is not available for this user","type":"invalid_request_error"}}`)
+
+	// When / Then
+	require.True(t, isOpenAICompatPreviousResponseNotFound(http.StatusBadRequest, "", body))
+	require.True(t, isOpenAICompatPreviousResponseUnsupported(http.StatusBadRequest, "previous_response_id requires an OpenAI API-key account for HTTP requests", nil))
+	require.True(t, isOpenAICompatPreviousResponseUnsupported(http.StatusBadRequest, "previous_response_id is only supported on Responses WebSocket connections", nil))
+	require.False(t, isOpenAICompatPreviousResponseNotFound(http.StatusForbidden, "previous_response_id is not available for this user", nil))
+	require.False(t, isOpenAICompatPreviousResponseUnsupported(http.StatusUnauthorized, "previous_response_id requires an OpenAI API-key account for HTTP requests", nil))
+	require.False(t, isOpenAICompatPreviousResponseUnsupported(http.StatusBadRequest, "The model is not available for this user", nil))
+}
+
+func TestForwardAsAnthropic_AstraContinuationUnsupportedFormsDisableSession(t *testing.T) {
+	for _, message := range []string{
+		"previous_response_id requires an OpenAI API-key account for HTTP requests",
+		"previous_response_id is only supported on Responses WebSocket connections",
+	} {
+		t.Run(message, func(t *testing.T) {
+			// Given
+			gin.SetMode(gin.TestMode)
+			upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
+				openAICompatContinuationErrorResponse(http.StatusBadRequest, message),
+				openAICompatCompletedResponse("resp_replayed", "gpt-6-astra"),
+				openAICompatCompletedResponse("resp_later", "gpt-6-astra"),
+			}}
+			svc := &OpenAIGatewayService{
+				httpUpstream: upstream,
+				cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+			}
+			account := task10OpenAIAstraAPIKeyAccount(13)
+			svc.bindOpenAICompatSessionResponseID(context.Background(), nil, account, "stable-cache-key", "resp_stale")
+			body := []byte(`{"model":"gpt-6-astra","max_tokens":16,"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}],"stream":false}`)
+			for i := 0; i < 2; i++ {
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+
+				// When
+				result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "stable-cache-key", "gpt-6-astra")
+
+				// Then
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			}
+			require.Len(t, upstream.reqs, 3)
+			require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+			for _, sent := range upstream.bodies[1:] {
+				require.False(t, gjson.GetBytes(sent, "previous_response_id").Exists())
+				require.Equal(t, "stable-cache-key", gjson.GetBytes(sent, "prompt_cache_key").String())
+				require.Equal(t, int64(4), gjson.GetBytes(sent, "input.#").Int())
+				require.Equal(t, "first", gjson.GetBytes(sent, "input.1.content.0.text").String())
+				require.Equal(t, "second", gjson.GetBytes(sent, "input.3.content.0.text").String())
+			}
+		})
+	}
+}
+
+func task10OpenAIAstraAPIKeyAccount(id int64) *Account {
+	return &Account{
+		ID:          id,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://api.openai.com/v1",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+}
+
+func openAICompatContinuationErrorResponse(status int, message string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"` + message + `","type":"invalid_request_error"}}`)),
+	}
+}
+
+func openAICompatCompletedResponse(id, model string) *http.Response {
+	body := strings.Join([]string{
+		`data: {"type":"response.completed","response":{"id":"` + id + `","object":"response","model":"` + model + `","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
 }

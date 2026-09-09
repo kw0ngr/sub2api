@@ -1171,7 +1171,7 @@ func NormalizeGLMOpenAIReasoningEffort(body []byte, mappedModel string) ([]byte,
 		return body, false
 	}
 
-	mapped := normalizeGLMOpenAIReasoningEffort(raw)
+	mapped := normalizeGLMOpenAIReasoningEffortForModel(raw, mappedModel)
 	if mapped == "" || mapped == raw {
 		return body, false
 	}
@@ -1182,9 +1182,25 @@ func NormalizeGLMOpenAIReasoningEffort(body []byte, mappedModel string) ([]byte,
 	return out, true
 }
 
-func normalizeGLMOpenAIReasoningEffort(raw string) string {
+func normalizeGLMOpenAIReasoningEffortForModel(raw string, model string) string {
+	mapped := normalizeGLMOpenAIReasoningEffort(raw)
+	if isGLM53Model(model) && mapped == "high" && normalizeEffortToken(raw) == "low" {
+		return "low"
+	}
+	return mapped
+}
+
+func normalizeEffortToken(raw string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
-	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+}
+
+func isGLM53Model(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), "glm-5.3")
+}
+
+func normalizeGLMOpenAIReasoningEffort(raw string) string {
+	value := normalizeEffortToken(raw)
 	switch value {
 	case "low", "medium", "high":
 		return "high"
@@ -1193,4 +1209,37 @@ func normalizeGLMOpenAIReasoningEffort(raw string) string {
 	default:
 		return ""
 	}
+}
+
+func NormalizeGLM53AnthropicThinking(body []byte, mappedModel string) ([]byte, bool) {
+	if !isGLM53Model(mappedModel) {
+		return body, false
+	}
+
+	raw := gjson.GetBytes(body, "output_config.effort").String()
+	if strings.TrimSpace(raw) == "" {
+		raw = gjson.GetBytes(body, "thinking.type").String()
+	}
+
+	effort := ""
+	switch normalizeEffortToken(raw) {
+	case "disabled", "off", "none", "minimal", "low":
+		effort = "low"
+	case "enabled", "adaptive", "medium", "high":
+		effort = "high"
+	case "xhigh", "max", "ultra":
+		effort = "max"
+	default:
+		return body, false
+	}
+
+	modified, err := sjson.SetBytes(body, "thinking.type", "enabled")
+	if err != nil {
+		return body, false
+	}
+	modified, err = sjson.SetBytes(modified, "output_config.effort", effort)
+	if err != nil {
+		return body, false
+	}
+	return modified, true
 }

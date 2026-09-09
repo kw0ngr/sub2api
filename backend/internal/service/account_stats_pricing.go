@@ -16,6 +16,7 @@ import (
 //
 // upstreamModel 是最终发往上游的模型 ID。
 // totalCost 是本次请求的客户计费（倍率前），用于优先级 2。
+// serviceTier 是最终参与用户计费的 OpenAI 服务层级，用于优先级 3。
 func resolveAccountStatsCost(
 	ctx context.Context,
 	channelService *ChannelService,
@@ -26,7 +27,12 @@ func resolveAccountStatsCost(
 	tokens UsageTokens,
 	requestCount int,
 	totalCost float64,
+	serviceTier ...string,
 ) *float64 {
+	tier := ""
+	if len(serviceTier) > 0 {
+		tier = serviceTier[0]
+	}
 	if channelService == nil || upstreamModel == "" {
 		return nil
 	}
@@ -53,23 +59,43 @@ func resolveAccountStatsCost(
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
-		return tryModelFilePricing(billingService, upstreamModel, tokens)
+		return tryModelFilePricingWithServiceTier(billingService, upstreamModel, tokens, tier)
 	}
 
 	return nil
 }
 
-// tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的标准价格计算费用。
-func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens) *float64 {
+func tryModelFilePricingWithServiceTier(billingService *BillingService, model string, tokens UsageTokens, serviceTier string) *float64 {
 	pricing, err := billingService.GetModelPricing(model)
 	if err != nil || pricing == nil {
 		return nil
 	}
-	cost := float64(tokens.InputTokens)*pricing.InputPricePerToken +
-		float64(tokens.OutputTokens)*pricing.OutputPricePerToken +
-		float64(tokens.CacheCreationTokens)*pricing.CacheCreationPricePerToken +
-		float64(tokens.CacheReadTokens)*pricing.CacheReadPricePerToken +
-		float64(tokens.ImageOutputTokens)*pricing.ImageOutputPricePerToken
+
+	inputPrice := pricing.InputPricePerToken
+	outputPrice := pricing.OutputPricePerToken
+	cacheReadPrice := pricing.CacheReadPricePerToken
+	cacheCreationMultiplier := 1.0
+	tierMultiplier := 1.0
+	if usePriorityServiceTierPricing(serviceTier, pricing) {
+		cacheCreationMultiplier = serviceTierCostMultiplier(serviceTier)
+		if pricing.InputPricePerTokenPriority > 0 {
+			inputPrice = pricing.InputPricePerTokenPriority
+		}
+		if pricing.OutputPricePerTokenPriority > 0 {
+			outputPrice = pricing.OutputPricePerTokenPriority
+		}
+		if pricing.CacheReadPricePerTokenPriority > 0 {
+			cacheReadPrice = pricing.CacheReadPricePerTokenPriority
+		}
+	} else {
+		tierMultiplier = serviceTierCostMultiplier(serviceTier)
+	}
+
+	cost := (float64(tokens.InputTokens)*inputPrice +
+		float64(tokens.OutputTokens)*outputPrice +
+		float64(tokens.CacheCreationTokens)*pricing.CacheCreationPricePerToken*cacheCreationMultiplier +
+		float64(tokens.CacheReadTokens)*cacheReadPrice +
+		float64(tokens.ImageOutputTokens)*pricing.ImageOutputPricePerToken) * tierMultiplier
 	if cost <= 0 {
 		return nil
 	}
@@ -230,7 +256,11 @@ func applyAccountStatsCost(
 	if model == "" {
 		model = requestedModel
 	}
+	serviceTier := ""
+	if usageLog != nil && usageLog.ServiceTier != nil {
+		serviceTier = *usageLog.ServiceTier
+	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, 1, totalCost,
+		ctx, cs, bs, accountID, groupID, model, tokens, 1, totalCost, serviceTier,
 	)
 }

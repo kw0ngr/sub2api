@@ -1733,3 +1733,18 @@ func TestAnthropicEventToResponses_CacheTokensFromMessageDelta(t *testing.T) {
 	require.NotNil(t, completed.Response.Usage.InputTokensDetails)
 	assert.Equal(t, 11, completed.Response.Usage.InputTokensDetails.CachedTokens)
 }
+
+func TestAnthropicToResponses_AstraStripsSamplingParameters(t *testing.T) {
+	temp := 0.7
+	req := &AnthropicRequest{
+		Model: "gpt-6-astra", MaxTokens: 1024,
+		Messages:    []AnthropicMessage{{Role: "user", Content: json.RawMessage(`"Hello"`)}},
+		Temperature: &temp, TopP: &temp,
+	}
+
+	resp, err := AnthropicToResponses(req)
+
+	require.NoError(t, err)
+	assert.Nil(t, resp.Temperature)
+	assert.Nil(t, resp.TopP)
+}

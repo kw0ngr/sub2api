@@ -418,6 +418,47 @@ func mapAnthropicEffortToResponses(effort string) string {
 	return effort // low→low, medium→medium, high→high, unknown→passthrough
 }
 
+func normalizeResponsesReasoningEffortForModel(raw string, model string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return ""
+	}
+	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+	switch value {
+	case "none", "minimal":
+		if responsesReasoningModelKey(model) == "gpt-6-astra" {
+			return "low"
+		}
+		return "none"
+	case "low", "medium", "high":
+		return value
+	case "xhigh", "extrahigh":
+		return "xhigh"
+	case "max":
+		return "max"
+	default:
+		return strings.TrimSpace(raw)
+	}
+}
+
+func responsesReasoningModelKey(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	parts := strings.Split(model, "/")
+	model = strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
+	model = strings.ReplaceAll(model, "_", "-")
+	model = strings.Join(strings.Fields(model), "-")
+	if model == "gpt-6" {
+		return "gpt-6-astra"
+	}
+	for _, suffix := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "extrahigh"} {
+		model = strings.TrimSuffix(model, "-"+suffix)
+	}
+	return model
+}
+
 // convertAnthropicToolsToResponses maps Anthropic tool definitions to
 // Responses API tools. Server-side tools like web_search are mapped to their
 // OpenAI equivalents; regular tools become function tools.
@@ -449,7 +490,8 @@ func boolPtr(v bool) *bool {
 // All gpt-5.x models are reasoning-only; the Responses API returns
 // "Unsupported parameter: temperature" if these fields are present.
 func isReasoningModel(model string) bool {
-	return strings.HasPrefix(model, "gpt-5")
+	base := responsesReasoningModelKey(model)
+	return strings.HasPrefix(base, "gpt-5") || base == "gpt-6-astra"
 }
 
 // normalizeToolParameters ensures the tool parameter schema is valid for

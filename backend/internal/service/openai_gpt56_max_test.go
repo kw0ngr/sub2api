@@ -34,6 +34,28 @@ func TestNormalizeOpenAIReasoningEffortForGPT56(t *testing.T) {
 	}
 }
 
+func TestNormalizeOpenAIReasoningEffortForAstra(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "none becomes low", raw: "none", want: "low"},
+		{name: "minimal becomes low", raw: "minimal", want: "low"},
+		{name: "low preserved", raw: "low", want: "low"},
+		{name: "medium preserved", raw: "medium", want: "medium"},
+		{name: "high preserved", raw: "high", want: "high"},
+		{name: "xhigh preserved", raw: "x-high", want: "xhigh"},
+		{name: "max preserved", raw: "max", want: "max"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeOpenAIReasoningEffortForModel(tt.raw, "gpt-6-astra"))
+		})
+	}
+}
+
 func TestNormalizeOpenAICodexCompactReasoningEffortDowngradesMax(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"compact me","reasoning":{"effort":"max","summary":"auto"}}`)
 
