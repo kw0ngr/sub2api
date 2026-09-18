@@ -37,8 +37,11 @@ type snapshotUpdateAccountRepo struct {
 
 type streamFailureAccountRepo struct {
 	stubOpenAIAccountRepo
-	setErrorCalls int
-	lastErrorMsg  string
+	setErrorCalls       int
+	setSchedulableCalls int
+	rateLimitedCalls    int
+	lastErrorMsg        string
+	lastSchedulable     bool
 }
 
 type grokProbeStreamAccountRepo struct {
@@ -63,6 +66,21 @@ func (r *grokOAuthRefreshAccountRepo) UpdateCredentials(_ context.Context, _ int
 func (r *streamFailureAccountRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
 	r.setErrorCalls++
 	r.lastErrorMsg = errorMsg
+	return nil
+}
+
+func (r *streamFailureAccountRepo) SetSchedulable(_ context.Context, _ int64, schedulable bool) error {
+	r.setSchedulableCalls++
+	r.lastSchedulable = schedulable
+	return nil
+}
+
+func (r *streamFailureAccountRepo) SetRateLimited(_ context.Context, _ int64, _ time.Time) error {
+	r.rateLimitedCalls++
+	return nil
+}
+
+func (r *streamFailureAccountRepo) SetTempUnschedulable(_ context.Context, _ int64, _ time.Time, _ string) error {
 	return nil
 }
 
@@ -1621,7 +1639,7 @@ func TestOpenAIStreamingMissingTerminalEventReturnsIncompleteError(t *testing.T)
 
 	go func() {
 		defer func() { _ = pw.Close() }()
-		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\"},\"output_index\":0}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\",\"output_index\":0}\n\n"))
 	}()
 
 	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
@@ -1653,7 +1671,7 @@ func TestOpenAIStreamingPassthroughMissingTerminalEventReturnsIncompleteError(t 
 
 	go func() {
 		defer func() { _ = pw.Close() }()
-		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\"},\"output_index\":0}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\",\"output_index\":0}\n\n"))
 	}()
 
 	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now())
@@ -3001,6 +3019,49 @@ func TestOpenAIStreamFailedEventHTTPStatus_ModelNotFoundIsSemantic404(t *testing
 
 	serverFailure := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error","message":"upstream temporarily unavailable"}}}`)
 	require.Equal(t, http.StatusBadGateway, openAIStreamFailedEventHTTPStatus(serverFailure, ""))
+}
+
+func TestOpenAIStreamingPassthroughNoCreditsErrorFrameFailsOverBeforeClientOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	repo := &streamFailureAccountRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil),
+	}
+	account := &Account{ID: 1472, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Schedulable: true}
+	message := "You have no credits remaining. Add credits to continue using the API."
+	body := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_no_credits"}}`,
+		``,
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","item":{"type":"reasoning","summary":[]}}`,
+		``,
+		`event: error`,
+		`data: {"type":"error","error":{"message":"` + message + `"}}`,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"req_no_credits"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, account, time.Now(), "gpt-5.6-sol")
+
+	require.NotNil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "no credits remaining")
+	require.Equal(t, 1, repo.setSchedulableCalls)
+	require.False(t, repo.lastSchedulable)
 }
 
 func TestOpenAIStreamingResponseFailedAfterKeepaliveStillReturnsFailover(t *testing.T) {

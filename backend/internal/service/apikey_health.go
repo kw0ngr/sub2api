@@ -159,7 +159,7 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			return APIKeyStatusActionPermanentDisable
 		case http.StatusTooManyRequests:
 			// insufficient_quota is permanent billing exhaustion, not a temporary rate limit
-			if code == "insufficient_quota" || containsAny(msg, "exceeded your current quota", "insufficient_quota") {
+			if code == "insufficient_quota" || containsAny(msg, "exceeded your current quota", "insufficient_quota", "no credits remaining", "add credits to continue") {
 				return APIKeyStatusActionPermanentDisable
 			}
 			return APIKeyStatusActionTemporaryCooldown
@@ -212,6 +212,8 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			if containsAny(msg,
 				"exceeded your current quota",
 				"insufficient_quota",
+				"no credits remaining",
+				"add credits to continue",
 				"invalid api key",
 				"incorrect api key",
 				"no api key provided",
