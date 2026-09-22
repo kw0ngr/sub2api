@@ -6215,9 +6215,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	billingModels := openAIRecordUsageBillingModelCandidates(result, input, billingModel)
 	mediaCount, mediaSize := openAIMediaBillingUnits(result)
 	if mediaCount > 0 {
-		cost = s.calculateOpenAIRecordUsageMediaCost(apiKey, billingModels, mediaSize, mediaCount, multiplier)
+		cost = s.calculateOpenAIRecordUsageMediaCost(ctx, apiKey, billingModels, mediaSize, mediaCount, multiplier, reasoningEffortValue(result.ReasoningEffort))
 	} else {
-		cost, err = s.calculateOpenAIRecordUsageCost(ctx, apiKey, billingModels, tokens, multiplier, serviceTier)
+		cost, err = s.calculateOpenAIRecordUsageCost(ctx, apiKey, billingModels, tokens, multiplier, serviceTier, reasoningEffortValue(result.ReasoningEffort))
 	}
 	if err != nil {
 		if !isUsagePricingUnavailableError(err) {
@@ -6245,7 +6245,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if !strings.EqualFold(responseModel, baselineBillingModel) {
 			if identified, responseChannelPriced := s.hasIdentifiedOpenAIResponsePricing(ctx, responseModel, apiKey); identified {
 				responseModels := usageBillingModelCandidates(responseModel)
-				responseCost, responseErr := s.calculateOpenAIRecordUsageCost(ctx, apiKey, responseModels, tokens, multiplier, serviceTier)
+				responseCost, responseErr := s.calculateOpenAIRecordUsageCost(ctx, apiKey, responseModels, tokens, multiplier, serviceTier, reasoningEffortValue(result.ReasoningEffort))
 				baselineChannelPriced := s.resolveOpenAIChannelPricing(ctx, baselineBillingModel, apiKey) != nil
 				if responseErr == nil && responseModelBillingAdoptable(cost, responseCost, baselineChannelPriced, responseChannelPriced) {
 					cost = responseCost
@@ -6417,7 +6417,7 @@ func openAIRecordUsageBillingModelCandidates(result *OpenAIForwardResult, input 
 	return candidates
 }
 
-func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(ctx context.Context, apiKey *APIKey, billingModels []string, tokens UsageTokens, multiplier float64, serviceTier string) (*CostBreakdown, error) {
+func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(ctx context.Context, apiKey *APIKey, billingModels []string, tokens UsageTokens, multiplier float64, serviceTier, reasoningEffort string) (*CostBreakdown, error) {
 	if len(billingModels) == 0 {
 		return nil, fmt.Errorf("calculate OpenAI usage cost failed: %w for model: empty", ErrModelPricingUnavailable)
 	}
@@ -6429,14 +6429,15 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(ctx context.Contex
 		if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 			gid := apiKey.Group.ID
 			cost, err = s.billingService.CalculateCostUnified(CostInput{
-				Ctx:            ctx,
-				Model:          model,
-				GroupID:        &gid,
-				Tokens:         tokens,
-				RequestCount:   1,
-				RateMultiplier: multiplier,
-				ServiceTier:    serviceTier,
-				Resolver:       s.resolver,
+				Ctx:             ctx,
+				Model:           model,
+				GroupID:         &gid,
+				Tokens:          tokens,
+				RequestCount:    1,
+				RateMultiplier:  multiplier,
+				ServiceTier:     serviceTier,
+				ReasoningEffort: reasoningEffort,
+				Resolver:        s.resolver,
 			})
 		} else {
 			cost, err = s.billingService.CalculateCostWithServiceTier(model, tokens, multiplier, serviceTier)
@@ -6466,13 +6467,24 @@ func openAIMediaBillingUnits(result *OpenAIForwardResult) (int, string) {
 	return result.ImageCount, result.ImageSize
 }
 
-func (s *OpenAIGatewayService) calculateOpenAIRecordUsageMediaCost(apiKey *APIKey, billingModels []string, mediaSize string, mediaCount int, multiplier float64) *CostBreakdown {
+func (s *OpenAIGatewayService) calculateOpenAIRecordUsageMediaCost(ctx context.Context, apiKey *APIKey, billingModels []string, mediaSize string, mediaCount int, multiplier float64, reasoningEffort string) *CostBreakdown {
 	if s == nil || s.billingService == nil || mediaCount <= 0 {
 		return &CostBreakdown{BillingMode: string(BillingModeImage)}
 	}
 	model := ""
 	if len(billingModels) > 0 {
 		model = billingModels[0]
+	}
+	resolved := s.resolveOpenAIChannelPricing(ctx, model, apiKey)
+	if resolved != nil &&
+		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage) {
+		gid := apiKey.Group.ID
+		if cost, err := s.billingService.CalculateCostUnified(CostInput{
+			Ctx: ctx, Model: model, GroupID: &gid, RequestCount: mediaCount, SizeTier: mediaSize,
+			RateMultiplier: multiplier, ReasoningEffort: reasoningEffort, Resolver: s.resolver, Resolved: resolved,
+		}); err == nil {
+			return cost
+		}
 	}
 	var groupConfig *ImagePriceConfig
 	if apiKey != nil && apiKey.Group != nil {
@@ -6482,7 +6494,11 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageMediaCost(apiKey *APIKe
 			Price4K: apiKey.Group.ImagePrice4K,
 		}
 	}
-	return s.billingService.CalculateImageCost(model, mediaSize, mediaCount, groupConfig, multiplier)
+	cost := s.billingService.CalculateImageCost(model, mediaSize, mediaCount, groupConfig, multiplier)
+	if resolved != nil {
+		applyCostBreakdownMultiplier(cost, reasoningEffortBillingMultiplier(reasoningEffort, resolved.ReasoningEffortMultipliers))
+	}
+	return cost
 }
 
 func isUsagePricingUnavailableError(err error) bool {

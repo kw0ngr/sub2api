@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"log"
+	"math"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -523,16 +523,17 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 
 // CostInput 统一计费输入
 type CostInput struct {
-	Ctx            context.Context
-	Model          string
-	GroupID        *int64 // 用于渠道定价查找
-	Tokens         UsageTokens
-	RequestCount   int    // 按次计费时使用
-	SizeTier       string // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
-	RateMultiplier float64
-	ServiceTier    string                // "priority","flex","" 等
-	Resolver       *ModelPricingResolver // 定价解析器
-	Resolved       *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
+	Ctx             context.Context
+	Model           string
+	GroupID         *int64 // 用于渠道定价查找
+	Tokens          UsageTokens
+	RequestCount    int    // 按次计费时使用
+	SizeTier        string // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
+	RateMultiplier  float64
+	ServiceTier     string                // "priority","flex","" 等
+	ReasoningEffort string                // 最终转发的思考等级
+	Resolver        *ModelPricingResolver // 定价解析器
+	Resolved        *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
 }
 
 // CalculateCostUnified 统一计费入口，支持三种计费模式。
@@ -565,12 +566,48 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 		breakdown, err = s.calculateTokenCost(resolved, input)
 	}
 	if err == nil && breakdown != nil {
+		applyCostBreakdownMultiplier(breakdown, reasoningEffortBillingMultiplier(input.ReasoningEffort, resolved.ReasoningEffortMultipliers))
 		breakdown.BillingMode = string(resolved.Mode)
 		if breakdown.BillingMode == "" {
 			breakdown.BillingMode = string(BillingModeToken)
 		}
 	}
 	return breakdown, err
+}
+
+func reasoningEffortBillingMultiplier(effort string, multipliers map[string]float64) float64 {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "x-high" || effort == "x_high" {
+		effort = "xhigh"
+	}
+	if effort == "" {
+		return 1
+	}
+	multiplier := multipliers[effort]
+	if multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+		return 1
+	}
+	return multiplier
+}
+
+func applyCostBreakdownMultiplier(cost *CostBreakdown, multiplier float64) {
+	if cost == nil || multiplier == 1 {
+		return
+	}
+	cost.InputCost *= multiplier
+	cost.OutputCost *= multiplier
+	cost.ImageOutputCost *= multiplier
+	cost.CacheCreationCost *= multiplier
+	cost.CacheReadCost *= multiplier
+	cost.TotalCost *= multiplier
+	cost.ActualCost *= multiplier
+}
+
+func reasoningEffortValue(effort *string) string {
+	if effort == nil {
+		return ""
+	}
+	return strings.TrimSpace(*effort)
 }
 
 // calculateTokenCost 按 token 区间计费

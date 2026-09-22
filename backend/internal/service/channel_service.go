@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -605,7 +606,33 @@ func validatePricingEntries(pricing []ChannelModelPricing) error {
 	if err := validatePricingIntervals(pricing); err != nil {
 		return err
 	}
+	if err := validateReasoningEffortMultipliers(pricing); err != nil {
+		return err
+	}
 	return validatePricingBillingMode(pricing)
+}
+
+func validateReasoningEffortMultipliers(pricing []ChannelModelPricing) error {
+	for _, p := range pricing {
+		for effort, multiplier := range p.ReasoningEffortMultipliers {
+			normalizedEffort := strings.ToLower(strings.TrimSpace(effort))
+			if effort != normalizedEffort {
+				return infraerrors.BadRequest("INVALID_REASONING_EFFORT_MULTIPLIER",
+					fmt.Sprintf("reasoning effort key %q must be lowercase and trimmed", effort))
+			}
+			switch normalizedEffort {
+			case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+			default:
+				return infraerrors.BadRequest("INVALID_REASONING_EFFORT_MULTIPLIER",
+					fmt.Sprintf("unsupported reasoning effort %q for models %v", effort, p.Models))
+			}
+			if multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+				return infraerrors.BadRequest("INVALID_REASONING_EFFORT_MULTIPLIER",
+					fmt.Sprintf("reasoning_effort_multipliers.%s must be a finite number > 0", effort))
+			}
+		}
+	}
+	return nil
 }
 
 // validatePricingBillingMode 校验计费模式配置：按次/图片模式必须配价格或区间，所有价格字段不能为负，区间至少有一个价格字段。

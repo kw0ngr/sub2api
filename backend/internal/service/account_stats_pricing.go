@@ -27,11 +27,15 @@ func resolveAccountStatsCost(
 	tokens UsageTokens,
 	requestCount int,
 	totalCost float64,
-	serviceTier ...string,
+	billingSignals ...string,
 ) *float64 {
 	tier := ""
-	if len(serviceTier) > 0 {
-		tier = serviceTier[0]
+	reasoningEffort := ""
+	if len(billingSignals) > 0 {
+		tier = billingSignals[0]
+	}
+	if len(billingSignals) > 1 {
+		reasoningEffort = billingSignals[1]
 	}
 	if channelService == nil || upstreamModel == "" {
 		return nil
@@ -44,7 +48,7 @@ func resolveAccountStatsCost(
 	platform := channelService.GetGroupPlatform(ctx, groupID)
 
 	// 优先级 1：自定义规则（始终尝试）
-	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount); cost != nil {
+	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount, reasoningEffort); cost != nil {
 		return cost
 	}
 
@@ -106,6 +110,7 @@ func tryModelFilePricingWithServiceTier(billingService *BillingService, model st
 func tryCustomRules(
 	channel *Channel, accountID, groupID int64,
 	platform, model string, tokens UsageTokens, requestCount int,
+	reasoningEffort ...string,
 ) *float64 {
 	modelLower := strings.ToLower(model)
 	for _, rule := range channel.AccountStatsPricingRules {
@@ -116,7 +121,15 @@ func tryCustomRules(
 		if pricing == nil {
 			continue // 规则匹配但模型不在规则定价中，继续下一条
 		}
-		return calculateStatsCost(pricing, tokens, requestCount)
+		cost := calculateStatsCost(pricing, tokens, requestCount)
+		if cost != nil {
+			effort := ""
+			if len(reasoningEffort) > 0 {
+				effort = reasoningEffort[0]
+			}
+			*cost *= reasoningEffortBillingMultiplier(effort, pricing.ReasoningEffortMultipliers)
+		}
+		return cost
 	}
 	return nil
 }
@@ -257,10 +270,14 @@ func applyAccountStatsCost(
 		model = requestedModel
 	}
 	serviceTier := ""
+	reasoningEffort := ""
 	if usageLog != nil && usageLog.ServiceTier != nil {
 		serviceTier = *usageLog.ServiceTier
 	}
+	if usageLog != nil && usageLog.ReasoningEffort != nil {
+		reasoningEffort = *usageLog.ReasoningEffort
+	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, 1, totalCost, serviceTier,
+		ctx, cs, bs, accountID, groupID, model, tokens, 1, totalCost, serviceTier, reasoningEffort,
 	)
 }

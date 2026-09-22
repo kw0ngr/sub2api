@@ -221,6 +221,29 @@
             />
           </div>
         </div>
+
+        <div class="mt-3 border-t border-gray-200 pt-3 dark:border-dark-600">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+            {{ t('admin.channels.form.reasoningMultipliers', '思考等级计费倍率（可选）') }}
+          </label>
+          <div class="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            <div v-for="effort in reasoningEfforts" :key="effort">
+              <label class="text-xs text-gray-400">{{ effort }}</label>
+              <input
+                :value="entry.reasoning_effort_multipliers?.[effort] ?? ''"
+                @input="updateReasoningMultiplier(effort, ($event.target as HTMLInputElement).value)"
+                type="number"
+                step="any"
+                min="0.000001"
+                class="input mt-0.5 text-sm"
+                placeholder="1"
+              />
+            </div>
+          </div>
+          <p class="mt-1 text-xs text-gray-400">
+            {{ t('admin.channels.form.reasoningMultipliersHint', '仅对实际转发的思考等级生效；留空按 1 倍计费。') }}
+          </p>
+        </div>
       </div>
     </div>
   </div>
@@ -234,7 +257,7 @@ import Icon from '@/components/icons/Icon.vue'
 import IntervalRow from './IntervalRow.vue'
 import ModelTagInput from './ModelTagInput.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
-import { perTokenToMTok, getPlatformTagClass } from './types'
+import { perTokenToMTok, getPlatformTagClass, reasoningEfforts } from './types'
 import type { BillingMode } from '@/api/admin/channels'
 import { channelsAPI } from '@/api/admin/channels'
 
@@ -266,6 +289,13 @@ const billingModeLabel = computed(() => {
 
 function emitField(field: keyof PricingFormEntry, value: string) {
   emit('update', { ...props.entry, [field]: value === '' ? null : value })
+}
+
+function updateReasoningMultiplier(effort: string, value: string) {
+  const multipliers = { ...(props.entry.reasoning_effort_multipliers || {}) }
+  if (value === '') delete multipliers[effort]
+  else multipliers[effort] = value
+  emit('update', { ...props.entry, reasoning_effort_multipliers: multipliers })
 }
 
 function addInterval() {
@@ -328,6 +358,7 @@ async function onModelsUpdate(newModels: string[]) {
         output_price: perTokenToMTok(result.output_price ?? null),
         cache_write_price: perTokenToMTok(result.cache_write_price ?? null),
         cache_read_price: perTokenToMTok(result.cache_read_price ?? null),
+        reasoning_effort_multipliers: { ...(result.reasoning_effort_multipliers || {}) },
         image_output_price: perTokenToMTok(result.image_output_price ?? null),
       })
     }

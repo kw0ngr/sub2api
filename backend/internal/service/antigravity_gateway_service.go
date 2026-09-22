@@ -2503,6 +2503,7 @@ handleSuccess:
 		Model:            originalModel,
 		UpstreamModel:    billingModel,
 		Stream:           stream,
+		ReasoningEffort:  extractGeminiReasoningEffortFromBody(injectedBody),
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ClientDisconnect: clientDisconnect,

@@ -59,7 +59,6 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
 	}
 
-	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, body, upstreamModel, billingModel, originalModel)
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	chatBody, err := json.Marshal(chatReq)
@@ -69,6 +68,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
 	}
+	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, chatBody, upstreamModel, billingModel, originalModel)
 
 	logger.L().Debug("openai messages: forwarding via chat completions bridge",
 		zap.Int64("account_id", account.ID),

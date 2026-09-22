@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -74,20 +75,21 @@ type AccountStatsPricingRule struct {
 
 // ChannelModelPricing 渠道模型定价条目
 type ChannelModelPricing struct {
-	ID               int64
-	ChannelID        int64
-	Platform         string            // 所属平台（anthropic/openai/gemini/...）
-	Models           []string          // 绑定的模型列表
-	BillingMode      BillingMode       // 计费模式
-	InputPrice       *float64          // 每 token 输入价格（USD）— 向后兼容 flat 定价
-	OutputPrice      *float64          // 每 token 输出价格（USD）
-	CacheWritePrice  *float64          // 缓存写入价格
-	CacheReadPrice   *float64          // 缓存读取价格
-	ImageOutputPrice *float64          // 图片输出价格（向后兼容）
-	PerRequestPrice  *float64          // 默认按次计费价格（USD）
-	Intervals        []PricingInterval // 区间定价列表
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                         int64
+	ChannelID                  int64
+	Platform                   string             // 所属平台（anthropic/openai/gemini/...）
+	Models                     []string           // 绑定的模型列表
+	BillingMode                BillingMode        // 计费模式
+	InputPrice                 *float64           // 每 token 输入价格（USD）— 向后兼容 flat 定价
+	OutputPrice                *float64           // 每 token 输出价格（USD）
+	CacheWritePrice            *float64           // 缓存写入价格
+	CacheReadPrice             *float64           // 缓存读取价格
+	ReasoningEffortMultipliers map[string]float64 // 按最终思考等级应用的计费倍率；未配置按 1 倍
+	ImageOutputPrice           *float64           // 图片输出价格（向后兼容）
+	PerRequestPrice            *float64           // 默认按次计费价格（USD）
+	Intervals                  []PricingInterval  // 区间定价列表
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
@@ -171,6 +173,7 @@ func (p *ChannelModelPricing) GetTierByLabel(label string) *PricingInterval {
 // Clone 返回 ChannelModelPricing 的拷贝（切片独立，指针字段共享，调用方只读安全）
 func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	cp := p
+	cp.ReasoningEffortMultipliers = maps.Clone(p.ReasoningEffortMultipliers)
 	if p.Models != nil {
 		cp.Models = make([]string, len(p.Models))
 		copy(cp.Models, p.Models)

@@ -48,14 +48,15 @@ type userAvailableGroup struct {
 }
 
 type userSupportedModelPricing struct {
-	BillingMode      string                   `json:"billing_mode"`
-	InputPrice       *float64                 `json:"input_price"`
-	OutputPrice      *float64                 `json:"output_price"`
-	CacheWritePrice  *float64                 `json:"cache_write_price"`
-	CacheReadPrice   *float64                 `json:"cache_read_price"`
-	ImageOutputPrice *float64                 `json:"image_output_price"`
-	PerRequestPrice  *float64                 `json:"per_request_price"`
-	Intervals        []userPricingIntervalDTO `json:"intervals"`
+	BillingMode                string                   `json:"billing_mode"`
+	InputPrice                 *float64                 `json:"input_price"`
+	OutputPrice                *float64                 `json:"output_price"`
+	CacheWritePrice            *float64                 `json:"cache_write_price"`
+	CacheReadPrice             *float64                 `json:"cache_read_price"`
+	ReasoningEffortMultipliers map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
+	ImageOutputPrice           *float64                 `json:"image_output_price"`
+	PerRequestPrice            *float64                 `json:"per_request_price"`
+	Intervals                  []userPricingIntervalDTO `json:"intervals"`
 }
 
 type userPricingIntervalDTO struct {
@@ -233,13 +234,14 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		})
 	}
 	return &userSupportedModelPricing{
-		BillingMode:      string(p.BillingMode),
-		InputPrice:       p.InputPrice,
-		OutputPrice:      p.OutputPrice,
-		CacheWritePrice:  p.CacheWritePrice,
-		CacheReadPrice:   p.CacheReadPrice,
-		ImageOutputPrice: p.ImageOutputPrice,
-		PerRequestPrice:  p.PerRequestPrice,
-		Intervals:        intervals,
+		BillingMode:                string(p.BillingMode),
+		InputPrice:                 p.InputPrice,
+		OutputPrice:                p.OutputPrice,
+		CacheWritePrice:            p.CacheWritePrice,
+		CacheReadPrice:             p.CacheReadPrice,
+		ReasoningEffortMultipliers: p.ReasoningEffortMultipliers,
+		ImageOutputPrice:           p.ImageOutputPrice,
+		PerRequestPrice:            p.PerRequestPrice,
+		Intervals:                  intervals,
 	}
 }

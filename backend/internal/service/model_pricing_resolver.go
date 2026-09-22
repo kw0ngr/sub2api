@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"maps"
 )
 
 // PricingSource 定价来源标识
@@ -34,6 +35,9 @@ type ResolvedPricing struct {
 
 	// 是否支持缓存细分
 	SupportsCacheBreakdown bool
+
+	// 渠道配置的最终思考等级计费倍率。
+	ReasoningEffortMultipliers map[string]float64
 }
 
 // ModelPricingResolver 统一模型定价解析器。
@@ -98,6 +102,7 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 	}
 
 	resolved.Source = PricingSourceChannel
+	resolved.ReasoningEffortMultipliers = maps.Clone(chPricing.ReasoningEffortMultipliers)
 	resolved.Mode = chPricing.BillingMode
 	if resolved.Mode == "" {
 		resolved.Mode = BillingModeToken

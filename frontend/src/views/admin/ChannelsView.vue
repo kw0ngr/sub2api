@@ -592,7 +592,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
-import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
+import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, apiReasoningMultipliersToForm, formReasoningMultipliersToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -811,6 +811,7 @@ function addPricingEntry(sectionIdx: number) {
     output_price: null,
     cache_write_price: null,
     cache_read_price: null,
+    reasoning_effort_multipliers: {},
     image_output_price: null,
     per_request_price: null,
     intervals: []
@@ -869,6 +870,7 @@ function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
     output_price: null,
     cache_write_price: null,
     cache_read_price: null,
+    reasoning_effort_multipliers: {},
     image_output_price: null,
     per_request_price: null,
     intervals: []
@@ -984,6 +986,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
             output_price: mTokToPerToken(p.output_price),
             cache_write_price: mTokToPerToken(p.cache_write_price),
             cache_read_price: mTokToPerToken(p.cache_read_price),
+            reasoning_effort_multipliers: formReasoningMultipliersToAPI(p.reasoning_effort_multipliers),
             image_output_price: mTokToPerToken(p.image_output_price),
             per_request_price: p.per_request_price != null && p.per_request_price !== '' ? Number(p.per_request_price) : null,
             intervals: formIntervalsToAPI(p.intervals || [])
@@ -1024,6 +1027,7 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         output_price: mTokToPerToken(entry.output_price),
         cache_write_price: mTokToPerToken(entry.cache_write_price),
         cache_read_price: mTokToPerToken(entry.cache_read_price),
+        reasoning_effort_multipliers: formReasoningMultipliersToAPI(entry.reasoning_effort_multipliers),
         image_output_price: mTokToPerToken(entry.image_output_price),
         per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
         intervals: formIntervalsToAPI(entry.intervals || [])
@@ -1086,6 +1090,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
         output_price: perTokenToMTok(p.output_price),
         cache_write_price: perTokenToMTok(p.cache_write_price),
         cache_read_price: perTokenToMTok(p.cache_read_price),
+        reasoning_effort_multipliers: apiReasoningMultipliersToForm(p.reasoning_effort_multipliers),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
         intervals: apiIntervalsToForm(p.intervals || [])
@@ -1269,6 +1274,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
         output_price: perTokenToMTok(p.output_price),
         cache_write_price: perTokenToMTok(p.cache_write_price),
         cache_read_price: perTokenToMTok(p.cache_read_price),
+        reasoning_effort_multipliers: apiReasoningMultipliersToForm(p.reasoning_effort_multipliers),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
         intervals: apiIntervalsToForm(p.intervals || [])

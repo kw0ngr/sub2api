@@ -19,9 +19,27 @@ export interface PricingFormEntry {
   output_price: number | string | null
   cache_write_price: number | string | null
   cache_read_price: number | string | null
+  reasoning_effort_multipliers: Record<string, number | string | null>
   image_output_price: number | string | null
   per_request_price: number | string | null
   intervals: IntervalFormEntry[]
+}
+
+export const reasoningEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+export function apiReasoningMultipliersToForm(value?: Record<string, number> | null): Record<string, number | string | null> {
+  return { ...(value || {}) }
+}
+
+export function formReasoningMultipliersToAPI(value?: Record<string, number | string | null>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const effort of reasoningEfforts) {
+    const raw = value?.[effort]
+    if (raw === null || raw === undefined || raw === '') continue
+    const multiplier = Number(raw)
+    if (Number.isFinite(multiplier) && multiplier > 0) result[effort] = multiplier
+  }
+  return result
 }
 
 // 价格转换：后端存 per-token，前端显示 per-MTok ($/1M tokens)

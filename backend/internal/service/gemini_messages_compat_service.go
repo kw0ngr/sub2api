@@ -1612,15 +1612,16 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	}
 
 	return &ForwardResult{
-		RequestID:     requestID,
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: mappedModel,
-		Stream:        stream,
-		Duration:      time.Since(startTime),
-		FirstTokenMs:  firstTokenMs,
-		ImageCount:    imageCount,
-		ImageSize:     imageSize,
+		RequestID:       requestID,
+		Usage:           *usage,
+		Model:           originalModel,
+		UpstreamModel:   mappedModel,
+		Stream:          stream,
+		ReasoningEffort: extractGeminiReasoningEffortFromBody(body),
+		Duration:        time.Since(startTime),
+		FirstTokenMs:    firstTokenMs,
+		ImageCount:      imageCount,
+		ImageSize:       imageSize,
 	}, nil
 }
 

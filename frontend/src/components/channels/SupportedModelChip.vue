@@ -143,6 +143,25 @@
                 </div>
               </div>
             </div>
+
+            <div
+              v-if="reasoningMultiplierEntries.length > 0"
+              class="mt-2 border-t pt-2"
+              :class="[popoverBorderClass]"
+            >
+              <div class="mb-1 font-medium text-gray-600 dark:text-gray-400">
+                {{ t(prefixKey('reasoningMultipliers'), '思考等级倍率') }}
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="[effort, multiplier] in reasoningMultiplierEntries"
+                  :key="effort"
+                  class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] dark:bg-dark-700"
+                >
+                  {{ effort }} ×{{ multiplier }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -226,6 +245,11 @@ const billingModeLabel = computed(() => {
       return '-'
   }
 })
+
+const reasoningMultiplierEntries = computed(() =>
+  Object.entries(props.model.pricing?.reasoning_effort_multipliers || {})
+    .filter(([, multiplier]) => Number.isFinite(multiplier) && multiplier > 0),
+)
 
 function formatRange(min: number, max: number | null): string {
   const maxLabel = max == null ? '∞' : String(max)
