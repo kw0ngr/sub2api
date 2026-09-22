@@ -728,6 +728,17 @@ func normalizeModelNameForPricing(model string) string {
 	}
 
 	model = strings.TrimLeft(model, "/")
+	return normalizeGeminiThinkingTierAlias(model)
+}
+
+func normalizeGeminiThinkingTierAlias(model string) string {
+	for _, base := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+		for _, tier := range []string{"-high", "-low", "-medium", "-tiered"} {
+			if model == base+tier {
+				return base
+			}
+		}
+	}
 	return model
 }
 

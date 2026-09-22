@@ -56,6 +56,17 @@ func TestDefaultAntigravityModelMapping_ImageCompatibilityAliases(t *testing.T) 
 	}
 }
 
+func TestDefaultAntigravityModelMapping_LatestGeminiFlashTiers(t *testing.T) {
+	for _, version := range []string{"3.6", "3.7", "3.8"} {
+		for _, suffix := range []string{"", "-low", "-medium", "-high", "-tiered"} {
+			model := "gemini-" + version + "-flash" + suffix
+			if got := DefaultAntigravityModelMapping[model]; got != model {
+				t.Fatalf("DefaultAntigravityModelMapping[%s]=%q", model, got)
+			}
+		}
+	}
+}
+
 func TestDefaultGrokModelMappingAliases(t *testing.T) {
 	t.Parallel()
 

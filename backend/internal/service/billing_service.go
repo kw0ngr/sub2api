@@ -232,6 +232,14 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerToken:     0.2e-6, // $0.20 per MTok
 		SupportsCacheBreakdown:     false,
 	}
+	for _, model := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
+		s.fallbackPrices[model] = &ModelPricing{
+			InputPricePerToken:     0.75e-6,
+			OutputPricePerToken:    3.75e-6,
+			CacheReadPricePerToken: 0.075e-6,
+			SupportsCacheBreakdown: false,
+		}
+	}
 
 	// OpenAI GPT-5.1（本地兜底，防止动态定价不可用时拒绝计费）
 	s.fallbackPrices["gpt-5.1"] = &ModelPricing{
@@ -363,6 +371,11 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 	if strings.Contains(modelLower, "gemini-3.1-pro") || strings.Contains(modelLower, "gemini-3-1-pro") {
 		return s.fallbackPrices["gemini-3.1-pro"]
+	}
+	for _, model := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
+		if strings.Contains(modelLower, model) || strings.Contains(modelLower, strings.ReplaceAll(model, ".", "-")) {
+			return s.fallbackPrices[model]
+		}
 	}
 	if strings.Contains(modelLower, "deepseek-v4-pro") {
 		return s.fallbackPrices["deepseek-v4-pro"]

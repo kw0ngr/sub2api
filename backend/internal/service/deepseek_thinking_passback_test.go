@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestForwardAsChatCompletions_RestoresDeepSeekThinkingBeforeToolHistory(t *testing.T) {
@@ -88,4 +89,14 @@ func TestExtractCCReasoningEffort_PreservesDeepSeekMax(t *testing.T) {
 	effort := extractCCReasoningEffortFromBody([]byte(`{"model":"deepseek-v4-flash","reasoning_effort":"max"}`))
 	require.NotNil(t, effort)
 	require.Equal(t, "max", *effort)
+}
+
+func TestEnsureDeepSeekChatReasoningPlaceholders(t *testing.T) {
+	body := []byte(`{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"","tool_calls":[{"id":"call_1"}]}]}`)
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.deepseek.com"}}
+
+	got := ensureDeepSeekChatReasoningPlaceholders(account, body)
+	require.Equal(t, deepSeekChatReasoningPlaceholderText, gjson.GetBytes(got, "messages.1.reasoning_content").String())
+	require.False(t, gjson.GetBytes(got, "messages.0.reasoning_content").Exists())
+	require.Equal(t, string(body), string(ensureDeepSeekChatReasoningPlaceholders(&Account{Platform: PlatformOpenAI}, body)))
 }

@@ -2,8 +2,10 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -260,4 +262,16 @@ func TestParsePricingData_PreservesServiceTierPriorityFields(t *testing.T) {
 	require.InDelta(t, 0.00000025, pricing.CacheReadInputTokenCost, 1e-12)
 	require.InDelta(t, 0.0000005, pricing.CacheReadInputTokenCostPriority, 1e-12)
 	require.True(t, pricing.SupportsServiceTier)
+}
+
+func TestLatestGeminiFlashThinkingTiersAreBillable(t *testing.T) {
+	for _, model := range []string{"gemini-3.7-flash-low", "gemini-3.8-flash-high"} {
+		if got := normalizeModelNameForPricing(model); got != strings.TrimSuffix(strings.TrimSuffix(model, "-low"), "-high") {
+			t.Fatalf("normalizeModelNameForPricing(%q)=%q", model, got)
+		}
+		pricing, err := NewBillingService(&config.Config{}, nil).GetModelPricing(model)
+		if err != nil || pricing == nil || pricing.OutputPricePerToken <= 0 {
+			t.Fatalf("GetModelPricing(%q) pricing=%v err=%v", model, pricing, err)
+		}
+	}
 }

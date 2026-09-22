@@ -15,6 +15,16 @@ type accountUsageCodexProbeRepo struct {
 	rateLimitCh   chan time.Time
 }
 
+type accountUsagePreserveErrorRepo struct {
+	stubOpenAIAccountRepo
+	clearCalls int
+}
+
+func (r *accountUsagePreserveErrorRepo) ClearError(context.Context, int64) error {
+	r.clearCalls++
+	return nil
+}
+
 type grokLocalBudgetUsageRepo struct {
 	UsageLogRepository
 	windowStats *usagestats.AccountStats
@@ -102,6 +112,27 @@ func TestAccountUsageService_GetGrokUsageBuildsLocal40MinuteBudget(t *testing.T)
 	}
 	if age := time.Since(repo.windowStart); age < 39*time.Minute || age > 41*time.Minute {
 		t.Fatalf("window start age = %v, want about 40m", age)
+	}
+}
+
+func TestAccountUsageService_OpenAIUsageDoesNotClearRefreshError(t *testing.T) {
+	resetAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	repo := &accountUsagePreserveErrorRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{{
+		ID: 7358, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Status: StatusError, ErrorMessage: "Token refresh failed: refresh_token_invalidated",
+		Extra: map[string]any{
+			"codex_5h_used_percent": 18.0, "codex_5h_reset_at": resetAt,
+			"codex_7d_used_percent": 34.0, "codex_7d_reset_at": resetAt,
+		},
+	}}}}
+	svc := &AccountUsageService{accountRepo: repo, cache: NewUsageCache()}
+
+	usage, err := svc.GetUsage(context.Background(), 7358)
+	if err != nil || usage == nil {
+		t.Fatalf("GetUsage() usage=%v err=%v", usage, err)
+	}
+	if repo.clearCalls != 0 {
+		t.Fatalf("usage query cleared a refresh error: %d calls", repo.clearCalls)
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -542,6 +544,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 	body []byte,
 	token string,
 ) (*http.Request, error) {
+	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
 	baseURL := account.GetOpenAIBaseURL()
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = DefaultAPIKeyBaseURL(account.Platform)
@@ -582,6 +585,45 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 		applyGrokCLIRequestHeaders(req.Header, account, openAIModelForUpstreamError(body))
 	}
 	return req, nil
+}
+
+const deepSeekChatReasoningPlaceholderText = " "
+
+func targetsDeepSeekAPIHost(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform == PlatformDeepSeek {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(account.GetOpenAIBaseURL()))
+	if err != nil {
+		return false
+	}
+	ds, _ := url.Parse(DefaultAPIKeyBaseURL(PlatformDeepSeek))
+	return ds != nil && strings.EqualFold(u.Hostname(), ds.Hostname())
+}
+
+func ensureDeepSeekChatReasoningPlaceholders(account *Account, body []byte) []byte {
+	if !targetsDeepSeekAPIHost(account) {
+		return body
+	}
+	messages := gjson.GetBytes(body, "messages")
+	if !messages.IsArray() {
+		return body
+	}
+	updated := body
+	for i, message := range messages.Array() {
+		if strings.TrimSpace(message.Get("role").String()) != "assistant" || message.Get("reasoning_content").String() != "" {
+			continue
+		}
+		next, err := sjson.SetBytes(updated, "messages."+strconv.Itoa(i)+".reasoning_content", deepSeekChatReasoningPlaceholderText)
+		if err != nil {
+			return body
+		}
+		updated = next
+	}
+	return updated
 }
 
 func copyOptionalOpenAICompatibleRequestHeaders(dst, src http.Header) {

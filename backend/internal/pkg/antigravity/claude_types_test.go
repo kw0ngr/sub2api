@@ -19,6 +19,9 @@ func TestDefaultModels_ContainsNewAndLegacyImageModels(t *testing.T) {
 		"gemini-2.5-flash-image-preview",
 		"gemini-3.1-flash-image",
 		"gemini-3.1-flash-image-preview",
+		"gemini-3.6-flash-high",
+		"gemini-3.7-flash-medium",
+		"gemini-3.8-flash-tiered",
 		"gemini-3-pro-image", // legacy compatibility
 	}
 

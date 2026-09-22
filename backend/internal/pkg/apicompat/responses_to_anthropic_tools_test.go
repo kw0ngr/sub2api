@@ -135,3 +135,20 @@ func TestResponsesToAnthropic_DefaultToolNormalizesInputSchema(t *testing.T) {
 	assert.Equal(t, "shell", tools[0].Name)
 	assert.JSONEq(t, `{"type":"object","properties":{}}`, string(tools[0].InputSchema))
 }
+
+func TestResponsesToAnthropic_RootUnionToolSchemaFlattened(t *testing.T) {
+	tools := convertResponsesToAnthropicTools([]ResponsesTool{{
+		Type:       "function",
+		Name:       "automation_update",
+		Parameters: json.RawMessage(`{"anyOf":[{"type":"object","properties":{"mode":{"enum":["view"]},"id":{"type":"string"}},"required":["mode","id"]},{"type":"object","properties":{"mode":{"enum":["update"]},"prompt":{"type":"string"}},"required":["mode","prompt"]}]}`),
+	}})
+
+	require.Len(t, tools, 1)
+	schema := requireObjectInputSchema(t, tools[0].InputSchema)
+	assert.NotContains(t, schema, "anyOf")
+	assert.JSONEq(t, `["mode"]`, string(schema["required"]))
+	var properties map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(schema["properties"], &properties))
+	assert.Contains(t, properties, "id")
+	assert.Contains(t, properties, "prompt")
+}

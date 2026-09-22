@@ -39,9 +39,11 @@ const (
 	// ChatGPT internal API for OAuth accounts
 	chatgptCodexURL = "https://chatgpt.com/backend-api/codex/responses"
 	// OpenAI Platform API for API Key accounts (fallback)
-	openaiPlatformAPIURL   = "https://api.openai.com/v1/responses"
-	openaiStickySessionTTL = time.Hour // 粘性会话TTL
-	codexCLIUserAgent      = "codex_cli_rs/0.144.1 (Ubuntu 22.4.0; x86_64) xterm-256color"
+	openaiPlatformAPIURL    = "https://api.openai.com/v1/responses"
+	openaiStickySessionTTL  = time.Hour // 粘性会话TTL
+	codexCLIUserAgentSuffix = " (Ubuntu 22.4.0; x86_64) xterm-256color"
+	codexCLIVersion         = "0.146.0"
+	codexCLIUserAgent       = "codex_cli_rs/" + codexCLIVersion + codexCLIUserAgentSuffix
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
 
@@ -55,7 +57,6 @@ const (
 	openAIWSRetryBackoffMaxDefault     = 2 * time.Second
 	openAIWSRetryJitterRatioDefault    = 0.2
 	openAICompactSessionSeedKey        = "openai_compact_session_seed"
-	codexCLIVersion                    = "0.144.1"
 	openAIUpstreamErrorBodyReadLimit   = int64(512 << 10)
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
@@ -3082,14 +3083,14 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	if reqStream {
-		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, policyModel)
+		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, policyModel)
 		if err != nil {
 			return nil, err
 		}
 		usage = result.usage
 		firstTokenMs = result.firstTokenMs
 	} else {
-		usage, err = s.handleNonStreamingResponsePassthrough(ctx, resp, c, account)
+		usage, err = s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, policyModel)
 		if err != nil {
 			return nil, err
 		}
@@ -3459,6 +3460,17 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 type openaiStreamingResultPassthrough struct {
 	usage        *OpenAIUsage
 	firstTokenMs *int
+}
+
+func openAIPassthroughModelPair(models []string) (original, mapped string) {
+	if len(models) > 0 {
+		original = strings.TrimSpace(models[0])
+		mapped = original
+	}
+	if len(models) > 1 {
+		mapped = strings.TrimSpace(models[1])
+	}
+	return original, mapped
 }
 
 func openAIStreamClientOutputStarted(_ *gin.Context, localStarted bool) bool {
@@ -3969,6 +3981,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	startTime time.Time,
 	requestedModel ...string,
 ) (*openaiStreamingResultPassthrough, error) {
+	originalModel, mappedModel := openAIPassthroughModelPair(requestedModel)
 	observer := ensureUpstreamResponseModelObservation(c)
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -4029,6 +4042,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			trimmedData := strings.TrimSpace(data)
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			observer.ObserveOpenAI(dataBytes, eventType)
+			if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
+				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
+				if replaced, ok := extractOpenAISSEDataLine(line); ok {
+					trimmedData = strings.TrimSpace(replaced)
+					dataBytes = []byte(trimmedData)
+				}
+			}
 			if openAIResponseUsageIsPresent(dataBytes) {
 				validUsageSeen = true
 			}
@@ -4036,7 +4056,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
 				if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
 					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, errorMessage, requestedModel...)
+						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, errorMessage, mappedModel)
 				}
 			}
 			if eventType == "response.failed" {
@@ -4048,10 +4068,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, requestedModel...)
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel)
 					}
 				}
-				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage, requestedModel...)
+				s.recordOpenAIStreamFailedSideEffects(ctx, account, upstreamRequestID, dataBytes, failedMessage, mappedModel)
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
@@ -4116,7 +4136,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				msg += ": " + errText
 			}
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg, requestedModel...)
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg, mappedModel)
 		}
 		if clientDisconnected {
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete after disconnect: %w", err)
@@ -4141,7 +4161,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs},
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", requestedModel...)
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", mappedModel)
 		}
 		s.recordOpenAIStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, errors.New("stream usage incomplete: missing terminal event")
@@ -4158,7 +4178,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
+	requestedModel ...string,
 ) (*OpenAIUsage, error) {
+	originalModel, mappedModel := openAIPassthroughModelPair(requestedModel)
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
@@ -4169,7 +4191,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// stream=false was requested. Without this conversion the client would
 	// receive raw SSE text or a terminal event with empty output.
 	if isEventStreamResponse(resp.Header) {
-		return s.handlePassthroughSSEToJSON(resp, c, account, body)
+		return s.handlePassthroughSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
 
 	ensureUpstreamResponseModelObservation(c).ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
@@ -4184,6 +4206,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if !usageParsed {
 		// 兜底：尝试从 SSE 文本中解析 usage
 		usage = s.parseSSEUsageFromBody(string(body))
+	}
+	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
+		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -4201,7 +4226,8 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // handlePassthroughSSEToJSON converts an SSE response body into a JSON
 // response for the passthrough path. It mirrors handleSSEToJSON but skips
 // model replacement (passthrough does not remap models).
-func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte) (*OpenAIUsage, error) {
+func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, requestedModel ...string) (*OpenAIUsage, error) {
+	originalModel, mappedModel := openAIPassthroughModelPair(requestedModel)
 	bodyText := string(body)
 	observeOpenAISSEBody(ensureUpstreamResponseModelObservation(c), bodyText)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
@@ -4230,6 +4256,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		}
 		finalResponse = supplementCompactionItemFromSSE(c, finalResponse, bodyText)
 		body = finalResponse
+		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
+			body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
+		}
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
 	} else {
@@ -4244,6 +4273,10 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
+		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
+			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
+			body = []byte(bodyText)
+		}
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -4961,9 +4994,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				line = "data: " + data
 				eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
 			}
-			// Replace model in response if needed.
-			// Fast path: most events do not contain model field values.
-			if needModelReplace && mappedModel != "" && strings.Contains(line, mappedModel) {
+			// Replace the upstream-declared model with the public requested alias.
+			if needModelReplace {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 				if replacedData, ok := extractOpenAISSEDataLine(line); ok {
 					data = replacedData
@@ -5222,33 +5254,28 @@ func openAICompatPayloadWithEventType(payload, eventType string) string {
 }
 
 func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel string) string {
+	if fromModel == "" || toModel == "" || fromModel == toModel {
+		return line
+	}
 	data, ok := extractOpenAISSEDataLine(line)
-	if !ok {
+	if !ok || !gjson.Valid(data) {
 		return line
 	}
-	if data == "" || data == "[DONE]" {
-		return line
-	}
-
-	// 使用 gjson 精确检查 model 字段，避免全量 JSON 反序列化
-	if m := gjson.Get(data, "model"); m.Exists() && m.Str == fromModel {
-		newData, err := sjson.Set(data, "model", toModel)
+	updated := data
+	for _, path := range []string{"model", "response.model"} {
+		if gjson.Get(updated, path).Type != gjson.String {
+			continue
+		}
+		var err error
+		updated, err = sjson.Set(updated, path, toModel)
 		if err != nil {
 			return line
 		}
-		return "data: " + newData
 	}
-
-	// 检查嵌套的 response.model 字段
-	if m := gjson.Get(data, "response.model"); m.Exists() && m.Str == fromModel {
-		newData, err := sjson.Set(data, "response.model", toModel)
-		if err != nil {
-			return line
-		}
-		return "data: " + newData
+	if updated == data {
+		return line
 	}
-
-	return line
+	return "data: " + updated
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用
@@ -6104,15 +6131,14 @@ func appendOpenAIResponsesRequestPathSuffix(baseURL, suffix string) string {
 }
 
 func (s *OpenAIGatewayService) replaceModelInResponseBody(body []byte, fromModel, toModel string) []byte {
-	// 使用 gjson/sjson 精确替换 model 字段，避免全量 JSON 反序列化
-	if m := gjson.GetBytes(body, "model"); m.Exists() && m.Str == fromModel {
-		newBody, err := sjson.SetBytes(body, "model", toModel)
-		if err != nil {
-			return body
-		}
-		return newBody
+	if fromModel == "" || toModel == "" || fromModel == toModel || !gjson.ValidBytes(body) || gjson.GetBytes(body, "model").Type != gjson.String {
+		return body
 	}
-	return body
+	newBody, err := sjson.SetBytes(body, "model", toModel)
+	if err != nil {
+		return body
+	}
+	return newBody
 }
 
 // OpenAIRecordUsageInput input for recording usage
