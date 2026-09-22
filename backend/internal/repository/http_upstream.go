@@ -17,6 +17,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/net/http2"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
@@ -50,6 +51,10 @@ const (
 	defaultMaxUpstreamClients = 5000
 	// defaultClientIdleTTLSeconds: 默认客户端空闲回收阈值（15分钟）
 	defaultClientIdleTTLSeconds = 900
+	// Detect proxy/NAT-silenced HTTP/2 connections before a request waits for
+	// the operating system's TCP retransmission timeout.
+	upstreamHTTP2ReadIdleTimeout = 15 * time.Second
+	upstreamHTTP2PingTimeout     = 15 * time.Second
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -767,11 +772,27 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL) (*http.Tra
 		MaxConnsPerHost:       settings.maxConnsPerHost,
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
+		ForceAttemptHTTP2:     true,
 	}
 	if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
 		return nil, err
 	}
+	if _, err := enableHTTP2KeepAlive(transport); err != nil {
+		return nil, err
+	}
 	return transport, nil
+}
+
+func enableHTTP2KeepAlive(transport *http.Transport) (*http2.Transport, error) {
+	h2, err := http2.ConfigureTransports(transport)
+	if err != nil {
+		return nil, err
+	}
+	if h2 != nil {
+		h2.ReadIdleTimeout = upstreamHTTP2ReadIdleTimeout
+		h2.PingTimeout = upstreamHTTP2PingTimeout
+	}
+	return h2, nil
 }
 
 // buildUpstreamTransportWithTLSFingerprint 构建带 TLS 指纹伪装的 Transport
