@@ -195,7 +195,9 @@ func runMainServer() {
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		// Shutdown timeout should not turn an intentional service restart into a
+		// failed systemd unit; active upstream requests are already being torn down.
+		log.Printf("Server forced to shutdown: %v", err)
 	}
 
 	log.Println("Server exited")
