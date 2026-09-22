@@ -1003,7 +1003,8 @@ func TestBillingService_GLM53FallbackPricingWhenPricingServiceUnavailable(t *tes
 	// is unavailable or not wired during startup.
 	svc := NewBillingService(nil, nil)
 	for _, tc := range []struct {
-		model, wantInput, wantOutput, wantCache float64
+		model                            string
+		wantInput, wantOutput, wantCache float64
 	}{
 		{"glm-5.3-flash", 0.15e-6, 0.5e-6, 0.03e-6},
 		{"glm-5.3", 1.4e-6, 4.4e-6, 0.26e-6},
