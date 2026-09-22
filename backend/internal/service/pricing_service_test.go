@@ -168,6 +168,8 @@ func TestGetModelPricing_GLMOfficialStaticFallbacks(t *testing.T) {
 		cacheRead float64
 		output    float64
 	}{
+		{model: "glm-5.3-flash", input: 0.15e-6, cacheRead: 0.03e-6, output: 0.5e-6},
+		{model: "glm-5.3", input: 1.4e-6, cacheRead: 0.26e-6, output: 4.4e-6},
 		{model: "glm-5.2", input: 1.4e-6, cacheRead: 0.26e-6, output: 4.4e-6},
 		{model: "GLM-5-Turbo", input: 1.2e-6, cacheRead: 0.24e-6, output: 4.0e-6},
 		{model: "glm-4.7-flashx", input: 0.07e-6, cacheRead: 0.01e-6, output: 0.4e-6},

@@ -331,6 +331,18 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:         false,
 	}
 	s.fallbackPrices["gpt-5.3-codex"] = s.fallbackPrices["gpt-5.1-codex"]
+	// GLM-5.3 / GLM-5.3-Flash static fallback. Keep billing alive when the
+	// remote model-price file lags a newly published GLM model.
+	s.fallbackPrices["glm-5.3-flash"] = &ModelPricing{
+		InputPricePerToken:     0.15e-6,
+		OutputPricePerToken:    0.5e-6,
+		CacheReadPricePerToken: 0.03e-6,
+	}
+	s.fallbackPrices["glm-5.3"] = &ModelPricing{
+		InputPricePerToken:     1.4e-6,
+		OutputPricePerToken:    4.4e-6,
+		CacheReadPricePerToken: 0.26e-6,
+	}
 }
 
 // getFallbackPricing 根据模型系列获取回退价格
@@ -384,6 +396,12 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		strings.Contains(modelLower, "deepseek-chat") ||
 		strings.Contains(modelLower, "deepseek-reasoner") {
 		return s.fallbackPrices["deepseek-v4-flash"]
+	}
+	if strings.Contains(modelLower, "glm-5.3-flash") {
+		return s.fallbackPrices["glm-5.3-flash"]
+	}
+	if strings.Contains(modelLower, "glm-5.3") {
+		return s.fallbackPrices["glm-5.3"]
 	}
 
 	// OpenAI 仅匹配已知 GPT-5/Codex 族，避免未知 OpenAI 型号误计价。

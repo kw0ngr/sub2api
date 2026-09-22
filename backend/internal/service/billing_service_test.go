@@ -997,3 +997,23 @@ func TestGetModelPricingWithChannel_UnknownModelReturnsError(t *testing.T) {
 	require.Nil(t, pricing)
 	require.Contains(t, err.Error(), "pricing not found")
 }
+
+func TestBillingService_GLM53FallbackPricingWhenPricingServiceUnavailable(t *testing.T) {
+	// GLM-5.3 pricing must remain available even when the remote pricing service
+	// is unavailable or not wired during startup.
+	svc := NewBillingService(nil, nil)
+	for _, tc := range []struct {
+		model, wantInput, wantOutput, wantCache float64
+	}{
+		{"glm-5.3-flash", 0.15e-6, 0.5e-6, 0.03e-6},
+		{"glm-5.3", 1.4e-6, 4.4e-6, 0.26e-6},
+	} {
+		pricing, err := svc.GetModelPricing(tc.model)
+		if err != nil {
+			t.Fatalf("GetModelPricing(%q): %v", tc.model, err)
+		}
+		if pricing.InputPricePerToken != tc.wantInput || pricing.OutputPricePerToken != tc.wantOutput || pricing.CacheReadPricePerToken != tc.wantCache {
+			t.Fatalf("GetModelPricing(%q) = %#v", tc.model, pricing)
+		}
+	}
+}

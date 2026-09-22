@@ -76,6 +76,9 @@ var (
 	glmOfficialStaticPricing = map[string]*LiteLLMModelPricing{
 		// Z.AI official pricing, USD per token (official table is USD / 1M tokens).
 		// Keep this static fallback because the LiteLLM mirror often lags new GLM releases.
+		// GLM-5.3 Flash list price: $0.15 input / $0.50 output / $0.03 cache read per MTok.
+		"glm-5.3-flash":       newGLMTokenPricing(0.15, 0.03, 0.5),
+		"glm-5.3":             newGLMTokenPricing(1.4, 0.26, 4.4),
 		"glm-5.2":             newGLMTokenPricing(1.4, 0.26, 4.4),
 		"glm-5.1":             newGLMTokenPricing(1.4, 0.26, 4.4),
 		"glm-5":               newGLMTokenPricing(1.0, 0.20, 3.2),
