@@ -331,6 +331,18 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:         false,
 	}
 	s.fallbackPrices["gpt-5.3-codex"] = s.fallbackPrices["gpt-5.1-codex"]
+	s.fallbackPrices["gpt-6-sol"] = &ModelPricing{
+		InputPricePerToken:         2e-6,
+		OutputPricePerToken:        10e-6,
+		CacheCreationPricePerToken: 2.5e-6,
+		CacheReadPricePerToken:     0.2e-6,
+	}
+	s.fallbackPrices["gpt-6-luna"] = &ModelPricing{
+		InputPricePerToken:         0.1e-6,
+		OutputPricePerToken:        0.5e-6,
+		CacheCreationPricePerToken: 0.125e-6,
+		CacheReadPricePerToken:     0.01e-6,
+	}
 	// GLM-5.3 / GLM-5.3-Flash static fallback. Keep billing alive when the
 	// remote model-price file lags a newly published GLM model.
 	s.fallbackPrices["glm-5.3-flash"] = &ModelPricing{
@@ -409,6 +421,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		strings.Contains(modelLower, "gpt-6") || strings.Contains(modelLower, "codex") {
 		normalized := normalizeCodexModel(modelLower)
 		switch normalized {
+		case "gpt-6-sol", "gpt-6-luna":
+			return s.fallbackPrices[normalized]
 		case "gpt-6-astra":
 			return s.fallbackPrices["gpt-6-astra"]
 		case "gpt-5.6-sol":

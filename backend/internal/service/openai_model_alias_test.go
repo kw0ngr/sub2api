@@ -118,3 +118,13 @@ func TestOpenAIModelAlias_PreservesRequestedModelUsageFields(t *testing.T) {
 	require.Equal(t, "gpt-5.6-sol", prepared.UpstreamModel)
 	require.Equal(t, "gpt-5.6-sol", prepared.Request.Model)
 }
+
+func TestOpenAIModelAlias_GPT6SolResolvesAndPreservesMax(t *testing.T) {
+	for _, input := range []string{"gpt-6-sol", "openai/gpt-6-sol", "gpt-6-sol-max"} {
+		t.Run(input, func(t *testing.T) {
+			require.Equal(t, "gpt-6-sol", normalizeCodexModel(input))
+			require.True(t, isOpenAIOAuthServableModel(input))
+		})
+	}
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-6-sol"))
+}

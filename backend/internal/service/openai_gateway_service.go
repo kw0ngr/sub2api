@@ -7695,6 +7695,8 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 // model IDs that accept reasoning.effort="max". There is no bare "gpt-5.6".
 var openAIModelsSupportingMaxReasoning = map[string]struct{}{
 	"gpt-6-astra":   {},
+	"gpt-6-sol":     {},
+	"gpt-6-luna":    {},
 	"gpt-5.6-sol":   {},
 	"gpt-5.6-terra": {},
 	"gpt-5.6-luna":  {},

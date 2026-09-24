@@ -1018,3 +1018,13 @@ func TestBillingService_GLM53FallbackPricingWhenPricingServiceUnavailable(t *tes
 		}
 	}
 }
+
+func TestBillingService_GPT6SolFallbackPricing(t *testing.T) {
+	pricing, err := NewBillingService(nil, nil).GetModelPricing("gpt-6-sol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pricing.InputPricePerToken != 2e-6 || pricing.OutputPricePerToken != 10e-6 {
+		t.Fatalf("unexpected gpt-6-sol pricing: %#v", pricing)
+	}
+}
