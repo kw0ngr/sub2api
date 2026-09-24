@@ -40,6 +40,20 @@ func TestCodexManifestEveryRequiredKeyForAstraAndSol(t *testing.T) {
 	})
 }
 
+func TestGPT6SolLunaUpstreamMetadataKeepsNone(t *testing.T) {
+	for _, modelID := range []string{"gpt-6-sol", "gpt-6-luna"} {
+		model := buildLocalCodexModelFromSpec(localCodexModelSpec{
+			Slug: modelID,
+			UpstreamMetadata: []UpstreamModelMetadata{{
+				ID: modelID, Reasoning: task6BoolPtr(true),
+				DefaultReasoningLevel: "none", SupportedReasoningLevels: []string{"none", "low", "max"},
+			}},
+		}, 1)
+		require.Equal(t, "none", model.DefaultReasoningLevel)
+		require.Equal(t, []string{"none", "low", "max"}, localCodexModelEfforts(model))
+	}
+}
+
 func TestCodexManifestBareGPT56EmitsCanonicalSolSlugNoDuplicate(t *testing.T) {
 	// Given
 	groupID := int64(12)

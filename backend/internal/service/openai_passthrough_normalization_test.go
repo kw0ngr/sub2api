@@ -62,6 +62,26 @@ func TestNormalizeOpenAIResponsesReasoningEffortAlias_AstraNoneBecomesLow(t *tes
 	require.Equal(t, "low", gjson.GetBytes(normalized, "reasoning.effort").String())
 }
 
+func TestGPT6SolAndLunaSamplingDependsOnReasoning(t *testing.T) {
+	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+		for _, effort := range []string{"none", "max"} {
+			t.Run(model+"/"+effort, func(t *testing.T) {
+				body := []byte(`{"model":"` + model + `","input":"hi","reasoning_effort":"` + effort + `","temperature":0.7,"top_p":0.8,"logprobs":true,"include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
+				normalized, _, err := normalizeOpenAIResponsesReasoningEffortAlias(body, model)
+				require.NoError(t, err)
+				forwarded, _, err := stripOpenAIResponsesReasoningUnsupportedFieldsBytes(normalized, model)
+				require.NoError(t, err)
+				require.Equal(t, effort, gjson.GetBytes(forwarded, "reasoning.effort").String())
+				require.Equal(t, effort == "none", gjson.GetBytes(forwarded, "temperature").Exists())
+				require.Equal(t, effort == "none", gjson.GetBytes(forwarded, "top_p").Exists())
+				require.Equal(t, effort == "none", gjson.GetBytes(forwarded, "logprobs").Exists())
+				require.Equal(t, effort == "none", strings.Contains(string(forwarded), "message.output_text.logprobs"))
+				require.Contains(t, string(forwarded), "reasoning.encrypted_content")
+			})
+		}
+	}
+}
+
 func TestOpenAIGatewayServiceForward_AstraStripsForbiddenSamplingFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{resp: &http.Response{

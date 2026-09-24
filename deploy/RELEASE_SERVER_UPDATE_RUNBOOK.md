@@ -37,6 +37,19 @@ git diff --check
 - 没有未完成的半截改动。
 - 版本号只改：`backend/cmd/server/VERSION`。
 
+**新增 OpenAI 模型时（目录/价格更新不等于账号已能调用）：**
+
+1. 对目标分组的候选账号逐个用其真实 API Key 直连上游 `POST /v1/responses`，仅对 `HTTP 200 + status=completed` 的账号增加 `credentials.model_mapping`。`GET /models` 成功不是推理探活；`403 model_not_found` 只跳过该模型，不应禁用整个账号。批量改动前备份映射，完成后刷新调度快照。
+2. 用**该分组的用户 Key**跑发布门禁（含流式请求，任一步 404/失败都不能宣称上线完成）：
+
+   ```bash
+   export SUB2API_BASE_URL='https://ib.do' SUB2API_API_KEY='<从密钥管理器获取>'
+   python3 deploy/check_openai_model_routes.py gpt-6-sol gpt-6-luna
+   unset SUB2API_API_KEY
+   ```
+
+   每个实际使用该模型的分组都要单独验收。没有通过上游推理探活的账号，不要因旧型号可用就盲目映射新型号。
+
 按改动范围跑最小验证：
 
 ```bash

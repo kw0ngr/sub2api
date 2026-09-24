@@ -193,12 +193,14 @@ func TestBuildLocalCodexModelsManifestRequiresAPIKeyAccount(t *testing.T) {
 	require.Nil(t, manifest)
 }
 
-func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT56KeepsMax(t *testing.T) {
+func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT6SolLunaKeepNoneAndMax(t *testing.T) {
 	groupID := int64(11)
 	svc := &OpenAIGatewayService{accountRepo: localCodexModelsAccountRepoStub{accounts: []Account{{
 		ID: 621, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		Credentials: map[string]any{"model_mapping": map[string]any{
 			"gpt-6-astra": "gpt-6-astra",
+			"gpt-6-sol":   "gpt-6-sol",
+			"gpt-6-luna":  "gpt-6-luna",
 			"gpt-5.6-sol": "gpt-5.6-sol",
 		}},
 	}}}}
@@ -217,6 +219,10 @@ func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT56KeepsMax(t *testing
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-6-astra"]))
 	require.NotContains(t, localCodexModelEfforts(bySlug["gpt-6-astra"]), "none")
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-5.6-sol"]))
+	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+		require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug[model]))
+		require.Equal(t, "medium", bySlug[model].DefaultReasoningLevel)
+	}
 }
 
 func localCodexModelEfforts(model localCodexModel) []string {

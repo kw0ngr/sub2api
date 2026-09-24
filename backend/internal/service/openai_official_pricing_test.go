@@ -20,6 +20,8 @@ type task4OfficialPrice struct {
 func TestOpenAIOfficialPricingMatrix(t *testing.T) {
 	cases := []task4OfficialPrice{
 		{model: "gpt-6-astra", aliases: []string{"gpt-6-astra", "gpt-6", "openai/gpt-6", "provider/gpt-6-astra-max"}, input: 10e-6, cached: 1e-6, write: 12.5e-6, output: 50e-6},
+		{model: "gpt-6-sol", aliases: []string{"gpt-6-sol", "openai/gpt-6-sol", "provider/gpt-6-sol-max"}, input: 2e-6, cached: 0.2e-6, write: 2.5e-6, output: 10e-6},
+		{model: "gpt-6-luna", aliases: []string{"gpt-6-luna", "openai/gpt-6-luna", "provider/gpt-6-luna-none"}, input: 0.1e-6, cached: 0.01e-6, write: 0.125e-6, output: 0.5e-6},
 		{model: "gpt-5.6-sol", aliases: []string{"gpt-5.6-sol", "gpt-5.6", "gpt5.6", "openai/gpt-5.6", "provider/gpt-5.6-max", "gpt-5.6-2026-07-09"}, input: 4e-6, cached: 0.4e-6, write: 5e-6, output: 20e-6},
 		{model: "gpt-5.6-terra", aliases: []string{"gpt-5.6-terra", "openai/gpt-5.6-terra", "provider/gpt-5.6-terra-max", "gpt-5.6-terra-2026-07-09"}, input: 2e-6, cached: 0.2e-6, write: 2.5e-6, output: 12e-6},
 		{model: "gpt-5.6-luna", aliases: []string{"gpt-5.6-luna", "openai/gpt-5.6-luna", "provider/gpt-5.6-luna-max", "gpt-5.6-luna-2026-07-09"}, input: 0.2e-6, cached: 0.02e-6, write: 0.25e-6, output: 1.2e-6},

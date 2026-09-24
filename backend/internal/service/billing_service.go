@@ -282,6 +282,9 @@ func (s *BillingService) initFallbackPricing() {
 	}
 	// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
 	s.fallbackPrices["gpt-6-astra"] = newOpenAIOfficialModelPricing(10, 1, 12.5, 50)
+	// GPT-6 Sol/Luna published 2026-09-22.
+	s.fallbackPrices["gpt-6-sol"] = newOpenAIOfficialModelPricing(2, 0.2, 2.5, 10)
+	s.fallbackPrices["gpt-6-luna"] = newOpenAIOfficialModelPricing(0.1, 0.01, 0.125, 0.5)
 	// gpt-5.6-sol promotion price, same source/retrieval date as above.
 	s.fallbackPrices["gpt-5.6-sol"] = newOpenAIOfficialModelPricing(4, 0.4, 5, 20)
 	s.fallbackPrices["gpt-5.6-terra"] = newOpenAIOfficialModelPricing(2, 0.2, 2.5, 12)
@@ -331,18 +334,6 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:         false,
 	}
 	s.fallbackPrices["gpt-5.3-codex"] = s.fallbackPrices["gpt-5.1-codex"]
-	s.fallbackPrices["gpt-6-sol"] = &ModelPricing{
-		InputPricePerToken:         2e-6,
-		OutputPricePerToken:        10e-6,
-		CacheCreationPricePerToken: 2.5e-6,
-		CacheReadPricePerToken:     0.2e-6,
-	}
-	s.fallbackPrices["gpt-6-luna"] = &ModelPricing{
-		InputPricePerToken:         0.1e-6,
-		OutputPricePerToken:        0.5e-6,
-		CacheCreationPricePerToken: 0.125e-6,
-		CacheReadPricePerToken:     0.01e-6,
-	}
 	// GLM-5.3 / GLM-5.3-Flash static fallback. Keep billing alive when the
 	// remote model-price file lags a newly published GLM model.
 	s.fallbackPrices["glm-5.3-flash"] = &ModelPricing{
@@ -845,6 +836,7 @@ func isOpenAIGPT54Model(model string) bool {
 	normalized := normalizeCodexModel(strings.TrimSpace(strings.ToLower(model)))
 	return normalized == "gpt-5.4" ||
 		normalized == "gpt-6-astra" ||
+		normalized == "gpt-6-sol" || normalized == "gpt-6-luna" ||
 		normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" || normalized == "gpt-5.6-luna"
 }
 

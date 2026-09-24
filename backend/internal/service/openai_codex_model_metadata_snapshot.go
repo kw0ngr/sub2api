@@ -18,14 +18,15 @@ func applyUpstreamMetadataToLocalCodexModel(model *localCodexModel, metadata Ups
 	if metadata.Reasoning != nil && *metadata.Reasoning {
 		levels := normalizeSnapshotReasoningLevelsForModel(metadata.ID, metadata.SupportedReasoningLevels)
 		uiLevels := make([]string, 0, len(levels))
+		allowNone := isOpenAIGPT6SolOrLunaModel(metadata.ID)
 		for _, level := range levels {
-			if level != "none" {
+			if level != "none" || allowNone {
 				uiLevels = append(uiLevels, level)
 			}
 		}
 		if len(uiLevels) > 0 {
 			model.SupportedReasoningLevels = localCodexReasoningLevels(uiLevels...)
-			if defaultLevel := normalizeSnapshotReasoningLevel(metadata.DefaultReasoningLevel); defaultLevel != "none" && containsString(uiLevels, defaultLevel) {
+			if defaultLevel := normalizeSnapshotReasoningLevel(metadata.DefaultReasoningLevel); containsString(uiLevels, defaultLevel) {
 				model.DefaultReasoningLevel = defaultLevel
 			} else {
 				model.DefaultReasoningLevel = uiLevels[0]

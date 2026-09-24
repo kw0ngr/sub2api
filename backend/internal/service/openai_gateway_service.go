@@ -2310,8 +2310,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// 规范化 reasoning.effort / reasoning_effort，与上游允许值对齐。
-	// - minimal -> none
-	// - max 仅实际上游模型 gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna 保留
+	// - minimal 对 GPT-6 映射为 low；Sol/Luna 的 none 原样保留
+	// - max 仅实际上游支持的 GPT-5.6 / GPT-6 型号保留
 	// - 其他模型（如 gpt-5.5）将 max 映射为 xhigh
 	{
 		modelForEffort := upstreamModel
@@ -6888,6 +6888,17 @@ func stripOpenAIResponsesReasoningUnsupportedFields(reqBody map[string]any, mode
 	if reqBody == nil || !openAIModelUsesResponsesReasoningParameterRestrictions(model) {
 		return false
 	}
+	if isOpenAIGPT6SolOrLunaModel(model) {
+		effort, _ := reqBody["reasoning_effort"].(string)
+		if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
+			if nested, ok := reasoning["effort"].(string); ok {
+				effort = nested
+			}
+		}
+		if strings.EqualFold(strings.TrimSpace(effort), "none") {
+			return false // GPT-6 Sol/Luna allow sampling without reasoning.
+		}
+	}
 	modified := false
 	for _, field := range openAIResponsesReasoningUnsupportedFields {
 		if _, ok := reqBody[field]; ok {
@@ -6939,7 +6950,7 @@ func filterOpenAIResponsesLogprobsInclude(reqBody map[string]any) bool {
 
 func openAIModelUsesResponsesReasoningParameterRestrictions(model string) bool {
 	base := openAIBaseModelIDForEffortSupport(model)
-	return base == "gpt-6-astra" || strings.HasPrefix(base, "gpt-5")
+	return base == "gpt-6-astra" || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
 }
 
 func normalizeOpenAIResponsesReasoningEffortAlias(body []byte, model string) ([]byte, bool, error) {
@@ -7672,7 +7683,10 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 	switch value {
 	case "none", "minimal":
 		baseModel := openAIBaseModelIDForEffortSupport(model)
-		if baseModel == "gpt-6-astra" || baseModel == "grok-4.6" {
+		if value == "none" && isOpenAIGPT6SolOrLunaModel(baseModel) {
+			return "none"
+		}
+		if baseModel == "gpt-6-astra" || baseModel == "grok-4.6" || isOpenAIGPT6SolOrLunaModel(baseModel) {
 			return "low"
 		}
 		return ""
@@ -7700,6 +7714,14 @@ var openAIModelsSupportingMaxReasoning = map[string]struct{}{
 	"gpt-5.6-sol":   {},
 	"gpt-5.6-terra": {},
 	"gpt-5.6-luna":  {},
+}
+
+func isOpenAIGPT6SolOrLunaModel(model string) bool {
+	switch openAIBaseModelIDForEffortSupport(model) {
+	case "gpt-6-sol", "gpt-6-luna":
+		return true
+	}
+	return false
 }
 
 func openAIModelSupportsMaxReasoning(model string) bool {

@@ -22,6 +22,9 @@ func TestShouldAutoInjectPromptCacheKeyForCompat(t *testing.T) {
 	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3"))
 	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3-codex"))
 	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-5.3-codex-spark"))
+	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-6-sol"))
+	require.True(t, shouldAutoInjectPromptCacheKeyForCompat("openai/gpt-6-luna-max"))
+	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-6-unknown"))
 	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-4o"))
 }
 

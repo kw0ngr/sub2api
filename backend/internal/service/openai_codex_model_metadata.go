@@ -141,6 +141,9 @@ func buildLocalCodexModelFromSpec(spec localCodexModelSpec, priority int) localC
 			model.DefaultReasoningLevel = "low"
 		}
 		model.SupportedReasoningLevels = localCodexReasoningLevels("low", "medium", "high", "xhigh", "max")
+		if isOpenAIGPT6SolOrLunaModel(baseModel) {
+			model.SupportedReasoningLevels = localCodexReasoningLevels("none", "low", "medium", "high", "xhigh", "max")
+		}
 		model.ServiceTiers = localCodexFastServiceTiers()
 	case strings.HasPrefix(baseModel, "gpt-5"):
 		model.DefaultReasoningLevel = "medium"

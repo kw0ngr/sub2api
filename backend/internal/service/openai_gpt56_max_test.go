@@ -56,6 +56,17 @@ func TestNormalizeOpenAIReasoningEffortForAstra(t *testing.T) {
 	}
 }
 
+func TestNormalizeOpenAIReasoningEffortForGPT6SolAndLuna(t *testing.T) {
+	for _, model := range []string{"gpt-6-sol", "openai/gpt-6-luna-max"} {
+		require.Equal(t, "none", normalizeOpenAIReasoningEffortForModel("none", model))
+		require.Equal(t, "low", normalizeOpenAIReasoningEffortForModel("minimal", model))
+		require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", model))
+		got := extractOpenAIReasoningEffortFromBody([]byte(`{"reasoning":{"effort":"none"}}`), model)
+		require.NotNil(t, got)
+		require.Equal(t, "none", *got)
+	}
+}
+
 func TestNormalizeOpenAICodexCompactReasoningEffortDowngradesMax(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"compact me","reasoning":{"effort":"max","summary":"auto"}}`)
 
