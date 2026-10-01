@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -123,6 +124,14 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
 	bodyUpper := strings.ToUpper(string(responseBody))
+	if isOpenAIResponsesScopeDenied(account, statusCode, responseBody) {
+		return APIKeyStatusActionIgnore // endpoint permission does not invalidate Chat Completions access
+	}
+	if account.Platform == PlatformAnthropic && statusCode == http.StatusBadRequest {
+		if _, ok := parseAnthropicAPIKeyUsageReset(responseBody); ok {
+			return APIKeyStatusActionTemporaryCooldown
+		}
+	}
 
 	if account.Platform == PlatformOpenAI &&
 		statusCode == http.StatusForbidden &&
@@ -159,7 +168,11 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			return APIKeyStatusActionPermanentDisable
 		case http.StatusTooManyRequests:
 			// insufficient_quota is permanent billing exhaustion, not a temporary rate limit
-			if code == "insufficient_quota" || containsAny(msg, "exceeded your current quota", "insufficient_quota", "no credits remaining", "add credits to continue") {
+			switch code {
+			case "insufficient_quota", "credit_balance_exhausted", "billing_not_active", "account_inactive", "billing_hard_limit_reached":
+				return APIKeyStatusActionPermanentDisable
+			}
+			if containsAny(msg, "exceeded your current quota", "insufficient_quota", "no credits remaining", "add credits to continue") {
 				return APIKeyStatusActionPermanentDisable
 			}
 			return APIKeyStatusActionTemporaryCooldown
@@ -429,6 +442,28 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	// treat as temporary cooldown so the key is not scheduled again immediately.
 	// This covers endpoint-not-found, method-not-allowed, and any future unknown error codes.
 	return APIKeyStatusActionTemporaryCooldown
+}
+
+func isOpenAIResponsesScopeDenied(account *Account, status int, body []byte) bool {
+	return account != nil && account.IsOpenAIApiKey() &&
+		(status == http.StatusUnauthorized || status == http.StatusForbidden) &&
+		strings.Contains(strings.ToLower(extractUpstreamErrorMessage(body)), "missing scopes: api.responses.write")
+}
+
+func parseAnthropicAPIKeyUsageReset(body []byte) (time.Time, bool) {
+	message := extractUpstreamErrorMessage(body)
+	lower := strings.ToLower(message)
+	if !strings.Contains(lower, "reached your specified api usage limits") {
+		return time.Time{}, false
+	}
+	marker := "regain access on "
+	index := strings.Index(lower, marker)
+	if index < 0 {
+		return time.Time{}, false
+	}
+	value := strings.TrimSuffix(strings.TrimSpace(message[index+len(marker):]), ".")
+	reset, err := time.Parse("2006-01-02 at 15:04 UTC", value)
+	return reset, err == nil && reset.After(time.Now())
 }
 
 func isThirdPartyGrokAPIKey(account *Account) bool {
@@ -1115,4 +1150,50 @@ func containsAny(haystack string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// A Responses-only permission error does not prove the API key cannot infer.
+// Only a successful Chat probe may record the reduced endpoint capability.
+func (s *AccountTestService) testOpenAIChatAPIKeyConnection(c *gin.Context, account *Account, model, prompt string, markResponsesUnavailable bool) error {
+	ctx := c.Request.Context()
+	base, err := s.validateUpstreamBaseURL(account.GetOpenAIBaseURL())
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "hi"
+	}
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: model})
+	payload, _ := json.Marshal(map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "max_completion_tokens": 256, "stream": false})
+	status, body, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, buildOpenAICompatibleChatCompletionsURL(PlatformOpenAI, base), map[string]string{"Authorization": "Bearer " + account.GetOpenAIApiKey(), "Content-Type": "application/json"}, payload)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	if status != http.StatusOK {
+		applyTestConnectionAction(ctx, s.accountRepo, account, status, nil, body, model)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", status, body))
+	}
+	var completion struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(body, &completion) != nil || len(completion.Choices) == 0 || strings.TrimSpace(completion.Choices[0].Message.Content) == "" {
+		return s.sendErrorAndEnd(c, "Chat probe returned no completion text")
+	}
+	if markResponsesUnavailable && s.accountRepo != nil {
+		updates := map[string]any{"openai_responses_supported": false}
+		if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+			return s.sendErrorAndEnd(c, "Failed to save Chat-only endpoint capability")
+		}
+		mergeAccountExtra(account, updates)
+	}
+	s.restoreAPIKeySchedulingAfterSuccessfulTest(ctx, account)
+	s.sendEvent(c, TestEvent{Type: "content", Text: completion.Choices[0].Message.Content})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }

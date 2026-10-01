@@ -3811,7 +3811,7 @@ func openAIStreamFailedEventHTTPStatus(payload []byte, message string) int {
 	if isUpstreamModelNotFoundError(http.StatusBadGateway, payload) {
 		return http.StatusNotFound
 	}
-	if containsAny(combined, "insufficient_quota", "exceeded your current quota", "no credits remaining", "add credits to continue", "billing details", "usage_limit", "rate_limit", "quota exceeded") {
+	if containsAny(combined, "insufficient_quota", "credit_balance_exhausted", "billing_not_active", "exceeded your current quota", "no credits remaining", "add credits to continue", "billing details", "usage_limit", "rate_limit", "quota exceeded") {
 		return http.StatusTooManyRequests
 	}
 	if containsAny(combined, "invalid_api_key", "authentication", "unauthorized", "api key invalid") {

@@ -1005,6 +1005,11 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		// 执行临时封禁，冷却后自动恢复调度。
 		now := time.Now()
 		until := now.Add(apiKeyServerErrorCooldown)
+		if account.Platform == PlatformAnthropic && statusCode == http.StatusBadRequest {
+			if reset, ok := parseAnthropicAPIKeyUsageReset(responseBody); ok {
+				until = reset
+			}
+		}
 		if account.Platform == PlatformGLM {
 			if isGLMTransientNetworkError(statusCode, responseBody) {
 				until = now.Add(apiKeyGLMNetworkErrorCooldown)

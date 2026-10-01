@@ -602,11 +602,13 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		mode = normalizeAccountTestMode(prompts[1])
 	}
 
-	// Default to openai.DefaultTestModel for OpenAI testing
+	// API keys and ChatGPT/Codex OAuth use separate probe defaults.
 	testModelID := modelID
 	if testModelID == "" {
 		if account.IsGrok() {
 			testModelID = "grok-4.5"
+		} else if account.IsOpenAIApiKey() {
+			testModelID = openai.DefaultAPIKeyTestModel
 		} else {
 			testModelID = openai.DefaultTestModel
 		}
@@ -621,6 +623,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	if account.IsOpenAI() && mode == AccountTestModeCompact {
 		return s.testOpenAICompactConnection(c, account, testModelID)
+	}
+	if account.IsOpenAIApiKey() && shouldForwardResponsesViaChatCompletions(account) {
+		return s.testOpenAIChatAPIKeyConnection(c, account, testModelID, prompt, false)
 	}
 
 	if isOpenAIImageModel(testModelID) {
@@ -767,6 +772,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if isOpenAIResponsesScopeDenied(account, resp.StatusCode, body) {
+			return s.testOpenAIChatAPIKeyConnection(c, account, testModelID, prompt, true)
+		}
 		requestLocalBuildProbe := isIgnorableGrokBuildProbeError(account, resp.StatusCode, body, testModelID)
 		if requestLocalBuildProbe {
 			slog.Info("grok_build_probe_account_test_health_mutation_skipped", "account_id", account.ID, "status_code", resp.StatusCode)
@@ -1354,6 +1362,12 @@ func applyTestConnectionAction(ctx context.Context, repo AccountRepository, acco
 	if repo == nil || account == nil {
 		return
 	}
+	if account.Platform == PlatformAnthropic && statusCode == http.StatusBadRequest {
+		if reset, ok := parseAnthropicAPIKeyUsageReset(body); ok {
+			_ = repo.SetTempUnschedulable(ctx, account.ID, reset, buildAPIKeyRuntimeErrorMessage(statusCode, body, "API usage limit until reset"))
+			return
+		}
+	}
 	if model := firstRequestedModel(requestedModel); model != "" {
 		if (&RateLimitService{accountRepo: repo}).HandleUpstreamModelNotFound(ctx, account, model, statusCode, body) {
 			return
@@ -1499,60 +1513,14 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Con
 					case "response.completed", "response.done":
 						completedSeen = true
 						return applyExpectedOutputCheck()
-					case "response.failed":
-						errorMsg := "OpenAI response failed"
-						if responseData, ok := data["response"].(map[string]any); ok {
-							if errData, ok := responseData["error"].(map[string]any); ok {
-								if msg, ok := errData["message"].(string); ok && msg != "" {
-									errorMsg = msg
-								}
-							}
-						}
+					case "response.failed", "error":
+						payload := []byte(jsonStr)
+						message := extractUpstreamErrorMessage(payload)
+						status := openAIStreamFailedEventHTTPStatus(payload, message)
 						if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-							payload := []byte(jsonStr)
-							(&RateLimitService{accountRepo: s.accountRepo}).HandleUpstreamModelNotFound(
-								ctx,
-								account,
-								firstRequestedModel(requestedModel),
-								openAIStreamFailedEventHTTPStatus(payload, errorMsg),
-								payload,
-							)
+							applyTestConnectionAction(ctx, s.accountRepo, account, status, nil, payload, requestedModel...)
 						}
-						return s.sendErrorAndEnd(c, errorMsg)
-					case "error":
-						errorMsg := "Unknown error"
-						errorCode := ""
-						if errData, ok := data["error"].(map[string]any); ok {
-							if msg, ok := errData["message"].(string); ok {
-								errorMsg = msg
-							}
-							if code, ok := errData["code"].(string); ok {
-								errorCode = code
-							}
-						}
-						// Structured error event: classify and mark account state.
-						if account != nil && account.Type == AccountTypeAPIKey && s.accountRepo != nil {
-							syntheticBody := []byte(`{"error":{"message":` + fmt.Sprintf("%q", errorMsg) + `,"code":` + fmt.Sprintf("%q", errorCode) + `}}`)
-							if (&RateLimitService{accountRepo: s.accountRepo}).HandleUpstreamModelNotFound(
-								ctx, account, firstRequestedModel(requestedModel), http.StatusForbidden, syntheticBody,
-							) {
-								return s.sendErrorAndEnd(c, errorMsg)
-							}
-							action := ClassifyAPIKeyStatusAction(account, http.StatusForbidden, syntheticBody)
-							switch action {
-							case APIKeyStatusActionPermanentDisable:
-								msg := buildAPIKeyRuntimeErrorMessage(http.StatusForbidden, syntheticBody, "API key permanently disabled after test connection (stream error)")
-								_ = s.accountRepo.SetError(ctx, account.ID, msg)
-								if account.Schedulable {
-									_ = s.accountRepo.SetSchedulable(ctx, account.ID, false)
-								}
-							case APIKeyStatusActionTemporaryCooldown:
-								reason := buildAPIKeyRuntimeErrorMessage(http.StatusForbidden, syntheticBody, "API key temporary cooldown after test connection (stream error)")
-								until := time.Now().Add(apiKeyProbeCooldown)
-								_ = s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason)
-							}
-						}
-						return s.sendErrorAndEnd(c, errorMsg)
+						return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", status, jsonStr))
 					}
 				}
 			}

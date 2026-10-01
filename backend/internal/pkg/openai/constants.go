@@ -51,8 +51,11 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
-// DefaultTestModel default model for testing OpenAI accounts
+// DefaultTestModel is retained for ChatGPT/Codex OAuth probes.
 const DefaultTestModel = "gpt-5.1-codex"
+
+// API keys use a published API model, not a retired ChatGPT/Codex identifier.
+const DefaultAPIKeyTestModel = "gpt-4o-mini"
 
 // DefaultInstructions default instructions for non-Codex CLI requests
 // Content loaded from instructions.txt at compile time

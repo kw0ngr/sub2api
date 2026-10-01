@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -352,4 +353,26 @@ func TestOpenAIBaseModelIDForEffortSupport(t *testing.T) {
 	require.Equal(t, "gpt-5.5", openAIBaseModelIDForEffortSupport("gpt-5.5"))
 	require.True(t, openAIModelSupportsMaxReasoning("gpt-5.6"))
 	require.True(t, openAIModelSupportsMaxReasoning("gpt-5.6-sol"))
+}
+
+func TestAnthropicAPIKeyMonthlyLimitPausesUntilPublishedReset(t *testing.T) {
+	day := time.Now().UTC().AddDate(0, 1, 0).Format("2006-01-02")
+	body := []byte(`{"error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on ` + day + ` at 00:00 UTC."}}`)
+	reset, ok := parseAnthropicAPIKeyUsageReset(body)
+	require.True(t, ok)
+	expected, err := time.Parse("2006-01-02", day)
+	require.NoError(t, err)
+	require.Equal(t, expected, reset)
+	account := &Account{ID: 2187, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(account, 400, body))
+	repo := &rateLimitAccountRepoStub{}
+	applyTestConnectionAction(context.Background(), repo, account, 400, nil, body, "claude-sonnet-4-5-20250929")
+	require.Equal(t, 1, repo.tempCalls)
+	require.Zero(t, repo.setErrorCalls)
+	require.Equal(t, expected, *repo.lastTempUntil)
+	runtimeRepo := &rateLimitAccountRepoStub{}
+	runtime := NewRateLimitService(runtimeRepo, nil, nil, nil, nil)
+	require.True(t, runtime.HandleUpstreamError(context.Background(), account, 400, nil, body))
+	require.Equal(t, expected, *runtimeRepo.lastTempUntil)
+	require.Zero(t, runtimeRepo.setErrorCalls)
 }

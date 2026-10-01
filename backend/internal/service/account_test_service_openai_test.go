@@ -1023,3 +1023,54 @@ func TestIsStreamOnlyErrorText(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAIAPIKeyScopeFallbackIsChatOnlyNotInvalid(t *testing.T) {
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{
+		newJSONResponse(401, `{"error":{"message":"You have insufficient permissions. Missing scopes: api.responses.write."}}`),
+		newJSONResponse(200, `{"choices":[{"message":{"content":"OK"}}]}`),
+	}}
+	repo := &openAIAccountTestRepo{}
+	svc := &AccountTestService{httpUpstream: upstream, accountRepo: repo, cfg: &config.Config{}}
+	account := &Account{ID: 2298, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.openai.com"}}
+	c, _ := newTestContext()
+	err := svc.testOpenAIAccountConnection(c, account, "")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+	firstPayload, _ := io.ReadAll(upstream.requests[0].Body)
+	require.Equal(t, "gpt-4o-mini", gjson.GetBytes(firstPayload, "model").String())
+	require.Equal(t, "/v1/chat/completions", upstream.requests[1].URL.Path)
+	require.Equal(t, false, repo.updatedExtra["openai_responses_supported"])
+	require.Zero(t, repo.setErrorCalls)
+}
+
+func TestOpenAIAPIKeyScopeFallbackStillRejectsReadOnlyKey(t *testing.T) {
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{
+		newJSONResponse(401, `{"error":{"message":"Missing scopes: api.responses.write"}}`),
+		newJSONResponse(401, `{"error":{"code":"missing_scope","message":"Missing scopes: model.request"}}`),
+	}}
+	repo := &openAIAccountTestRepo{}
+	svc := &AccountTestService{httpUpstream: upstream, accountRepo: repo, cfg: &config.Config{}}
+	account := &Account{ID: 2246, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.openai.com"}}
+	c, _ := newTestContext()
+	require.Error(t, svc.testOpenAIAccountConnection(c, account, ""))
+	require.Equal(t, 1, repo.setErrorCalls)
+	_, markedChatOnly := repo.updatedExtra["openai_responses_supported"]
+	require.False(t, markedChatOnly)
+}
+
+func TestOpenAIHealthStreamBillingFailureRemainsStructured(t *testing.T) {
+	repo := &openAIAccountTestRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	account := &Account{ID: 2244, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+	c, _ := newTestContext()
+	body := io.NopCloser(strings.NewReader("data: " + `{"type":"response.failed","response":{"error":{"code":"credit_balance_exhausted","message":"No credits remaining"}}}` + "\n\n"))
+	err := svc.processOpenAIStream(c, context.Background(), account, body, true, "gpt-4o-mini")
+	require.ErrorContains(t, err, "API returned 429")
+	health := buildAPIKeyHealthCheckResultFromScheduledResult(account, &ScheduledTestResult{Status: "failed", ErrorMessage: err.Error()})
+	require.True(t, health.Invalid)
+	require.Equal(t, 429, health.StatusCode)
+	require.Equal(t, 1, repo.setErrorCalls)
+}
