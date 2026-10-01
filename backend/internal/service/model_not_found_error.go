@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -50,6 +51,21 @@ func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
 	return statusCode == http.StatusNotFound &&
 		strings.HasPrefix(message, "model:") &&
 		strings.TrimSpace(strings.TrimPrefix(message, "model:")) != ""
+}
+
+func isOpenAICompatibleModelNotFoundBody(body []byte) bool {
+	code := strings.TrimSpace(extractUpstreamErrorCode(body))
+	if code != "" {
+		return strings.EqualFold(code, "model_not_found")
+	}
+	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	if message == "" && !json.Valid(body) {
+		message = strings.ToLower(strings.TrimSpace(string(body)))
+	}
+	return strings.Contains(message, "unknown provider for model") ||
+		strings.Contains(message, "unknown model") ||
+		strings.Contains(message, "model not found") ||
+		strings.Contains(message, "model is not supported")
 }
 
 func containsNormalizedModelNotFound(text string, keyword string) bool {

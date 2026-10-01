@@ -74,8 +74,11 @@ func localOfficialUpstreamModelMetadata(modelID string) (UpstreamModelMetadata, 
 	levels := []string{"none", "low", "medium", "high", "xhigh", "max"}
 	defaultLevel := "medium"
 	switch canonical {
-	case "gpt-6-astra":
+	case "gpt-6-astra", "gpt-6.1-sol":
 		levels = []string{"low", "medium", "high", "xhigh", "max"}
+		if canonical == "gpt-6.1-sol" {
+			defaultLevel = "low"
+		}
 	case "gpt-5.6-sol":
 		defaultLevel = "low"
 	}

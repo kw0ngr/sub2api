@@ -4,9 +4,14 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/tidwall/gjson"
 )
 
 func NormalizeOpenAICompatRequestedModel(model string) string {
+	if openai.IsGPT61SolModelSpelling(model) {
+		return "gpt-6.1-sol"
+	}
 	trimmed := strings.TrimSpace(model)
 	if trimmed == "" {
 		return ""
@@ -22,6 +27,20 @@ func NormalizeOpenAICompatRequestedModel(model string) string {
 func applyOpenAICompatModelNormalization(req *apicompat.AnthropicRequest) {
 	if req == nil {
 		return
+	}
+	if openai.IsGPT61SolModelSpelling(req.Model) {
+		canonical := strings.ToLower(lastOpenAIModelSegment(req.Model))
+		canonical = strings.ReplaceAll(canonical, "_", "-")
+		if effort, ok := strings.CutPrefix(canonical, "gpt-6.1-sol-"); ok && effort != "openai-compact" {
+			req.Model = "gpt-6.1-sol"
+			if req.OutputConfig == nil {
+				req.OutputConfig = &apicompat.AnthropicOutputConfig{}
+			}
+			if req.OutputConfig.Effort == "" {
+				req.OutputConfig.Effort = effort
+			}
+			return
+		}
 	}
 
 	originalModel := strings.TrimSpace(req.Model)
@@ -47,6 +66,29 @@ func applyOpenAICompatModelNormalization(req *apicompat.AnthropicRequest) {
 		req.OutputConfig = &apicompat.AnthropicOutputConfig{}
 	}
 	req.OutputConfig.Effort = claudeEffort
+}
+
+// validateGPT61SolCompatRequest runs before any compatibility conversion can
+// silently replace or discard an explicit no-reasoning request.
+func validateGPT61SolCompatRequest(body []byte, upstreamModel string) error {
+	if !openai.IsGPT61SolModelSpelling(upstreamModel) {
+		return nil
+	}
+	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {
+		if err := openai.ValidateGPT61SolReasoningEffort(upstreamModel, gjson.GetBytes(body, path).String()); err != nil {
+			return err
+		}
+	}
+	if strings.EqualFold(gjson.GetBytes(body, "thinking.type").String(), "disabled") {
+		return openai.ValidateGPT61SolReasoningEffort(upstreamModel, "none")
+	}
+	requestedModel := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "model").String()))
+	for _, effort := range []string{"none", "minimal"} {
+		if strings.HasSuffix(requestedModel, "-"+effort) {
+			return openai.ValidateGPT61SolReasoningEffort(upstreamModel, effort)
+		}
+	}
+	return nil
 }
 
 func splitOpenAICompatReasoningModel(model string) (normalizedModel string, reasoningEffort string, ok bool) {

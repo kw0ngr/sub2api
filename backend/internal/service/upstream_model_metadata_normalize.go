@@ -114,7 +114,7 @@ func jsonSnapshotReasoningLevels(raw json.RawMessage) []string {
 
 func normalizeSnapshotReasoningLevelsForModel(modelID string, values []string) []string {
 	levels := normalizeSnapshotReasoningLevels(values)
-	if canonicalUpstreamModelID(modelID) != "gpt-6-astra" {
+	if canonicalUpstreamModelID(modelID) != "gpt-6-astra" && canonicalUpstreamModelID(modelID) != "gpt-6.1-sol" {
 		return levels
 	}
 	out := levels[:0]

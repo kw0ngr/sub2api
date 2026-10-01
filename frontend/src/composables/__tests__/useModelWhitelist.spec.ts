@@ -10,13 +10,15 @@ describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.6 官方模型', () => {
     const models = getModelsByPlatform('openai')
 
-    expect(models.slice(1, 4)).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+    expect(models).toEqual(expect.arrayContaining(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']))
+    expect(models.indexOf('gpt-5.6-sol')).toBeLessThan(models.indexOf('gpt-5.6-terra'))
   })
 
   it('openai 模型列表只广告 canonical GPT-6 Astra', () => {
     const models = getModelsByPlatform('openai')
 
     expect(models.filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
+    expect(models.filter((model) => model === 'gpt-6.1-sol')).toHaveLength(1)
     expect(models).not.toContain('gpt-6')
     expect(models).not.toContain('gpt5.6')
     expect(models).not.toContain('gpt-5.6')
@@ -26,6 +28,7 @@ describe('useModelWhitelist', () => {
     const presets = getPresetMappingsByPlatform('openai')
 
     expect(presets.filter((preset) => preset.from === 'gpt-6-astra')).toHaveLength(1)
+    expect(presets.filter((preset) => preset.from === 'gpt-6.1-sol')).toHaveLength(1)
     expect(presets).not.toContainEqual(expect.objectContaining({ from: 'gpt-6' }))
   })
 

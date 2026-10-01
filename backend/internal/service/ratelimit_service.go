@@ -2102,7 +2102,14 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 	if s.accountRepo == nil || !account.ShouldHandleErrorCode(statusCode) {
 		return false
 	}
-	if !isUpstreamModelNotFoundError(statusCode, responseBody) {
+	if statusCode == http.StatusUnauthorized {
+		// Some OpenAI-compatible APIs report an unknown model as 401. Scope this
+		// exception to API keys and explicit model-access wording so ordinary
+		// credential failures still follow the normal 401 disable path.
+		if account.Type != AccountTypeAPIKey || !account.IsOpenAICompatible() || !isOpenAICompatibleModelNotFoundBody(responseBody) {
+			return false
+		}
+	} else if !isUpstreamModelNotFoundError(statusCode, responseBody) {
 		return false
 	}
 	modelKey := strings.TrimSpace(requestedModel)

@@ -54,6 +54,8 @@ var (
 		// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
 		"gpt-6-astra": newOpenAIOfficialLiteLLMPricing(10, 1, 12.5, 50),
 		// GPT-6 Sol/Luna published 2026-09-22.
+		// GPT-6.1 Sol: cache reads are $0.10/MTok (half the GPT-6 Sol rate).
+		"gpt-6.1-sol": newOpenAIOfficialLiteLLMPricing(2, 0.1, 2.5, 10),
 		"gpt-6-sol":   newOpenAIOfficialLiteLLMPricing(2, 0.2, 2.5, 10),
 		"gpt-6-luna":  newOpenAIOfficialLiteLLMPricing(0.1, 0.01, 0.125, 0.5),
 		// gpt-5.6-sol promotion price, same source/retrieval date as above.

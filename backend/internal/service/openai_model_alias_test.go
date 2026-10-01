@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,4 +128,17 @@ func TestOpenAIModelAlias_GPT6SolResolvesAndPreservesMax(t *testing.T) {
 		})
 	}
 	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-6-sol"))
+}
+
+func TestOpenAIModelAlias_GPT61SolResolvesAndPreservesMax(t *testing.T) {
+	for _, model := range []string{"gpt-6.1-sol", "openai/gpt-6.1-sol", "gpt-6.1-sol-max"} {
+		require.Equal(t, "gpt-6.1-sol", normalizeCodexModel(model))
+		require.True(t, isOpenAIOAuthServableModel(model))
+	}
+	require.Equal(t, "max", normalizeOpenAIReasoningEffortForModel("max", "gpt-6.1-sol"))
+	require.False(t, isOpenAIOAuthServableModel("gpt-6.1-sol-preview"))
+	req := &apicompat.AnthropicRequest{Model: "openai/gpt-6.1-sol-max"}
+	applyOpenAICompatModelNormalization(req)
+	require.Equal(t, "gpt-6.1-sol", req.Model)
+	require.Equal(t, "max", req.OutputConfig.Effort)
 }

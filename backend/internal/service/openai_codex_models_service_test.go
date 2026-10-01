@@ -199,6 +199,7 @@ func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT6SolLunaKeepNoneAndMa
 		ID: 621, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		Credentials: map[string]any{"model_mapping": map[string]any{
 			"gpt-6-astra": "gpt-6-astra",
+			"gpt-6.1-sol": "gpt-6.1-sol",
 			"gpt-6-sol":   "gpt-6-sol",
 			"gpt-6-luna":  "gpt-6-luna",
 			"gpt-5.6-sol": "gpt-5.6-sol",
@@ -218,6 +219,14 @@ func TestBuildLocalCodexModelsManifest_AstraOmitsNoneAndGPT6SolLunaKeepNoneAndMa
 	}
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-6-astra"]))
 	require.NotContains(t, localCodexModelEfforts(bySlug["gpt-6-astra"]), "none")
+	gpt61 := bySlug["gpt-6.1-sol"]
+	require.Equal(t, "GPT-6.1 Sol", gpt61.DisplayName)
+	require.Equal(t, "low", gpt61.DefaultReasoningLevel)
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(gpt61))
+	require.Equal(t, 1050000, gpt61.ContextWindow)
+	require.True(t, gpt61.SupportsSearchTool)
+	require.Equal(t, "freeform", gpt61.ApplyPatchToolType)
+	require.False(t, gpt61.UseResponsesLite)
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug["gpt-5.6-sol"]))
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, localCodexModelEfforts(bySlug[model]))

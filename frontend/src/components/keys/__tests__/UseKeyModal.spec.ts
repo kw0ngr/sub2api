@@ -87,6 +87,8 @@ describe('UseKeyModal', () => {
     expect(Object.keys(models).filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
     expect(models['gpt-6-astra'].name).toBe('GPT-6 Astra')
     expect(models['gpt-6-astra'].variants).toHaveProperty('max')
+    expect(models['gpt-6.1-sol'].variants).toHaveProperty('max')
+    expect(models['gpt-6.1-sol'].variants).not.toHaveProperty('none')
     expect(models['gpt-5.6-sol'].variants).toHaveProperty('max')
     expect(models).not.toHaveProperty('gpt-6')
     expect(models).not.toHaveProperty('gpt-5.6')
@@ -168,7 +170,7 @@ describe('UseKeyModal', () => {
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
   })
 
-  it('renders Codex OpenAI config with one Astra and max reasoning', () => {
+  it('renders Codex OpenAI configs with live model discovery and max reasoning', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -192,5 +194,18 @@ describe('UseKeyModal', () => {
     expect(code.match(/gpt-6-astra/g)).toHaveLength(1)
     expect(code).not.toMatch(/model = "gpt-6"/)
     expect(code).toContain('model_reasoning_effort = "max"')
+    expect(code).toContain('model_catalog_url = "https://example.com/v1/models"')
+    expect(code).toContain('api_key_model_discovery = true')
+
+    const websocketTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.codexCliWs')
+    )
+    expect(websocketTab).toBeDefined()
+    await websocketTab!.trigger('click')
+    await nextTick()
+    const websocketCode = wrapper.find('pre code').text()
+    expect(websocketCode).toContain('model_catalog_url = "https://example.com/v1/models"')
+    expect(websocketCode).toContain('api_key_model_discovery = true')
+    expect(websocketCode).toContain('responses_websockets_v2 = true')
   })
 })

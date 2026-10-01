@@ -543,8 +543,12 @@ model_auto_compact_token_limit = 900000
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
+model_catalog_url = "${baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/models"
 wire_api = "responses"
-requires_openai_auth = true`
+requires_openai_auth = true
+
+[features]
+api_key_model_discovery = true`
 
   // auth.json content
   const authContent = `{
@@ -582,11 +586,13 @@ model_auto_compact_token_limit = 900000
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
+model_catalog_url = "${baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/models"
 wire_api = "responses"
 supports_websockets = true
 requires_openai_auth = true
 
 [features]
+api_key_model_discovery = true
 responses_websockets_v2 = true`
 
   // auth.json content
@@ -617,6 +623,12 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
   const openaiModels = {
+	'gpt-6.1-sol': {
+	  name: 'GPT-6.1 Sol',
+	  limit: { context: 1050000, output: 128000 },
+	  options: { store: false },
+	  variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
+	},
 	'gpt-6-sol': {
 	  name: 'GPT-6 Sol',
 	  limit: { context: 1050000, output: 128000 },

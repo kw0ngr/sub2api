@@ -34,7 +34,7 @@ try:
             raise ValueError(f"{model}: missing from /v1/models or Codex manifest")
         payload = json.dumps({
             "model": model, "input": "Reply exactly OK.", "stream": True,
-            "reasoning": {"effort": "low"}, "max_output_tokens": 128,
+            "reasoning": {"effort": "low"}, "max_output_tokens": 256,
         }).encode()
         completed = False
         has_text = False

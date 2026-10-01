@@ -1748,3 +1748,24 @@ func TestAnthropicToResponses_AstraStripsSamplingParameters(t *testing.T) {
 	assert.Nil(t, resp.Temperature)
 	assert.Nil(t, resp.TopP)
 }
+
+func TestAnthropicToResponses_GPT61SolPreservesMaxButRejectsNone(t *testing.T) {
+	temp := 0.7
+	req := &AnthropicRequest{
+		Model: "gpt-6.1-sol", MaxTokens: 256,
+		Messages:     []AnthropicMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		OutputConfig: &AnthropicOutputConfig{Effort: "max"}, Temperature: &temp, TopP: &temp,
+	}
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	require.Equal(t, "max", resp.Reasoning.Effort)
+	require.Nil(t, resp.Temperature)
+	require.Nil(t, resp.TopP)
+	req.OutputConfig.Effort = "none"
+	_, err = AnthropicToResponses(req)
+	require.ErrorContains(t, err, "does not support")
+	req.OutputConfig.Effort = "max"
+	req.Thinking = &AnthropicThinking{Type: "disabled"}
+	_, err = AnthropicToResponses(req)
+	require.ErrorContains(t, err, "does not support")
+}

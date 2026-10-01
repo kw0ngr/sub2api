@@ -1,7 +1,11 @@
 // Package openai provides helpers and types for OpenAI API integration.
 package openai
 
-import _ "embed"
+import (
+	_ "embed"
+	"fmt"
+	"strings"
+)
 
 // Model represents an OpenAI model
 type Model struct {
@@ -16,6 +20,7 @@ type Model struct {
 // DefaultModels OpenAI models list
 var DefaultModels = []Model{
 	{ID: "gpt-6-astra", Object: "model", Created: 1783555200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Astra"},
+	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
 	{ID: "gpt-6-luna", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Luna"},
 	{ID: "gpt-5.6-sol", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Sol"},
@@ -54,3 +59,36 @@ const DefaultTestModel = "gpt-5.1-codex"
 //
 //go:embed instructions.txt
 var DefaultInstructions string
+
+// IsGPT61SolModelSpelling recognizes the published ID and supported local aliases.
+func IsGPT61SolModelSpelling(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndexByte(model, '/'); idx >= 0 {
+		model = model[idx+1:]
+	}
+	model = strings.ReplaceAll(model, "_", "-")
+	if model == "gpt-6.1-sol" {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(model, "gpt-6.1-sol-")
+	if !ok {
+		return false
+	}
+	switch suffix {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateGPT61SolReasoningEffort keeps unsupported no-reasoning requests visible to callers.
+func ValidateGPT61SolReasoningEffort(model, effort string) error {
+	if IsGPT61SolModelSpelling(model) {
+		switch strings.ToLower(strings.TrimSpace(effort)) {
+		case "none", "minimal":
+			return fmt.Errorf("gpt-6.1-sol does not support reasoning effort %q; use low, medium, high, xhigh or max", effort)
+		}
+	}
+	return nil
+}

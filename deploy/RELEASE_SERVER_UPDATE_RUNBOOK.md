@@ -44,7 +44,7 @@ git diff --check
 
    ```bash
    export SUB2API_BASE_URL='https://ib.do' SUB2API_API_KEY='<从密钥管理器获取>'
-   python3 deploy/check_openai_model_routes.py gpt-6-sol gpt-6-luna
+   python3 deploy/check_openai_model_routes.py gpt-6.1-sol gpt-6-sol gpt-6-luna
    unset SUB2API_API_KEY
    ```
 

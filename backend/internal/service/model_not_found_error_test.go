@@ -47,3 +47,20 @@ func TestIsUpstreamModelNotFoundError_ResponsesFailureWrappedAs502(t *testing.T)
 	require.False(t, isUpstreamModelNotFoundError(http.StatusBadGateway, []byte(`{"error":{"message":"endpoint not found"}}`)))
 	require.False(t, isUpstreamModelNotFoundError(http.StatusOK, nested))
 }
+
+func TestIsOpenAICompatibleModelNotFoundBody(t *testing.T) {
+	for _, body := range [][]byte{
+		[]byte(`{"error":{"code":"model_not_found","message":"not authorized"}}`),
+		[]byte(`{"error":{"message":"unknown provider for model gpt-x"}}`),
+		[]byte(`{"error":{"message":"unknown model gpt-x"}}`),
+		[]byte(`{"error":{"message":"model is not supported"}}`),
+	} {
+		require.True(t, isOpenAICompatibleModelNotFoundBody(body), string(body))
+	}
+	for _, body := range [][]byte{
+		[]byte(`{"error":{"code":"invalid_api_key","message":"unknown model gpt-x"}}`),
+		[]byte(`{"error":{"message":"invalid API key"}}`),
+	} {
+		require.False(t, isOpenAICompatibleModelNotFoundBody(body), string(body))
+	}
+}

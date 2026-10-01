@@ -1774,6 +1774,29 @@ func TestChatCompletionsToResponses_GPT56PreservesNoneAndMaxReasoning(t *testing
 	}
 }
 
+func TestChatCompletionsToResponses_GPT61SolValidatesReasoningAndStripsSampling(t *testing.T) {
+	temp := 0.7
+	req := &ChatCompletionsRequest{
+		Model: "gpt-6.1-sol", Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"Hi"`)}},
+		ReasoningEffort: "max", Temperature: &temp, TopP: &temp,
+	}
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.Equal(t, "max", resp.Reasoning.Effort)
+	require.Nil(t, resp.Temperature)
+	require.Nil(t, resp.TopP)
+
+	for _, effort := range []string{"none", "minimal"} {
+		req.ReasoningEffort = effort
+		_, err := ChatCompletionsToResponses(req)
+		require.ErrorContains(t, err, "does not support")
+		req.ReasoningEffort = ""
+		req.Reasoning = &ResponsesReasoning{Effort: effort}
+		_, err = ChatCompletionsToResponses(req)
+		require.ErrorContains(t, err, "does not support")
+	}
+}
+
 func TestChatCompletionsToResponses_NonReasoningSamplingFieldsRemain(t *testing.T) {
 	temp := 0.7
 	req := &ChatCompletionsRequest{

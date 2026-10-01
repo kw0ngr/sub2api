@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 // AnthropicToResponses converts an Anthropic Messages request directly into
@@ -11,6 +13,16 @@ import (
 // Chat Completions intermediary round-trip (e.g. thinking, cache_control,
 // structured system prompts).
 func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
+	if req.Thinking != nil && strings.EqualFold(req.Thinking.Type, "disabled") {
+		if err := openai.ValidateGPT61SolReasoningEffort(req.Model, "none"); err != nil {
+			return nil, err
+		}
+	}
+	if req.OutputConfig != nil {
+		if err := openai.ValidateGPT61SolReasoningEffort(req.Model, req.OutputConfig.Effort); err != nil {
+			return nil, err
+		}
+	}
 	input, err := convertAnthropicToResponsesInput(req.System, req.Messages)
 	if err != nil {
 		return nil, err
@@ -63,9 +75,10 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	if req.OutputConfig != nil && req.OutputConfig.Effort != "" {
 		effort = req.OutputConfig.Effort
 	}
-	out.Reasoning = &ResponsesReasoning{
-		Effort:  mapAnthropicEffortToResponses(effort),
-		Summary: "auto",
+	if openai.IsGPT61SolModelSpelling(req.Model) && effort == "max" {
+		out.Reasoning = &ResponsesReasoning{Effort: "max", Summary: "auto"}
+	} else {
+		out.Reasoning = &ResponsesReasoning{Effort: mapAnthropicEffortToResponses(effort), Summary: "auto"}
 	}
 
 	// Convert tool_choice
@@ -491,7 +504,7 @@ func boolPtr(v bool) *bool {
 // "Unsupported parameter: temperature" if these fields are present.
 func isReasoningModel(model string) bool {
 	base := responsesReasoningModelKey(model)
-	return strings.HasPrefix(base, "gpt-5") || base == "gpt-6-astra"
+	return strings.HasPrefix(base, "gpt-5") || base == "gpt-6-astra" || openai.IsGPT61SolModelSpelling(base)
 }
 
 // normalizeToolParameters ensures the tool parameter schema is valid for

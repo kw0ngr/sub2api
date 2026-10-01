@@ -283,6 +283,7 @@ func (s *BillingService) initFallbackPricing() {
 	// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
 	s.fallbackPrices["gpt-6-astra"] = newOpenAIOfficialModelPricing(10, 1, 12.5, 50)
 	// GPT-6 Sol/Luna published 2026-09-22.
+	s.fallbackPrices["gpt-6.1-sol"] = newOpenAIOfficialModelPricing(2, 0.1, 2.5, 10)
 	s.fallbackPrices["gpt-6-sol"] = newOpenAIOfficialModelPricing(2, 0.2, 2.5, 10)
 	s.fallbackPrices["gpt-6-luna"] = newOpenAIOfficialModelPricing(0.1, 0.01, 0.125, 0.5)
 	// gpt-5.6-sol promotion price, same source/retrieval date as above.
@@ -412,7 +413,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		strings.Contains(modelLower, "gpt-6") || strings.Contains(modelLower, "codex") {
 		normalized := normalizeCodexModel(modelLower)
 		switch normalized {
-		case "gpt-6-sol", "gpt-6-luna":
+		case "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
 			return s.fallbackPrices[normalized]
 		case "gpt-6-astra":
 			return s.fallbackPrices["gpt-6-astra"]
@@ -836,6 +837,7 @@ func isOpenAIGPT54Model(model string) bool {
 	normalized := normalizeCodexModel(strings.TrimSpace(strings.ToLower(model)))
 	return normalized == "gpt-5.4" ||
 		normalized == "gpt-6-astra" ||
+		normalized == "gpt-6.1-sol" ||
 		normalized == "gpt-6-sol" || normalized == "gpt-6-luna" ||
 		normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" || normalized == "gpt-5.6-luna"
 }

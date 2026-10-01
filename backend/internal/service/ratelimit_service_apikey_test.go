@@ -111,6 +111,65 @@ func TestRateLimitService_HandleUpstreamError_OpenAIResponsesModelNotFound502Use
 	require.Len(t, repo.modelRateLimitResets, 1)
 }
 
+func TestRateLimitService_HandleUpstreamError_OpenAICompatibleAPIKey401UnknownModelUsesModelCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 1151, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	model := "gpt-6-luna"
+	body := []byte(`{"error":{"message":"unknown model gpt-6-luna"}}`)
+
+	openAIGateway := &OpenAIGatewayService{}
+	require.True(t, openAIGateway.shouldFailoverOpenAIUpstreamResponseForAccount(
+		account, http.StatusUnauthorized, "unknown model gpt-6-luna", body, model,
+	))
+
+	handled := svc.HandleUpstreamError(
+		context.Background(), account, http.StatusUnauthorized, http.Header{},
+		body, model,
+	)
+
+	require.True(t, handled)
+	require.Equal(t, []string{model}, repo.modelRateLimitScopes)
+	require.Len(t, repo.modelRateLimitResets, 1)
+	require.WithinDuration(t, time.Now().Add(30*time.Minute), repo.modelRateLimitResets[0], 5*time.Second)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.tempCalls)
+}
+
+func TestRateLimitService_HandleUpstreamError_APIKey401InvalidCredentialsRemainAccountErrors(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 1152, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	handled := svc.HandleUpstreamError(
+		context.Background(), account, http.StatusUnauthorized, http.Header{},
+		[]byte(`{"error":{"code":"invalid_api_key","message":"invalid API key"}}`), "gpt-6-luna",
+	)
+
+	require.True(t, handled)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Empty(t, repo.modelRateLimitScopes)
+	require.Zero(t, repo.tempCalls)
+}
+
+func TestRateLimitService_HandleUpstreamModelNotFound_401StaysScopedToCompatibleAPIKeys(t *testing.T) {
+	for _, account := range []*Account{
+		{ID: 1153, Platform: PlatformAnthropic, Type: AccountTypeAPIKey},
+		{ID: 1154, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+	} {
+		repo := &rateLimitAccountRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+		handled := svc.HandleUpstreamModelNotFound(
+			context.Background(), account, "gpt-6-luna", http.StatusUnauthorized,
+			[]byte(`{"error":{"code":"model_not_found","message":"unknown model gpt-6-luna"}}`),
+		)
+
+		require.False(t, handled, "platform=%s type=%s", account.Platform, account.Type)
+		require.Empty(t, repo.modelRateLimitScopes)
+	}
+}
+
 func TestRateLimitService_HandleUpstreamError_OpenAICallIDTooLongDoesNotTempUnscheduleKey(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

@@ -2137,6 +2137,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("openai ws v1 is temporarily unsupported; use ws v2")
 	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
+	validatedModel := reqModel
+	if !passthroughEnabled {
+		validatedModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(reqModel))
+	}
+	if err := validateGPT61SolCompatRequest(body, validatedModel); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": err.Error()}})
+		return nil, err
+	}
 	if passthroughEnabled {
 		normalizedBody, normalized, err := normalizeOpenAIResponsesReasoningCompatibilityBody(body, reqModel)
 		if err != nil {
@@ -6950,7 +6958,7 @@ func filterOpenAIResponsesLogprobsInclude(reqBody map[string]any) bool {
 
 func openAIModelUsesResponsesReasoningParameterRestrictions(model string) bool {
 	base := openAIBaseModelIDForEffortSupport(model)
-	return base == "gpt-6-astra" || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
+	return base == "gpt-6-astra" || openai.IsGPT61SolModelSpelling(base) || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
 }
 
 func normalizeOpenAIResponsesReasoningEffortAlias(body []byte, model string) ([]byte, bool, error) {
@@ -7709,6 +7717,7 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 // model IDs that accept reasoning.effort="max". There is no bare "gpt-5.6".
 var openAIModelsSupportingMaxReasoning = map[string]struct{}{
 	"gpt-6-astra":   {},
+	"gpt-6.1-sol":   {},
 	"gpt-6-sol":     {},
 	"gpt-6-luna":    {},
 	"gpt-5.6-sol":   {},

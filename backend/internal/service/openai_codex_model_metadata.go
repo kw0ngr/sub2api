@@ -137,7 +137,7 @@ func buildLocalCodexModelFromSpec(spec localCodexModelSpec, priority int) localC
 	switch {
 	case openAIModelSupportsMaxReasoning(baseModel):
 		model.DefaultReasoningLevel = "medium"
-		if baseModel == "gpt-5.6-sol" {
+		if baseModel == "gpt-5.6-sol" || baseModel == "gpt-6.1-sol" {
 			model.DefaultReasoningLevel = "low"
 		}
 		model.SupportedReasoningLevels = localCodexReasoningLevels("low", "medium", "high", "xhigh", "max")
@@ -153,10 +153,14 @@ func buildLocalCodexModelFromSpec(spec localCodexModelSpec, priority int) localC
 		model.DefaultReasoningLevel = "medium"
 		model.SupportedReasoningLevels = localCodexReasoningLevels("low", "medium", "high")
 	}
-	if baseModel == "gpt-6-astra" {
+	if baseModel == "gpt-6-astra" || baseModel == "gpt-6.1-sol" {
 		model.SupportsSearchTool = true
 		model.ApplyPatchToolType = "freeform"
 		model.CompHash = "3000"
+		if baseModel == "gpt-6.1-sol" {
+			model.WebSearchToolType = "text_and_image"
+			model.SupportsImageDetailOriginal = true
+		}
 	}
 	if len(spec.UpstreamMetadata) > 0 {
 		applyUpstreamMetadataToLocalCodexModel(&model, unionUpstreamModelMetadata(spec.UpstreamMetadata), spec.ForceAPIKey)
