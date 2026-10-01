@@ -58,3 +58,14 @@ func TestApplyGrokCLIRequestHeadersAccountOverridesClientIdentity(t *testing.T) 
 	require.Equal(t, "account-client", headers.Get("x-grok-client-identifier"))
 	require.Equal(t, "interactive", headers.Get("x-grok-client-mode"))
 }
+
+func TestGrok47CatalogDoesNotExpandImplicitFreeCLIAccountMapping(t *testing.T) {
+	free := &Account{Platform: PlatformGrok, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"base_url": "https://cli-chat-proxy.grok.com/v1"}}
+	require.True(t, free.IsModelSupported("grok-4.5"))
+	require.False(t, free.IsModelSupported("grok-4.7"))
+	paid := &Account{Platform: PlatformGrok, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.x.ai/v1"}}
+	require.True(t, paid.IsModelSupported("grok-4.7"))
+	require.Equal(t, "grok-4.7", paid.GetMappedModel("grok-4.7-latest"))
+}

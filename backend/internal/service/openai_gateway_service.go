@@ -7694,7 +7694,8 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 		if value == "none" && isOpenAIGPT6SolOrLunaModel(baseModel) {
 			return "none"
 		}
-		if baseModel == "gpt-6-astra" || baseModel == "grok-4.6" || isOpenAIGPT6SolOrLunaModel(baseModel) {
+		grokModel := strings.TrimSuffix(baseModel, "-latest")
+		if baseModel == "gpt-6-astra" || grokModel == "grok-4.6" || grokModel == "grok-4.7" || isOpenAIGPT6SolOrLunaModel(baseModel) {
 			return "low"
 		}
 		return ""

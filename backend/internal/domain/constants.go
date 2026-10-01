@@ -42,6 +42,8 @@ var supportedPlatforms = []string{
 var DefaultGrokModelMapping = map[string]string{
 	"grok":                         "grok-4.5",
 	"grok-latest":                  "grok-4.5",
+	"grok-4.7":                     "grok-4.7",
+	"grok-4.7-latest":              "grok-4.7",
 	"grok-4.6":                     "grok-4.6",
 	"grok-4.5":                     "grok-4.5",
 	"grok-4.5-latest":              "grok-4.5",

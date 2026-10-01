@@ -196,17 +196,20 @@ func TestForwardAsChatCompletions_Grok46NormalizesReasoningEffort(t *testing.T) 
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name  string
+		model string
+		in    string
+		want  string
 	}{
-		{name: "none uses minimum supported effort", in: "none", want: "low"},
-		{name: "max uses highest supported effort", in: "max", want: "xhigh"},
+		{name: "none uses minimum supported effort", model: "grok-4.6", in: "none", want: "low"},
+		{name: "max uses highest supported effort", model: "grok-4.6", in: "max", want: "xhigh"},
+		{name: "grok47 none uses low", model: "grok-4.7", in: "none", want: "low"},
+		{name: "grok47 max uses xhigh", model: "grok-4.7", in: "max", want: "xhigh"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := []byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"` + tt.in + `"}`)
+			body := []byte(`{"model":"` + tt.model + `","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"` + tt.in + `"}`)
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
@@ -229,7 +232,7 @@ func TestForwardAsChatCompletions_Grok46NormalizesReasoningEffort(t *testing.T) 
 				},
 			}
 
-			result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "grok-4.6")
+			result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", tt.model)
 
 			require.Error(t, err)
 			require.Nil(t, result)

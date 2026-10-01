@@ -64,6 +64,17 @@ var (
 		"gpt-5.6-luna":  newOpenAIOfficialLiteLLMPricing(0.2, 0.02, 0.25, 1.2),
 	}
 	xAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		"grok-4.7": {
+			InputCostPerToken:               2e-6,
+			OutputCostPerToken:              6e-6,
+			CacheReadInputTokenCost:         0.5e-6,
+			LongContextInputTokenThreshold:  200000,
+			LongContextInputCostMultiplier:  2.0,
+			LongContextOutputCostMultiplier: 2.0,
+			LiteLLMProvider:                 "xai",
+			Mode:                            "chat",
+			SupportsPromptCaching:           true,
+		},
 		// xAI GET /v1/models/grok-4.6 reports USD $2/$0.50/$6 per MTok
 		// for input/cache-read/output and doubles all three above 200k input tokens.
 		"grok-4.6": {
@@ -736,6 +747,9 @@ func normalizeModelNameForPricing(model string) string {
 	}
 
 	model = strings.TrimLeft(model, "/")
+	if lastSegment(model) == "grok-4.7-latest" {
+		model = "grok-4.7"
+	}
 	return normalizeGeminiThinkingTierAlias(model)
 }
 

@@ -277,3 +277,30 @@ func TestLatestGeminiFlashThinkingTiersAreBillable(t *testing.T) {
 		}
 	}
 }
+
+func TestGrok47PricingSurvivesMissingRemoteAndPreservesLongContextBoundary(t *testing.T) {
+	static := &PricingService{pricingData: map[string]*LiteLLMModelPricing{}}
+	dynamic := task4DynamicPricingService(t)
+	for _, prices := range []*PricingService{static, dynamic} {
+		for _, model := range []string{"grok-4.7", "grok-4.7-latest", "x-ai/grok-4.7-latest"} {
+			price := prices.GetModelPricing(model)
+			require.NotNil(t, price, model)
+			require.InDelta(t, 2e-6, price.InputCostPerToken, 1e-12)
+			require.InDelta(t, 0.5e-6, price.CacheReadInputTokenCost, 1e-12)
+			require.InDelta(t, 6e-6, price.OutputCostPerToken, 1e-12)
+		}
+	}
+	for _, svc := range []*BillingService{NewBillingService(nil, nil), NewBillingService(nil, dynamic)} {
+		price, err := svc.GetModelPricing("grok-4.7-latest")
+		require.NoError(t, err)
+		require.InDelta(t, 2e-6, price.InputPricePerToken, 1e-12)
+		boundary, err := svc.CalculateCost("grok-4.7", UsageTokens{InputTokens: 199000, CacheReadTokens: 1000, OutputTokens: 100}, 1)
+		require.NoError(t, err)
+		require.InDelta(t, 199000*2e-6+1000*0.5e-6+100*6e-6, boundary.TotalCost, 1e-10)
+		above, err := svc.CalculateCost("grok-4.7", UsageTokens{InputTokens: 199001, CacheReadTokens: 1000, OutputTokens: 100}, 1)
+		require.NoError(t, err)
+		require.InDelta(t, (199001*2e-6+1000*0.5e-6+100*6e-6)*2, above.TotalCost, 1e-10)
+	}
+	require.Nil(t, static.GetModelPricing("grok-4.7-fast"))
+	require.Nil(t, static.GetModelPricing("grok-4.7-preview"))
+}

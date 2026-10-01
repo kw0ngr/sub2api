@@ -37,6 +37,9 @@ func TestDefaultModelsExposeReasoningEffortForGrokCLI(t *testing.T) {
 	if got := byID["grok-4.6"]; !got.supports || got.effort != "high" {
 		t.Fatalf("grok-4.6 reasoning metadata = %+v, want supports=true effort=high", got)
 	}
+	if got := byID["grok-4.7"]; !got.supports || got.effort != "high" {
+		t.Fatalf("grok-4.7 reasoning metadata = %+v, want supports=true effort=high", got)
+	}
 	if got := byID["grok-4.20-0309-non-reasoning"]; got.supports || got.effort != "" {
 		t.Fatalf("non-reasoning model metadata = %+v, want supports=false with no effort", got)
 	}
@@ -61,6 +64,11 @@ func TestDefaultModelMappingIncludesComposerLegacyAlias(t *testing.T) {
 
 	if got := mapping["grok-4.6"]; got != "grok-4.6" {
 		t.Fatalf("grok-4.6 mapping = %q, want identity mapping", got)
+	}
+	for _, id := range []string{"grok-4.7", "grok-4.7-latest"} {
+		if mapping[id] != "grok-4.7" {
+			t.Fatalf("%s mapping = %q, want grok-4.7", id, mapping[id])
+		}
 	}
 	if got := mapping["composer-2.5"]; got != "grok-composer-2.5-fast" {
 		t.Fatalf("composer-2.5 mapping = %q, want grok-composer-2.5-fast", got)

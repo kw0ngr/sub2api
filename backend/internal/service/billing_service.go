@@ -347,11 +347,23 @@ func (s *BillingService) initFallbackPricing() {
 		OutputPricePerToken:    4.4e-6,
 		CacheReadPricePerToken: 0.26e-6,
 	}
+	s.fallbackPrices["grok-4.7"] = &ModelPricing{
+		InputPricePerToken:          2e-6,
+		OutputPricePerToken:         6e-6,
+		CacheReadPricePerToken:      0.5e-6,
+		LongContextInputThreshold:   200000,
+		LongContextInputMultiplier:  2,
+		LongContextOutputMultiplier: 2,
+	}
 }
 
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
+	switch lastSegment(strings.TrimSpace(modelLower)) {
+	case "grok-4.7", "grok-4.7-latest":
+		return s.fallbackPrices["grok-4.7"]
+	}
 
 	// 按模型系列匹配
 	if strings.Contains(modelLower, "opus") {
@@ -803,7 +815,12 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	if pricing == nil {
 		return nil
 	}
-	if !isOpenAIGPT54Model(model) {
+	threshold := openAIGPT54LongContextInputThreshold
+	inputMultiplier, outputMultiplier := openAIGPT54LongContextInputMultiplier, openAIGPT54LongContextOutputMultiplier
+	modelID := lastSegment(strings.ToLower(strings.TrimSpace(model)))
+	if modelID == "grok-4.7" || modelID == "grok-4.7-latest" {
+		threshold, inputMultiplier, outputMultiplier = 200000, 2, 2
+	} else if !isOpenAIGPT54Model(model) {
 		return pricing
 	}
 	if pricing.LongContextInputThreshold > 0 && pricing.LongContextInputMultiplier > 0 && pricing.LongContextOutputMultiplier > 0 {
@@ -811,13 +828,13 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	}
 	cloned := *pricing
 	if cloned.LongContextInputThreshold <= 0 {
-		cloned.LongContextInputThreshold = openAIGPT54LongContextInputThreshold
+		cloned.LongContextInputThreshold = threshold
 	}
 	if cloned.LongContextInputMultiplier <= 0 {
-		cloned.LongContextInputMultiplier = openAIGPT54LongContextInputMultiplier
+		cloned.LongContextInputMultiplier = inputMultiplier
 	}
 	if cloned.LongContextOutputMultiplier <= 0 {
-		cloned.LongContextOutputMultiplier = openAIGPT54LongContextOutputMultiplier
+		cloned.LongContextOutputMultiplier = outputMultiplier
 	}
 	return &cloned
 }
