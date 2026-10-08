@@ -68,24 +68,24 @@ func applyOpenAICompatModelNormalization(req *apicompat.AnthropicRequest) {
 	req.OutputConfig.Effort = claudeEffort
 }
 
-// validateGPT61SolCompatRequest runs before any compatibility conversion can
+// validateOpenAIModelReasoningCompatRequest runs before any compatibility conversion can
 // silently replace or discard an explicit no-reasoning request.
-func validateGPT61SolCompatRequest(body []byte, upstreamModel string) error {
-	if !openai.IsGPT61SolModelSpelling(upstreamModel) {
+func validateOpenAIModelReasoningCompatRequest(body []byte, upstreamModel string) error {
+	if !openai.IsGPT61SolModelSpelling(upstreamModel) && !openai.IsChatLatestModelSpelling(upstreamModel) {
 		return nil
 	}
 	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {
-		if err := openai.ValidateGPT61SolReasoningEffort(upstreamModel, gjson.GetBytes(body, path).String()); err != nil {
+		if err := openai.ValidateModelReasoningEffort(upstreamModel, gjson.GetBytes(body, path).String()); err != nil {
 			return err
 		}
 	}
 	if strings.EqualFold(gjson.GetBytes(body, "thinking.type").String(), "disabled") {
-		return openai.ValidateGPT61SolReasoningEffort(upstreamModel, "none")
+		return openai.ValidateModelReasoningEffort(upstreamModel, "none")
 	}
 	requestedModel := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 	for _, effort := range []string{"none", "minimal"} {
 		if strings.HasSuffix(requestedModel, "-"+effort) {
-			return openai.ValidateGPT61SolReasoningEffort(upstreamModel, effort)
+			return openai.ValidateModelReasoningEffort(upstreamModel, effort)
 		}
 	}
 	return nil

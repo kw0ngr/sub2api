@@ -25,6 +25,9 @@ func canonicalizeOpenAIModelAliasSpelling(model string) string {
 	if strings.HasPrefix(normalized, "gpt5") {
 		normalized = "gpt-5" + strings.TrimPrefix(normalized, "gpt5")
 	}
+	if normalized == "chat-latest" {
+		return normalized
+	}
 	if !strings.HasPrefix(normalized, "gpt-") && !strings.Contains(normalized, "codex") {
 		return ""
 	}

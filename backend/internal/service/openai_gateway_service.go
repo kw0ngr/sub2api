@@ -2141,7 +2141,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if !passthroughEnabled {
 		validatedModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(reqModel))
 	}
-	if err := validateGPT61SolCompatRequest(body, validatedModel); err != nil {
+	if err := validateOpenAIModelReasoningCompatRequest(body, validatedModel); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": err.Error()}})
 		return nil, err
 	}
@@ -6958,7 +6958,7 @@ func filterOpenAIResponsesLogprobsInclude(reqBody map[string]any) bool {
 
 func openAIModelUsesResponsesReasoningParameterRestrictions(model string) bool {
 	base := openAIBaseModelIDForEffortSupport(model)
-	return base == "gpt-6-astra" || openai.IsGPT61SolModelSpelling(base) || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
+	return base == "gpt-6-astra" || openai.IsChatLatestModelSpelling(base) || openai.IsGPT61SolModelSpelling(base) || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
 }
 
 func normalizeOpenAIResponsesReasoningEffortAlias(body []byte, model string) ([]byte, bool, error) {

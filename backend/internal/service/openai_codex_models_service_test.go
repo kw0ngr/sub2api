@@ -173,6 +173,8 @@ func TestBuildLocalCodexModelsManifestFallsBackToDefaultCatalogForWildcardAPIKey
 	require.NoError(t, err)
 	require.Contains(t, string(manifest.Body), `"slug":"gpt-5.6-sol"`)
 	require.NotContains(t, string(manifest.Body), `"slug":"gpt-*"`)
+	require.NotContains(t, string(manifest.Body), `"slug":"chat-latest"`)
+	require.NotContains(t, string(manifest.Body), `"slug":"codex-auto-review"`)
 }
 
 func TestBuildLocalCodexModelsManifestRequiresAPIKeyAccount(t *testing.T) {

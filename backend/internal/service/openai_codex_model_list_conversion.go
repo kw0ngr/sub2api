@@ -1,9 +1,75 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
+	"sort"
 	"strings"
 )
+
+func projectRemoteCodexModelsManifest(body []byte, account *Account) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, err
+	}
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["models"], &entries); err != nil {
+		return nil, err
+	}
+	byID := make(map[string]map[string]json.RawMessage, len(entries))
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		id := rawModelID(entry)
+		if _, exists := byID[id]; exists {
+			continue
+		}
+		byID[id] = entry
+		ids = append(ids, id)
+	}
+	var aliases []string
+	mapping := account.GetModelMapping()
+	for id := range mapping {
+		if _, exists := byID[id]; !exists && !strings.Contains(id, "*") {
+			aliases = append(aliases, id)
+		}
+	}
+	sort.Strings(aliases)
+	ids = append(ids, aliases...)
+	projected := make([]map[string]json.RawMessage, 0, len(ids))
+	for _, id := range ids {
+		if id == "" || (len(mapping) > 0 && !account.IsModelSupported(id)) {
+			continue
+		}
+		target := account.GetMappedModel(id)
+		if strings.Contains(target, "*") {
+			target = id
+		}
+		entry, ok := byID[target]
+		if !ok {
+			continue
+		}
+		copy := cloneRawMessageMap(entry)
+		copy["slug"], _ = json.Marshal(id)
+		// Codex requires an array, not null, for service_tiers.
+		if bytes.Equal(bytes.TrimSpace(copy["service_tiers"]), []byte("null")) {
+			copy["service_tiers"] = json.RawMessage("[]")
+		}
+		projected = append(projected, copy)
+	}
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		return nil, err
+	}
+	original, err := json.Marshal(entries)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(original, encoded) {
+		return body, nil
+	}
+	envelope["models"] = encoded
+	return json.Marshal(envelope)
+}
 
 func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Account) ([]byte, bool) {
 	var envelope map[string]json.RawMessage

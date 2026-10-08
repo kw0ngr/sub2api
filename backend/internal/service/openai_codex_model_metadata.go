@@ -162,6 +162,17 @@ func buildLocalCodexModelFromSpec(spec localCodexModelSpec, priority int) localC
 			model.SupportsImageDetailOriginal = true
 		}
 	}
+	if baseModel == "chat-latest" {
+		model.Description = "Latest ChatGPT Instant model routed through Sub2API."
+		model.ContextWindow = 400000
+		model.MaxContextWindow = 400000
+		model.InputModalities = []string{"text", "image"}
+		model.SupportsParallelToolCalls = true
+		model.SupportsSearchTool = true
+		model.DefaultReasoningLevel = "medium"
+		model.SupportedReasoningLevels = localCodexReasoningLevels("medium")
+		model.DefaultReasoningSummary = "auto"
+	}
 	if len(spec.UpstreamMetadata) > 0 {
 		applyUpstreamMetadataToLocalCodexModel(&model, unionUpstreamModelMetadata(spec.UpstreamMetadata), spec.ForceAPIKey)
 	}

@@ -14,12 +14,12 @@ import (
 // structured system prompts).
 func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	if req.Thinking != nil && strings.EqualFold(req.Thinking.Type, "disabled") {
-		if err := openai.ValidateGPT61SolReasoningEffort(req.Model, "none"); err != nil {
+		if err := openai.ValidateModelReasoningEffort(req.Model, "none"); err != nil {
 			return nil, err
 		}
 	}
 	if req.OutputConfig != nil {
-		if err := openai.ValidateGPT61SolReasoningEffort(req.Model, req.OutputConfig.Effort); err != nil {
+		if err := openai.ValidateModelReasoningEffort(req.Model, req.OutputConfig.Effort); err != nil {
 			return nil, err
 		}
 	}
@@ -79,6 +79,10 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 		out.Reasoning = &ResponsesReasoning{Effort: "max", Summary: "auto"}
 	} else {
 		out.Reasoning = &ResponsesReasoning{Effort: mapAnthropicEffortToResponses(effort), Summary: "auto"}
+	}
+	if responsesReasoningModelKey(req.Model) == "chat-latest" {
+		out.Reasoning = &ResponsesReasoning{Effort: "medium", Summary: "auto"}
+		out.Text = nil
 	}
 
 	// Convert tool_choice
@@ -504,7 +508,7 @@ func boolPtr(v bool) *bool {
 // "Unsupported parameter: temperature" if these fields are present.
 func isReasoningModel(model string) bool {
 	base := responsesReasoningModelKey(model)
-	return strings.HasPrefix(base, "gpt-5") || base == "gpt-6-astra" || openai.IsGPT61SolModelSpelling(base)
+	return strings.HasPrefix(base, "gpt-5") || base == "gpt-6-astra" || base == "chat-latest" || openai.IsGPT61SolModelSpelling(base)
 }
 
 // normalizeToolParameters ensures the tool parameter schema is valid for

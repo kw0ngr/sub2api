@@ -51,6 +51,10 @@ var (
 		SupportsPromptCaching:   true,
 	}
 	openAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		"chat-latest": {
+			InputCostPerToken: 5e-6, CacheReadInputTokenCost: 0.5e-6, OutputCostPerToken: 30e-6,
+			LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true,
+		},
 		// OpenAI pricing docs captured in Todo 1 official-contract.json, retrieved 2026-09-06.
 		"gpt-6-astra": newOpenAIOfficialLiteLLMPricing(10, 1, 12.5, 50),
 		// GPT-6 Sol/Luna published 2026-09-22.
@@ -638,7 +642,7 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	}
 
 	// 5. OpenAI 模型回退策略
-	if strings.HasPrefix(lookupCandidates[0], "gpt-") {
+	if strings.HasPrefix(lookupCandidates[0], "gpt-") || lookupCandidates[0] == "chat-latest" {
 		return s.matchOpenAIModel(lookupCandidates[0])
 	}
 

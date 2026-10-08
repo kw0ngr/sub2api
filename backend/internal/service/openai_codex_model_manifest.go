@@ -13,14 +13,27 @@ import (
 func localCodexModelSpecsForAccounts(accounts []Account) ([]localCodexModelSpec, bool) {
 	specBySlug := map[string]localCodexModelSpec{}
 	hasAPIKeyAccount := false
-	hasExplicitMapping := false
 	for i := range accounts {
 		account := &accounts[i]
 		if !account.IsOpenAIApiKey() {
 			continue
 		}
 		hasAPIKeyAccount = true
+		mapping := make(map[string]string)
 		for publicID, mappedID := range account.GetModelMapping() {
+			mapping[publicID] = mappedID
+		}
+		for _, modelID := range openaiapi.DefaultModelIDs() {
+			if _, exists := mapping[modelID]; exists || !account.IsModelSupported(modelID) {
+				continue
+			}
+			target := account.GetMappedModel(modelID)
+			if strings.Contains(target, "*") {
+				target = modelID
+			}
+			mapping[modelID] = target
+		}
+		for publicID, mappedID := range mapping {
 			spec, ok := localCodexModelSpecForMapping(publicID, mappedID)
 			if !ok {
 				continue
@@ -33,18 +46,10 @@ func localCodexModelSpecsForAccounts(accounts []Account) ([]localCodexModelSpec,
 				spec.UpstreamMetadata = append(existing.UpstreamMetadata, spec.UpstreamMetadata...)
 			}
 			specBySlug[spec.Slug] = spec
-			hasExplicitMapping = true
 		}
 	}
 	if !hasAPIKeyAccount {
 		return nil, false
-	}
-	if !hasExplicitMapping {
-		for _, modelID := range openaiapi.DefaultModelIDs() {
-			spec, _ := localCodexModelSpecForMapping(modelID, modelID)
-			spec.ForceAPIKey = true
-			specBySlug[spec.Slug] = spec
-		}
 	}
 	specs := make([]localCodexModelSpec, 0, len(specBySlug))
 	for _, spec := range specBySlug {

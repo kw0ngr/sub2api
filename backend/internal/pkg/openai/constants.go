@@ -23,6 +23,7 @@ var DefaultModels = []Model{
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
 	{ID: "gpt-6-luna", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Luna"},
+	{ID: "chat-latest", Object: "model", Created: 1791331200, OwnedBy: "openai", Type: "model", DisplayName: "Chat Latest"},
 	{ID: "gpt-5.6-sol", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Sol"},
 	{ID: "gpt-5.6-terra", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Terra"},
 	{ID: "gpt-5.6-luna", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Luna"},
@@ -92,6 +93,24 @@ func ValidateGPT61SolReasoningEffort(model, effort string) error {
 		case "none", "minimal":
 			return fmt.Errorf("gpt-6.1-sol does not support reasoning effort %q; use low, medium, high, xhigh or max", effort)
 		}
+	}
+	return nil
+}
+
+func IsChatLatestModelSpelling(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndexByte(model, '/'); idx >= 0 {
+		model = model[idx+1:]
+	}
+	return strings.ReplaceAll(model, "_", "-") == "chat-latest"
+}
+
+func ValidateModelReasoningEffort(model, effort string) error {
+	if err := ValidateGPT61SolReasoningEffort(model, effort); err != nil {
+		return err
+	}
+	if IsChatLatestModelSpelling(model) && strings.TrimSpace(effort) != "" && !strings.EqualFold(strings.TrimSpace(effort), "medium") {
+		return fmt.Errorf("chat-latest only supports reasoning effort \"medium\"; omit reasoning to use the upstream default")
 	}
 	return nil
 }

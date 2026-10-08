@@ -54,7 +54,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// 2. Model mapping and Claude Code compatibility session key derivation.
 	billingModel := resolveOpenAIForwardModel(account, normalizedModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	if err := validateGPT61SolCompatRequest(body, upstreamModel); err != nil {
+	if err := validateOpenAIModelReasoningCompatRequest(body, upstreamModel); err != nil {
 		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}

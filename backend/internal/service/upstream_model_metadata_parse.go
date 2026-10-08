@@ -67,6 +67,16 @@ func rawModelID(entry map[string]json.RawMessage) string {
 
 func localOfficialUpstreamModelMetadata(modelID string) (UpstreamModelMetadata, bool) {
 	canonical := canonicalUpstreamModelID(modelID)
+	if canonical == "chat-latest" {
+		reasoning := true
+		return UpstreamModelMetadata{
+			ID: canonical, Sources: []string{"local_official_default"}, DisplayName: "Chat Latest",
+			Description: "Latest ChatGPT Instant model routed through Sub2API.", Reasoning: &reasoning,
+			DefaultReasoningLevel: "medium", SupportedReasoningLevels: []string{"medium"},
+			InputModalities: []string{"text", "image"}, ContextWindow: 400000, MaxOutputTokens: 128000,
+			CodexToolCapabilities: map[string]json.RawMessage{"supports_search_tool": json.RawMessage("true"), "use_responses_lite": json.RawMessage("false")},
+		}, true
+	}
 	if !openAIModelSupportsMaxReasoning(canonical) {
 		return UpstreamModelMetadata{}, false
 	}

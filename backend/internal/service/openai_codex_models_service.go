@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -136,7 +137,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	req.Header.Set("Originator", "codex_cli_rs")
 	req.Header.Set("Version", clientVersion)
 	req.Header.Set("User-Agent", codexCLIUserAgent)
-	if ifNoneMatch = strings.TrimSpace(ifNoneMatch); ifNoneMatch != "" {
+	if ifNoneMatch = strings.TrimSpace(ifNoneMatch); ifNoneMatch != "" && len(account.GetModelMapping()) == 0 {
 		req.Header.Set("If-None-Match", ifNoneMatch)
 	}
 	if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
@@ -179,12 +180,19 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_MODELS_UPSTREAM_FAILED", "read codex models manifest response: %v", err)
 	}
 	etag := resp.Header.Get("ETag")
+	upstreamBody := body
 	if convertedBody, converted := convertOpenAIModelListToCodexManifestForAccount(body, account); converted {
 		body = convertedBody
+	}
+	body, err = projectRemoteCodexModelsManifest(body, account)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_MODELS_UPSTREAM_FAILED", "invalid codex models manifest: %v", err)
+	}
+	if !bytes.Equal(upstreamBody, body) {
 		etag = localCodexModelsBodyETag(body)
-		if localCodexModelsETagMatches(ifNoneMatch, etag) {
-			return &CodexModelsManifest{ETag: etag, NotModified: true}, nil
-		}
+	}
+	if localCodexModelsETagMatches(ifNoneMatch, etag) {
+		return &CodexModelsManifest{ETag: etag, NotModified: true}, nil
 	}
 	return &CodexModelsManifest{Body: body, ETag: etag}, nil
 }

@@ -84,6 +84,9 @@ describe('UseKeyModal', () => {
 
     const config = JSON.parse(wrapper.find('pre code').text())
     const models = config.provider.openai.models
+    expect(models['chat-latest'].name).toBe('Chat Latest')
+    expect(models['chat-latest'].limit.context).toBe(400000)
+    expect(models['chat-latest']).not.toHaveProperty('variants')
     expect(Object.keys(models).filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
     expect(models['gpt-6-astra'].name).toBe('GPT-6 Astra')
     expect(models['gpt-6-astra'].variants).toHaveProperty('max')

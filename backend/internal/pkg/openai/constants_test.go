@@ -51,3 +51,16 @@ func TestGPT61SolIdentityAndReasoning(t *testing.T) {
 		require.NoError(t, ValidateGPT61SolReasoningEffort("gpt-6-sol", effort))
 	}
 }
+
+func TestChatLatestFixedReasoningDoesNotChangeSolMax(t *testing.T) {
+	for _, model := range []string{"chat-latest", "openai/chat-latest", "CHAT_LATEST"} {
+		require.True(t, IsChatLatestModelSpelling(model))
+		require.NoError(t, ValidateModelReasoningEffort(model, ""))
+		require.NoError(t, ValidateModelReasoningEffort(model, "medium"))
+		require.ErrorContains(t, ValidateModelReasoningEffort(model, "max"), "only supports")
+		require.ErrorContains(t, ValidateModelReasoningEffort(model, "none"), "only supports")
+	}
+	require.NoError(t, ValidateModelReasoningEffort("gpt-6.1-sol", "max"))
+	require.NoError(t, ValidateModelReasoningEffort("gpt-5.6-sol", "max"))
+	require.ErrorContains(t, ValidateModelReasoningEffort("gpt-6.1-sol", "none"), "does not support")
+}

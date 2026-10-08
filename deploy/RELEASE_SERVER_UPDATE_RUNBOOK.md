@@ -48,6 +48,8 @@ git diff --check
    unset SUB2API_API_KEY
    ```
 
+   `chat-latest` 使用独立定价和能力描述：实测仅接受 `reasoning.effort=medium`，不支持 `max/none` 或采样参数。门禁对它省略 reasoning，使用上游默认；不可套用 GPT Sol 的 `max` 规则。
+
    每个实际使用该模型的分组都要单独验收。没有通过上游推理探活的账号，不要因旧型号可用就盲目映射新型号。
 
 按改动范围跑最小验证：

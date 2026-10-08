@@ -6,6 +6,7 @@
 const openaiModels = [
   // GPT-6 / GPT-5.6 系列
   'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna',
+  'chat-latest',
   'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
   'gpt-3.5-turbo', 'gpt-3.5-turbo-0125', 'gpt-3.5-turbo-1106', 'gpt-3.5-turbo-16k',
   'gpt-4', 'gpt-4-turbo', 'gpt-4-turbo-preview',
@@ -300,6 +301,7 @@ const anthropicPresetMappings = [
 ]
 
 const openaiPresetMappings = [
+  { label: 'Chat Latest', from: 'chat-latest', to: 'chat-latest', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' },
   { label: 'GPT-6 Astra', from: 'gpt-6-astra', to: 'gpt-6-astra', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
 	{ label: 'GPT-6.1 Sol', from: 'gpt-6.1-sol', to: 'gpt-6.1-sol', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
 	{ label: 'GPT-6 Sol', from: 'gpt-6-sol', to: 'gpt-6-sol', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
