@@ -1098,6 +1098,12 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 				},
 			},
 		}
+		if lastSegment(strings.ToLower(modelID)) == "gemini-nano-banana-2.1" {
+			payload["generationConfig"] = map[string]any{
+				"responseModalities": []string{"IMAGE"},
+				"imageConfig":        map[string]any{"aspectRatio": "1:1", "imageSize": "1K"},
+			}
+		}
 		bytes, _ := json.Marshal(payload)
 		return bytes
 	}

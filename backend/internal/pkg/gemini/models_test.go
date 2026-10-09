@@ -15,7 +15,9 @@ func TestDefaultModels_ContainsFallbackCatalogModels(t *testing.T) {
 		"models/gemini-3.6-flash",
 		"models/gemini-3.5-flash-lite",
 		"models/gemini-3.1-flash-lite",
-		"models/gemini-2.5-flash-image",
+		"models/gemini-3.7-flash",
+		"models/gemini-3.8-flash",
+		"models/gemini-nano-banana-2.1",
 		"models/gemini-3.5-flash",
 		"models/gemini-3.1-pro-preview-customtools",
 		"models/gemini-3.1-flash-image",
@@ -37,6 +39,9 @@ func TestDefaultModels_DoesNotAdvertiseRetiredGemini20Flash(t *testing.T) {
 
 	if HasFallbackModel("gemini-2.0-flash") {
 		t.Fatal("retired gemini-2.0-flash must not remain in the fallback catalog")
+	}
+	if HasFallbackModel("gemini-2.5-flash-image") {
+		t.Fatal("retired gemini-2.5-flash-image must not remain in the fallback catalog")
 	}
 }
 

@@ -2133,7 +2133,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 	}
 
 	// 解析请求以获取 image_size（用于图片计费）
-	imageSize := s.extractImageSize(body)
+	imageSize := s.extractImageSize(body, originalModel)
 
 	switch action {
 	case "generateContent", "streamGenerateContent":
@@ -4132,10 +4132,14 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 }
 
 // extractImageSize 从 Gemini 请求中提取 image_size 参数
-func (s *AntigravityGatewayService) extractImageSize(body []byte) string {
+func (s *AntigravityGatewayService) extractImageSize(body []byte, model string) string {
+	defaultSize := "2K"
+	if lastSegment(strings.ToLower(model)) == "gemini-nano-banana-2.1" {
+		defaultSize = "1K"
+	}
 	var req antigravity.GeminiRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return "2K" // 默认 2K
+		return defaultSize
 	}
 
 	if req.GenerationConfig != nil && req.GenerationConfig.ImageConfig != nil {
@@ -4145,7 +4149,7 @@ func (s *AntigravityGatewayService) extractImageSize(body []byte) string {
 		}
 	}
 
-	return "2K" // 默认 2K
+	return defaultSize
 }
 
 // isImageGenerationModel 判断模型是否为图片生成模型
@@ -4156,7 +4160,8 @@ func isImageGenerationModel(model string) bool {
 	modelLower = strings.TrimPrefix(modelLower, "models/")
 
 	// 精确匹配或前缀匹配
-	return modelLower == "gemini-3.1-flash-image" ||
+	return modelLower == "gemini-nano-banana-2.1" ||
+		modelLower == "gemini-3.1-flash-image" ||
 		modelLower == "gemini-3.1-flash-image-preview" ||
 		strings.HasPrefix(modelLower, "gemini-3.1-flash-image-") ||
 		modelLower == "gemini-3-pro-image" ||

@@ -29,7 +29,9 @@ func TestFallbackPricingContainsLatestGeminiModels(t *testing.T) {
 		priorityInput float64
 		priorityOut   float64
 	}{
-		{model: "gemini-3.6-flash", input: 1.50e-6, output: 7.50e-6, cacheRead: 0.15e-6, priorityInput: 2.70e-6, priorityOut: 13.50e-6},
+		{model: "gemini-3.6-flash", input: 0.75e-6, output: 3.75e-6, cacheRead: 0.075e-6, priorityInput: 1.35e-6, priorityOut: 6.75e-6},
+		{model: "gemini-3.7-flash", input: 0.75e-6, output: 3.75e-6, cacheRead: 0.075e-6, priorityInput: 1.35e-6, priorityOut: 6.75e-6},
+		{model: "gemini-3.8-flash", input: 0.75e-6, output: 3.75e-6, cacheRead: 0.075e-6, priorityInput: 1.35e-6, priorityOut: 6.75e-6},
 		{model: "gemini-3.5-flash-lite", input: 0.30e-6, output: 2.50e-6, cacheRead: 0.03e-6, priorityInput: 0.54e-6, priorityOut: 4.50e-6},
 		{model: "gemini-3.5-flash", input: 1.50e-6, output: 9.00e-6, cacheRead: 0.15e-6, priorityInput: 2.70e-6, priorityOut: 16.20e-6},
 		{model: "gemini-3.1-flash-lite", input: 0.25e-6, output: 1.50e-6, cacheRead: 0.025e-6, priorityInput: 0.45e-6, priorityOut: 2.70e-6},

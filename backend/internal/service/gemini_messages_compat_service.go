@@ -583,7 +583,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		mappedModel = account.GetMappedModel(req.Model)
 	}
 
-	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
+	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body, mappedModel)
 	if err != nil {
 		return nil, s.writeClaudeError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	}
@@ -804,7 +804,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					stageName = "thinking+tools"
 					signatureRetryStage = 2
 				}
-				retryGeminiReq, txErr := convertClaudeMessagesToGeminiGenerateContent(strippedClaudeBody)
+				retryGeminiReq, txErr := convertClaudeMessagesToGeminiGenerateContent(strippedClaudeBody, mappedModel)
 				if txErr == nil {
 					logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: detected signature-related 400, retrying with downgraded Claude blocks (%s)", account.ID, stageName)
 					geminiReq = retryGeminiReq
@@ -1071,21 +1071,22 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	// 图片生成计费
 	imageCount := 0
-	imageSize := s.extractImageSize(body)
+	imageSize := s.extractImageSize(body, originalModel)
 	if isImageGenerationModel(originalModel) {
 		imageCount = 1
 	}
 
 	return &ForwardResult{
-		RequestID:     requestID,
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: mappedModel,
-		Stream:        req.Stream,
-		Duration:      time.Since(startTime),
-		FirstTokenMs:  firstTokenMs,
-		ImageCount:    imageCount,
-		ImageSize:     imageSize,
+		RequestID:       requestID,
+		Usage:           *usage,
+		Model:           originalModel,
+		UpstreamModel:   mappedModel,
+		ReasoningEffort: extractGeminiReasoningEffortFromBody(geminiReq),
+		Stream:          req.Stream,
+		Duration:        time.Since(startTime),
+		FirstTokenMs:    firstTokenMs,
+		ImageCount:      imageCount,
+		ImageSize:       imageSize,
 	}, nil
 }
 
@@ -1606,7 +1607,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	// 图片生成计费
 	imageCount := 0
-	imageSize := s.extractImageSize(body)
+	imageSize := s.extractImageSize(body, originalModel)
 	if isImageGenerationModel(originalModel) {
 		imageCount = 1
 	}
@@ -3050,7 +3051,7 @@ func mapGeminiFinishReasonToClaudeStopReason(finishReason string) string {
 	}
 }
 
-func convertClaudeMessagesToGeminiGenerateContent(body []byte) ([]byte, error) {
+func convertClaudeMessagesToGeminiGenerateContent(body []byte, model string) ([]byte, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
@@ -3076,7 +3077,7 @@ func convertClaudeMessagesToGeminiGenerateContent(body []byte) ([]byte, error) {
 		out["tools"] = tools
 	}
 
-	generationConfig := convertClaudeGenerationConfig(req)
+	generationConfig := convertClaudeGenerationConfig(req, model)
 	if generationConfig != nil {
 		out["generationConfig"] = generationConfig
 	}
@@ -3451,7 +3452,7 @@ func cleanToolSchema(schema any) any {
 	}
 }
 
-func convertClaudeGenerationConfig(req map[string]any) map[string]any {
+func convertClaudeGenerationConfig(req map[string]any, model string) map[string]any {
 	out := make(map[string]any)
 	if mt, ok := asInt(req["max_tokens"]); ok && mt > 0 {
 		out["maxOutputTokens"] = mt
@@ -3461,6 +3462,25 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 	}
 	if topP, ok := req["top_p"].(float64); ok {
 		out["topP"] = topP
+	}
+	switch lastSegment(strings.ToLower(model)) {
+	case "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+		// Sampling is deprecated for these models; explicit effort must not be lost in conversion.
+		delete(out, "temperature")
+		delete(out, "topP")
+		outputConfig, _ := req["output_config"].(map[string]any)
+		effort, _ := outputConfig["effort"].(string)
+		effort = strings.ToLower(strings.TrimSpace(effort))
+		switch effort {
+		case "max", "xhigh":
+			effort = "high"
+		case "low", "medium", "high":
+		default:
+			effort = ""
+		}
+		if effort != "" {
+			out["thinkingConfig"] = map[string]any{"thinkingLevel": effort, "includeThoughts": true}
+		}
 	}
 	if stopSeq, ok := req["stop_sequences"].([]any); ok && len(stopSeq) > 0 {
 		out["stopSequences"] = stopSeq
@@ -3472,7 +3492,11 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 }
 
 // extractImageSize 从 Gemini 请求中提取 image_size 参数
-func (s *GeminiMessagesCompatService) extractImageSize(body []byte) string {
+func (s *GeminiMessagesCompatService) extractImageSize(body []byte, model string) string {
+	defaultSize := "2K"
+	if lastSegment(strings.ToLower(model)) == "gemini-nano-banana-2.1" {
+		defaultSize = "1K"
+	}
 	var req struct {
 		GenerationConfig *struct {
 			ImageConfig *struct {
@@ -3481,7 +3505,7 @@ func (s *GeminiMessagesCompatService) extractImageSize(body []byte) string {
 		} `json:"generationConfig"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		return "2K"
+		return defaultSize
 	}
 
 	if req.GenerationConfig != nil && req.GenerationConfig.ImageConfig != nil {
@@ -3491,5 +3515,5 @@ func (s *GeminiMessagesCompatService) extractImageSize(body []byte) string {
 		}
 	}
 
-	return "2K"
+	return defaultSize
 }

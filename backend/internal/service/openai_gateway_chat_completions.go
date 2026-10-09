@@ -416,6 +416,11 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
 	}
+	if account.Platform == PlatformGemini {
+		if normalizedBody, normalized := normalizeGeminiOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
+			chatBody = normalizedBody
+		}
+	}
 	if account.Platform == PlatformGrok {
 		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())
 		normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, upstreamModel)

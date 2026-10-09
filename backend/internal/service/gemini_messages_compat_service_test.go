@@ -374,7 +374,7 @@ func TestConvertClaudeMessagesToGeminiGenerateContent_AddsThoughtSignatureForToo
 	}
 	b, _ := json.Marshal(claudeReq)
 
-	out, err := convertClaudeMessagesToGeminiGenerateContent(b)
+	out, err := convertClaudeMessagesToGeminiGenerateContent(b, "claude-haiku-4-5-20251001")
 	if err != nil {
 		t.Fatalf("convert failed: %v", err)
 	}

@@ -17,7 +17,7 @@ vi.mock('@/composables/useClipboard', () => ({
 import UseKeyModal from '../UseKeyModal.vue'
 
 describe('UseKeyModal', () => {
-  it('uses Gemini 3.6 Flash by default and exposes the latest models in OpenCode', async () => {
+  it('uses Gemini 3.8 Flash by default and exposes the latest models in OpenCode', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -37,7 +37,7 @@ describe('UseKeyModal', () => {
       }
     })
 
-    expect(wrapper.find('pre code').text()).toContain('GEMINI_MODEL="gemini-3.6-flash"')
+    expect(wrapper.find('pre code').text()).toContain('GEMINI_MODEL="gemini-3.8-flash"')
     expect(wrapper.find('pre code').text()).not.toContain('gemini-2.0-flash')
 
     const opencodeTab = wrapper.findAll('button').find((button) =>
@@ -49,6 +49,8 @@ describe('UseKeyModal', () => {
 
     const config = JSON.parse(wrapper.find('pre code').text())
     const models = config.provider.gemini.models
+    expect(models['gemini-3.8-flash'].name).toBe('Gemini 3.8 Flash')
+    expect(models['gemini-3.7-flash'].name).toBe('Gemini 3.7 Flash')
     expect(models['gemini-3.6-flash'].name).toBe('Gemini 3.6 Flash')
     expect(models['gemini-3.5-flash-lite'].name).toBe('Gemini 3.5 Flash Lite')
     expect(models).not.toHaveProperty('gemini-2.0-flash')

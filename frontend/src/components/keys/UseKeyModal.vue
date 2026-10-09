@@ -481,7 +481,7 @@ $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
 }
 
 function generateGeminiCliContent(baseUrl: string, apiKey: string): FileConfig {
-  const model = 'gemini-3.6-flash'
+  const model = 'gemini-3.8-flash'
   const modelComment = t('keys.useKeyModal.gemini.modelComment')
   let path: string
   let content: string
@@ -825,6 +825,16 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
   const geminiModels = {
+    'gemini-3.8-flash': {
+      name: 'Gemini 3.8 Flash',
+      limit: { context: 1048576, output: 65536 },
+      modalities: { input: ['text', 'image', 'pdf', 'audio', 'video'], output: ['text'] }
+    },
+    'gemini-3.7-flash': {
+      name: 'Gemini 3.7 Flash',
+      limit: { context: 1048576, output: 65536 },
+      modalities: { input: ['text', 'image', 'pdf', 'audio', 'video'], output: ['text'] }
+    },
     'gemini-3.6-flash': {
       name: 'Gemini 3.6 Flash',
       limit: {

@@ -54,6 +54,10 @@ git diff --check
 
 按改动范围跑最小验证：
 
+- Gemini 新模型须用真实 `generateContent` 验证；`/models` 成功不等于有对应模型额度。健康检查默认使用 `gemini-3.5-flash-lite`，避免新项目无 Gemini 2.5 权限被误判。Nano Banana 图像探活须实际收到非空 `inlineData`，不能以仅文本的 200 判定成功。
+- DeepSeek 当前 Flash ID 是 `deepseek-flash`（V4.1）；旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 保留兼容，并使用同一 Flash 价格。默认价格采用官方峰时基准，未自动应用上游按时段/节假日变化的折扣；渠道自定义价格仍优先。
+- Gemini 3.6–3.8 Flash 的本地促销价格截止 2026-12-31，须在 2027-01-01 前重新核实官方价格。
+
 ```bash
 cd backend
 go test ./internal/pkg/xai ./internal/service ./internal/handler/admin -run 'Test.*Grok|Test.*OpenAI|Test.*Account|Test.*Usage' -count=1

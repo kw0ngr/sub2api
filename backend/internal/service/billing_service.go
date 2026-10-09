@@ -232,12 +232,15 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerToken:     0.2e-6, // $0.20 per MTok
 		SupportsCacheBreakdown:     false,
 	}
-	for _, model := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
+	for _, model := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
 		s.fallbackPrices[model] = &ModelPricing{
-			InputPricePerToken:     0.75e-6,
-			OutputPricePerToken:    3.75e-6,
-			CacheReadPricePerToken: 0.075e-6,
-			SupportsCacheBreakdown: false,
+			InputPricePerToken:             0.75e-6,
+			OutputPricePerToken:            3.75e-6,
+			CacheReadPricePerToken:         0.075e-6,
+			InputPricePerTokenPriority:     1.35e-6,
+			OutputPricePerTokenPriority:    6.75e-6,
+			CacheReadPricePerTokenPriority: .135e-6,
+			SupportsCacheBreakdown:         false,
 		}
 	}
 
@@ -302,16 +305,22 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:         false,
 	}
 	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
-		InputPricePerToken:     4.35e-7,
-		OutputPricePerToken:    8.7e-7,
-		CacheReadPricePerToken: 3.625e-9,
+		InputPricePerToken:     1.32e-6,
+		OutputPricePerToken:    3.96e-6,
+		CacheReadPricePerToken: 0.044e-6,
 		SupportsCacheBreakdown: false,
 	}
-	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
-		InputPricePerToken:     1.4e-7,
-		OutputPricePerToken:    2.8e-7,
-		CacheReadPricePerToken: 2.8e-9,
+	// ponytail: published peak list rates; upstream off-peak rebates are not applied automatically.
+	s.fallbackPrices["deepseek-flash"] = &ModelPricing{
+		InputPricePerToken:     0.3e-6,
+		OutputPricePerToken:    1.2e-6,
+		CacheReadPricePerToken: 0.006e-6,
 		SupportsCacheBreakdown: false,
+	}
+	s.fallbackPrices["deepseek-v4-flash"] = s.fallbackPrices["deepseek-flash"]
+	s.fallbackPrices["deepseek-v4-flash-vision-exp"] = s.fallbackPrices["deepseek-flash"]
+	s.fallbackPrices["gemini-nano-banana-2.1"] = &ModelPricing{
+		InputPricePerToken: 1.5e-6, OutputPricePerToken: 7.5e-6, ImageOutputPricePerToken: 30e-6,
 	}
 	// Codex 族兜底统一按 GPT-5.1 Codex 价格计费
 	s.fallbackPrices["gpt-5.1-codex"] = &ModelPricing{
@@ -400,7 +409,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "gemini-3.1-pro") || strings.Contains(modelLower, "gemini-3-1-pro") {
 		return s.fallbackPrices["gemini-3.1-pro"]
 	}
-	for _, model := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
+	for _, model := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
 		if strings.Contains(modelLower, model) || strings.Contains(modelLower, strings.ReplaceAll(model, ".", "-")) {
 			return s.fallbackPrices[model]
 		}
@@ -409,9 +418,13 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["deepseek-v4-pro"]
 	}
 	if strings.Contains(modelLower, "deepseek-v4-flash") ||
+		lastSegment(modelLower) == "deepseek-flash" ||
 		strings.Contains(modelLower, "deepseek-chat") ||
 		strings.Contains(modelLower, "deepseek-reasoner") {
 		return s.fallbackPrices["deepseek-v4-flash"]
+	}
+	if lastSegment(modelLower) == "gemini-nano-banana-2.1" {
+		return s.fallbackPrices["gemini-nano-banana-2.1"]
 	}
 	if strings.Contains(modelLower, "glm-5.3-flash") {
 		return s.fallbackPrices["glm-5.3-flash"]
@@ -1060,6 +1073,16 @@ func (s *BillingService) getImageUnitPrice(model string, imageSize string, group
 
 // getDefaultImagePrice 获取 LiteLLM 默认图片价格
 func (s *BillingService) getDefaultImagePrice(model string, imageSize string) float64 {
+	if lastSegment(strings.ToLower(strings.TrimSpace(model))) == "gemini-nano-banana-2.1" {
+		switch imageSize {
+		case "2K":
+			return 0.0504
+		case "4K":
+			return 0.1134
+		default:
+			return 0.0336
+		}
+	}
 	basePrice := 0.0
 
 	// 从 PricingService 获取 output_cost_per_image

@@ -21,6 +21,30 @@ import (
 )
 
 var (
+	// ponytail: Google introductory rates expire 2026-12-31; refresh these fallbacks before 2027.
+	geminiFlash2026Pricing = &LiteLLMModelPricing{
+		InputCostPerToken: 0.75e-6, CacheReadInputTokenCost: 0.075e-6, OutputCostPerToken: 3.75e-6,
+		InputCostPerTokenPriority: 1.35e-6, CacheReadInputTokenCostPriority: 0.135e-6, OutputCostPerTokenPriority: 6.75e-6,
+		LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
+	}
+	currentProviderStaticPricing = map[string]*LiteLLMModelPricing{
+		"gemini-3.6-flash": geminiFlash2026Pricing,
+		"gemini-3.7-flash": geminiFlash2026Pricing,
+		"gemini-3.8-flash": geminiFlash2026Pricing,
+		"gemini-nano-banana-2.1": {
+			InputCostPerToken: 1.5e-6, OutputCostPerToken: 7.5e-6, OutputCostPerImage: 0.0336,
+			OutputCostPerImageToken: 30e-6, LiteLLMProvider: "gemini", Mode: "chat",
+		},
+		// Peak list rates, not the variable upstream off-peak invoice.
+		"deepseek-flash": {
+			InputCostPerToken: 0.3e-6, CacheReadInputTokenCost: 0.006e-6, OutputCostPerToken: 1.2e-6,
+			LiteLLMProvider: "deepseek", Mode: "chat", SupportsPromptCaching: true,
+		},
+		"deepseek-v4-pro": {
+			InputCostPerToken: 1.32e-6, CacheReadInputTokenCost: 0.044e-6, OutputCostPerToken: 3.96e-6,
+			LiteLLMProvider: "deepseek", Mode: "chat", SupportsPromptCaching: true,
+		},
+	}
 	openAIModelDatePattern     = regexp.MustCompile(`-\d{8}$`)
 	openAIModelBasePattern     = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
 	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
@@ -627,6 +651,9 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	if modelName == "" {
 		return nil
 	}
+	if pricing := currentProviderPricing(modelName); pricing != nil {
+		return pricing
+	}
 
 	// 标准化模型名称（同时兼容 "models/xxx"、VertexAI 资源名等前缀）
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
@@ -689,6 +716,9 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 	if s == nil {
 		return nil
 	}
+	if pricing := currentProviderPricing(modelName); pricing != nil {
+		return pricing
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
@@ -696,6 +726,15 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 		return nil
 	}
 	return s.lookupIdentifiedModelPricingLocked(s.buildModelLookupCandidates(modelLower))
+}
+
+func currentProviderPricing(model string) *LiteLLMModelPricing {
+	model = lastSegment(normalizeModelNameForPricing(strings.ToLower(strings.TrimSpace(model))))
+	switch model {
+	case "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		model = "deepseek-flash"
+	}
+	return currentProviderStaticPricing[model]
 }
 
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {

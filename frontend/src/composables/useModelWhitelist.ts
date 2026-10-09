@@ -55,13 +55,15 @@ export const claudeModels = [
 const geminiModels = [
   // Keep in sync with backend curated Gemini lists.
   // This list is intentionally conservative (models commonly available across OAuth/API key).
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-nano-banana-2.1',
   'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
   'gemini-3.1-pro-preview',
   'gemini-3.1-flash-image',
-  'gemini-2.5-flash-image',
   'gemini-2.5-flash',
   'gemini-2.5-pro',
   'gemini-3-flash-preview',
@@ -126,6 +128,7 @@ const qwenModels = [
 
 // DeepSeek
 const deepseekModels = [
+  'deepseek-flash',
   'deepseek-chat', 'deepseek-coder', 'deepseek-reasoner',
   'deepseek-v3', 'deepseek-v3-0324',
   'deepseek-v4-pro', 'deepseek-v4-flash',
