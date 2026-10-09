@@ -503,7 +503,11 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 
 // appendRawJSON appends a JSON fragment string to existing raw JSON.
 func appendRawJSON(existing json.RawMessage, fragment string) json.RawMessage {
-	if len(existing) == 0 {
+	if fragment == "" {
+		return existing
+	}
+	// Anthropic tool block starts contain an empty placeholder, not an argument delta.
+	if len(existing) == 0 || bytes.Equal(bytes.TrimSpace(existing), []byte("{}")) || bytes.Equal(bytes.TrimSpace(existing), []byte("null")) {
 		return json.RawMessage(fragment)
 	}
 	return json.RawMessage(string(existing) + fragment)
