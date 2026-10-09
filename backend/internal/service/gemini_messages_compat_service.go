@@ -3479,7 +3479,7 @@ func convertClaudeGenerationConfig(req map[string]any, model string) map[string]
 			effort = ""
 		}
 		if effort != "" {
-			out["thinkingConfig"] = map[string]any{"thinkingLevel": effort, "includeThoughts": true}
+			out["thinkingConfig"] = map[string]any{"thinkingLevel": effort}
 		}
 	}
 	if stopSeq, ok := req["stop_sequences"].([]any); ok && len(stopSeq) > 0 {

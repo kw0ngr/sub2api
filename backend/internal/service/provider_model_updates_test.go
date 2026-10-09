@@ -74,6 +74,7 @@ func TestLatestGeminiCompatPreservesEffortAndDoesNotChangeOpenAISolMax(t *testin
 			want = "high"
 		}
 		require.Equal(t, want, gjson.GetBytes(out, "generationConfig.thinkingConfig.thinkingLevel").String())
+		require.False(t, gjson.GetBytes(out, "generationConfig.thinkingConfig.includeThoughts").Exists(), "do not request thought summaries that the Anthropic text adapter would mix into the final answer")
 		require.False(t, gjson.GetBytes(out, "generationConfig.temperature").Exists())
 		require.False(t, gjson.GetBytes(out, "generationConfig.topP").Exists())
 	}
