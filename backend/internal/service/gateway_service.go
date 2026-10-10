@@ -4088,7 +4088,7 @@ func (s *GatewayService) shouldRetryUpstreamError(account *Account, statusCode i
 // shouldFailoverUpstreamError determines whether an upstream error should trigger account failover.
 func (s *GatewayService) shouldFailoverUpstreamError(statusCode int) bool {
 	switch statusCode {
-	case 401, 403, 429, 529:
+	case 401, 402, 403, 429, 529:
 		return true
 	default:
 		return statusCode >= 500
@@ -4773,7 +4773,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 	if account.Platform == PlatformDeepSeek {
 		body = FilterRedactedThinkingBlocks(body)
-		body = disableDeepSeekAnthropicThinkingForForcedToolChoice(body)
 	}
 
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
@@ -6534,6 +6533,11 @@ func (s *GatewayService) handleBedrockNonStreamingResponse(
 }
 
 func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, tokenType, modelID string, reqStream bool, mimicClaudeCode bool) (*http.Request, error) {
+	if account.Platform == PlatformDeepSeek {
+		// Native Messages, Chat and Responses must share the same forced-tool compatibility.
+		body = disableDeepSeekAnthropicThinkingForForcedToolChoice(body)
+		setOpsUpstreamRequestBody(c, body)
+	}
 	// 确定目标URL
 	targetURL := claudeAPIURL
 	if account.Type == AccountTypeAPIKey {
