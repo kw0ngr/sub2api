@@ -495,7 +495,7 @@ func TestCheckGLMAPIKeyAnthropicModeUsesMessagesProbe(t *testing.T) {
 	require.Equal(t, "glm-5.2", gjson.GetBytes(upstream.bodies[1], "model").String())
 }
 
-func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
+func TestCheckGLMAPIKeyOpenAIModeVerifiesInferenceNotModels(t *testing.T) {
 	upstream := &glmProbeHTTPUpstream{responses: []*http.Response{
 		{
 			StatusCode: http.StatusOK,
@@ -504,8 +504,7 @@ func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
 		},
 		{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.2"}]}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"OK"}}]}`)),
 		},
 	}}
 	svc := &AccountTestService{httpUpstream: upstream}
@@ -532,9 +531,10 @@ func TestCheckGLMAPIKeyOpenAIModeUsesModelsEndpoint(t *testing.T) {
 	require.Equal(t, http.MethodGet, upstream.requests[0].Method)
 	require.Equal(t, "https://open.bigmodel.cn/api/monitor/usage/quota/limit", upstream.requests[0].URL.String())
 	require.Equal(t, "sk-glm-test", upstream.requests[0].Header.Get("Authorization"))
-	require.Equal(t, http.MethodGet, upstream.requests[1].Method)
-	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", upstream.requests[1].URL.String())
+	require.Equal(t, http.MethodPost, upstream.requests[1].Method)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.requests[1].URL.String())
 	require.Equal(t, "Bearer sk-glm-test", upstream.requests[1].Header.Get("Authorization"))
+	require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "reasoning_effort").String())
 }
 
 func TestGLMOpenAIAccountConnectionDisablesThinking(t *testing.T) {

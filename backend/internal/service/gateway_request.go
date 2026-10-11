@@ -1184,7 +1184,7 @@ func NormalizeGLMOpenAIReasoningEffort(body []byte, mappedModel string) ([]byte,
 
 func normalizeGLMOpenAIReasoningEffortForModel(raw string, model string) string {
 	mapped := normalizeGLMOpenAIReasoningEffort(raw)
-	if isGLM53Model(model) && mapped == "high" && normalizeEffortToken(raw) == "low" {
+	if (isGLM53Model(model) || strings.EqualFold(strings.TrimSpace(model), "glm-5.3-flash")) && mapped == "high" && normalizeEffortToken(raw) == "low" {
 		return "low"
 	}
 	return mapped

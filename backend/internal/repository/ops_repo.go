@@ -60,9 +60,10 @@ INSERT INTO ops_error_logs (
   request_headers,
   is_retryable,
   retry_count,
-  created_at
+  created_at,
+  provider_error_code
 ) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44
 )`
 
 func NewOpsRepository(db *sql.DB) service.OpsRepository {
@@ -177,6 +178,7 @@ func opsInsertErrorLogArgs(input *service.OpsInsertErrorLogInput) []any {
 		input.IsRetryable,
 		input.RetryCount,
 		input.CreatedAt,
+		opsNullString(input.ProviderErrorCode),
 	}
 }
 
@@ -432,7 +434,8 @@ SELECT
   COALESCE(e.request_body::text, ''),
   e.request_body_truncated,
   e.request_body_bytes,
-  COALESCE(e.request_headers::text, '')
+  COALESCE(e.request_headers::text, ''),
+  COALESCE(e.provider_error_code, '')
 FROM ops_error_logs e
 LEFT JOIN users u ON e.user_id = u.id
 LEFT JOIN accounts a ON e.account_id = a.id
@@ -510,6 +513,7 @@ LIMIT 1`
 		&out.RequestBodyTruncated,
 		&requestBodyBytes,
 		&out.RequestHeaders,
+		&out.ProviderErrorCode,
 	)
 	if err != nil {
 		return nil, err

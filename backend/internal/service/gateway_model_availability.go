@@ -8,8 +8,9 @@ import (
 )
 
 type ModelAvailabilityDiagnosis struct {
-	HasAccountsInPool bool
-	HasModelSupport   bool
+	HasAccountsInPool   bool
+	HasModelSupport     bool
+	ResourceUnavailable bool
 }
 
 type ModelAvailabilityDiagnoser interface {
@@ -69,17 +70,27 @@ func (s *GatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
+	allResourceUnavailable := true
 	for i := range accounts {
+		if platform == PlatformGLM && accounts[i].IsGLMOpenAICompatible() {
+			continue
+		}
 		if useMixed && !shouldIncludeMixedSchedulingAccount(platform, &accounts[i]) {
 			continue
 		}
 		diag.HasAccountsInPool = true
 		if s.isModelSupportedByAccountWithContext(ctx, &accounts[i], requestedModel) {
 			diag.HasModelSupport = true
-			return diag
+			allResourceUnavailable = allResourceUnavailable && accountHasGLMResourceUnavailable(&accounts[i])
 		}
 	}
+	diag.ResourceUnavailable = diag.HasModelSupport && allResourceUnavailable
 	return diag
+}
+
+func accountHasGLMResourceUnavailable(account *Account) bool {
+	return account.Platform == PlatformGLM && account.Status == StatusError && !account.Schedulable &&
+		strings.Contains(account.ErrorMessage, "GLM endpoint resource unavailable (1113)")
 }
 
 func availableByDefault() ModelAvailabilityDiagnosis {

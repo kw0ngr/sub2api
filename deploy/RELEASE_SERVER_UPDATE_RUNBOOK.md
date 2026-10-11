@@ -58,6 +58,7 @@ git diff --check
 - DeepSeek 当前 Flash ID 是 `deepseek-flash`（V4.1）；旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 保留兼容，并使用同一 Flash 价格。默认价格采用官方峰时基准，未自动应用上游按时段/节假日变化的折扣；渠道自定义价格仍优先。
 - DeepSeek 回归须覆盖 Chat/Responses 的 402：账号停调后返回未提交响应的换号错误；命名或 `required` 工具选择须复用原生 Messages 的思考兼容处理，普通 `auto` 调用仍保留 `max` 和思考回传。
 - Gemini 3.6–3.8 Flash 的本地促销价格截止 2026-12-31，须在 2027-01-01 前重新核实官方价格。
+- GLM `1113` 表示所选上游入口没有可用资源，不是普通短限流；只暂停该协议账号，不能联动禁用相同 Key 的其他协议账号。Coding Plan 的 OpenAI base URL 使用 `https://open.bigmodel.cn/api/coding/paas/v4`，须真实推理通过后才改配置和恢复。`/models=200` 不能单独恢复调度；本地等待队列满须记录为网关 routing 错误，不能填写伪造的上游 429。原始业务码保存在错误详情 `provider_error_code`。
 
 ```bash
 cd backend

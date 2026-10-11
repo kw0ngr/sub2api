@@ -224,6 +224,7 @@ func (s *OpsService) prepareErrorLogInput(ctx context.Context, entry *OpsInsertE
 	}
 
 	// Sanitize + truncate error_body to avoid storing sensitive data.
+	populateOpsProviderErrorCode(entry)
 	if strings.TrimSpace(entry.ErrorBody) != "" {
 		sanitized, _ := sanitizeErrorBodyForStorage(entry.ErrorBody, opsMaxStoredErrorBodyBytes)
 		entry.ErrorBody = sanitized
@@ -262,6 +263,31 @@ func (s *OpsService) prepareErrorLogInput(ctx context.Context, entry *OpsInsertE
 	}
 
 	return entry, true, nil
+}
+
+func populateOpsProviderErrorCode(entry *OpsInsertErrorLogInput) {
+	var payload string
+	if entry.UpstreamErrorDetail != nil {
+		payload = *entry.UpstreamErrorDetail
+	}
+	for i := len(entry.UpstreamErrors) - 1; i >= 0 && extractUpstreamErrorCode([]byte(payload)) == ""; i-- {
+		event := entry.UpstreamErrors[i]
+		if event == nil || event.UpstreamStatusCode <= 0 {
+			continue
+		}
+		payload = event.Detail
+		if payload == "" {
+			payload = event.UpstreamResponseBody
+		}
+	}
+	if payload == "" && entry.UpstreamStatusCode != nil && *entry.UpstreamStatusCode > 0 {
+		payload = entry.ErrorBody
+	}
+	code := strings.TrimSpace(extractUpstreamErrorCode([]byte(payload)))
+	if code != "" {
+		code = truncateString(sanitizeUpstreamErrorMessage(code), 64)
+		entry.ProviderErrorCode = &code
+	}
 }
 
 func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {

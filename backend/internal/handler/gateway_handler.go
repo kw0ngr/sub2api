@@ -1362,6 +1362,10 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+	if platform == service.PlatformGLM && service.IsGLMResourceUnavailableError(responseBody) {
+		h.handleStreamingAwareError(c, http.StatusPaymentRequired, "billing_error", "Upstream endpoint has no available balance or resources; restore its resources before retrying", streamStarted)
+		return
+	}
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)

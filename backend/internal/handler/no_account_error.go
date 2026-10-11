@@ -42,6 +42,12 @@ func classifyNoAccountError(ctx context.Context, req noAccountDiagnosisRequest) 
 	}
 
 	result := req.Diagnoser.DiagnoseModelAvailabilityForPlatform(ctx, req.APIKey.GroupID, routingModel, req.Platform)
+	if result.ResourceUnavailable {
+		return noAccountErrorClassification{
+			Status: http.StatusPaymentRequired, ErrType: "billing_error",
+			Message: "Configured upstream endpoint has no available balance or resources; restore its resources before retrying",
+		}
+	}
 	if result.HasAccountsInPool && !result.HasModelSupport {
 		return noAccountErrorClassification{
 			Status:        http.StatusNotFound,

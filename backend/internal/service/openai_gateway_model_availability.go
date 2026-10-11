@@ -37,12 +37,17 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
+	allResourceUnavailable := true
 	for i := range accounts {
+		if platform == PlatformGLM && !accounts[i].IsGLMOpenAICompatible() {
+			continue
+		}
 		diag.HasAccountsInPool = true
 		if accounts[i].IsModelSupported(requestedModel) {
 			diag.HasModelSupport = true
-			return diag
+			allResourceUnavailable = allResourceUnavailable && accountHasGLMResourceUnavailable(&accounts[i])
 		}
 	}
+	diag.ResourceUnavailable = diag.HasModelSupport && allResourceUnavailable
 	return diag
 }

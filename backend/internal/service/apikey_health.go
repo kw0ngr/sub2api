@@ -14,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -377,6 +378,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 		case http.StatusPaymentRequired:
 			return APIKeyStatusActionPermanentDisable
 		case http.StatusTooManyRequests:
+			if IsGLMResourceUnavailableError(responseBody) {
+				return APIKeyStatusActionPermanentDisable
+			}
 			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusBadRequest:
 			if containsAny(code, "invalid_api_key", "invalid_api_key_format", "authentication_error", "invalidsubscription") ||
@@ -510,6 +514,11 @@ func isGLMResettableQuotaError(responseBody []byte) bool {
 	}
 	return containsAny(msg, "usage limit", "使用上限", "限额将在") &&
 		containsAny(msg, "reset", "重置")
+}
+
+// IsGLMResourceUnavailableError identifies missing endpoint resources, not a resettable quota window.
+func IsGLMResourceUnavailableError(body []byte) bool {
+	return strings.TrimSpace(extractUpstreamErrorCode(body)) == "1113"
 }
 
 func isGLMModelOverloadedError(responseBody []byte) bool {
@@ -744,15 +753,7 @@ func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Accoun
 			baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
 		}
 		quota := s.fetchGLMQuotaLimitSnapshot(ctx, account, baseURL)
-		health, err := s.checkAPIKeyModelsEndpoint(ctx, account, PlatformGLM, buildGLMOpenAIModelsURL(baseURL))
-		if err != nil {
-			return nil, err
-		}
-		attachProbeQuota(health, quota)
-		if health.Valid || health.Invalid || health.StatusCode == http.StatusTooManyRequests {
-			return health, nil
-		}
-		health, err = s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
+		health, err := s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
 		attachProbeQuota(health, quota)
 		return health, err
 	}
@@ -804,14 +805,21 @@ func buildGLMMonitorQuotaLimitURL(baseURL string) (string, bool) {
 
 func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context, account *Account, baseURL string) (*APIKeyHealthCheckResult, error) {
 	endpoint := buildGLMAnthropicMessagesURL(baseURL)
-	body, _ := json.Marshal(map[string]any{
-		"model":      "glm-5.2",
-		"max_tokens": 1,
+	model := glmAPIKeyProbeModel(account)
+	payload := map[string]any{
+		"model":      model,
+		"max_tokens": 512,
 		"stream":     false,
+		"thinking":   map[string]string{"type": "disabled"},
 		"messages": []map[string]any{
 			{"role": "user", "content": "hi"},
 		},
-	})
+	}
+	if isGLM53Model(model) {
+		payload["thinking"] = map[string]string{"type": "enabled"}
+		payload["output_config"] = map[string]string{"effort": "low"}
+	}
+	body, _ := json.Marshal(payload)
 	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, endpoint, map[string]string{
 		"x-api-key":         strings.TrimSpace(account.GetCredential("api_key")),
 		"anthropic-version": "2023-06-01",
@@ -821,14 +829,39 @@ func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody), nil
+	health := buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody)
+	if health.Valid && strings.TrimSpace(gjson.GetBytes(respBody, `content.#(type=="text").text`).String()) == "" {
+		health.Valid = false
+		health.Message = "messages endpoint returned no visible text; account scheduling state was not restored"
+	}
+	return health, nil
+}
+
+func glmAPIKeyProbeModel(account *Account) string {
+	mapping := account.GetModelMapping()
+	if len(mapping) == 0 {
+		return "glm-5.2"
+	}
+	for _, candidate := range []string{"glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1", "glm-5"} {
+		if account.IsModelSupported(candidate) {
+			return account.GetMappedModel(candidate)
+		}
+		for _, target := range mapping {
+			if target == candidate {
+				return target
+			}
+		}
+	}
+	return "glm-5.2"
 }
 
 func (s *AccountTestService) checkGLMOpenAIChatProbe(ctx context.Context, account *Account, baseURL string) (*APIKeyHealthCheckResult, error) {
+	model := glmAPIKeyProbeModel(account)
 	body, _ := json.Marshal(map[string]any{
-		"model":      "glm-5.2",
-		"max_tokens": 1,
-		"stream":     false,
+		"model":            model,
+		"max_tokens":       512,
+		"stream":           false,
+		"reasoning_effort": normalizeGLMOpenAIReasoningEffortForModel("low", model),
 		"messages": []map[string]any{
 			{"role": "user", "content": "hi"},
 		},
@@ -841,7 +874,12 @@ func (s *AccountTestService) checkGLMOpenAIChatProbe(ctx context.Context, accoun
 	if err != nil {
 		return nil, err
 	}
-	return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody), nil
+	health := buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody)
+	if health.Valid && strings.TrimSpace(gjson.GetBytes(respBody, "choices.0.message.content").String()) == "" {
+		health.Valid = false
+		health.Message = "chat endpoint returned no visible text; account scheduling state was not restored"
+	}
+	return health, nil
 }
 
 func (s *AccountTestService) checkAPIKeyModelsEndpoint(ctx context.Context, account *Account, platform, endpoint string) (*APIKeyHealthCheckResult, error) {
@@ -915,6 +953,9 @@ func (s *AccountTestService) persistAPIKeyProbeQuotaSnapshot(ctx context.Context
 
 func buildAPIKeyHealthCheckResultFromProbe(account *Account, statusCode int, body []byte) *APIKeyHealthCheckResult {
 	valid, invalid, _, message := ClassifyAPIKeyProbeResponse(account, statusCode, body)
+	if account.Platform == PlatformGLM && IsGLMResourceUnavailableError(body) {
+		message = "GLM endpoint resource unavailable (1113): " + message
+	}
 	return &APIKeyHealthCheckResult{
 		Platform:   account.Platform,
 		StatusCode: statusCode,

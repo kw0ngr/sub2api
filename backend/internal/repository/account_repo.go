@@ -1079,27 +1079,22 @@ func (r *accountRepository) ListSchedulableByGroupIDAndPlatforms(ctx context.Con
 	})
 }
 
-// ListModelAvailabilityCandidates returns active accounts enabled by persistent
-// configuration while deliberately ignoring transient runtime cooldowns.
+// Diagnose configured capability, including a GLM endpoint paused for missing resources.
 func (r *accountRepository) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]service.Account, error) {
 	if len(platforms) == 0 {
 		return []service.Account{}, nil
 	}
-	if groupID != nil {
-		return r.queryAccountsByGroup(ctx, *groupID, accountGroupQueryOptions{
-			status:               service.StatusActive,
-			schedulable:          true,
-			ignoreTransientState: true,
-			platforms:            platforms,
-		})
-	}
-
 	predicates := []dbpredicate.Account{
-		dbaccount.StatusEQ(service.StatusActive),
-		dbaccount.SchedulableEQ(true),
+		dbaccount.Or(
+			dbaccount.And(dbaccount.StatusEQ(service.StatusActive), dbaccount.SchedulableEQ(true)),
+			dbaccount.And(dbaccount.PlatformEQ(service.PlatformGLM), dbaccount.StatusEQ(service.StatusError),
+				dbaccount.SchedulableEQ(false), dbaccount.ErrorMessageContains("GLM endpoint resource unavailable (1113)")),
+		),
 		dbaccount.PlatformIn(platforms...),
 	}
-	if !includeGrouped {
+	if groupID != nil {
+		predicates = append(predicates, dbaccount.HasAccountGroupsWith(dbaccountgroup.GroupIDEQ(*groupID)))
+	} else if !includeGrouped {
 		predicates = append(predicates, dbaccount.Not(dbaccount.HasAccountGroups()))
 	}
 	accounts, err := r.client.Account.Query().

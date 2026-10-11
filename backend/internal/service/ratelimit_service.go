@@ -923,7 +923,11 @@ func (s *RateLimitService) handleAuthError(ctx context.Context, account *Account
 			slog.Warn("account_set_schedulable_false_failed", "account_id", account.ID, "error", err)
 		}
 	}
-	slog.Warn("account_disabled_auth_error", "account_id", account.ID, "error", errorMsg)
+	if account.Platform == PlatformGLM && strings.Contains(errorMsg, "GLM endpoint resource unavailable (1113)") {
+		slog.Warn("account_endpoint_resource_unavailable", "account_id", account.ID, "error", errorMsg)
+	} else {
+		slog.Warn("account_disabled_auth_error", "account_id", account.ID, "error", errorMsg)
+	}
 }
 
 func buildAPIKeyRuntimeErrorMessage(statusCode int, responseBody []byte, prefix string) string {
@@ -940,6 +944,9 @@ func buildAPIKeyRuntimeErrorMessage(statusCode int, responseBody []byte, prefix 
 
 func (s *RateLimitService) handleAPIKeyPermanentDisable(ctx context.Context, account *Account, statusCode int, responseBody []byte) {
 	msg := buildAPIKeyRuntimeErrorMessage(statusCode, responseBody, "API key permanently disabled after runtime detection")
+	if account.Platform == PlatformGLM && IsGLMResourceUnavailableError(responseBody) {
+		msg = "GLM endpoint resource unavailable (1113): " + sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(responseBody))
+	}
 	s.handleAuthError(ctx, account, msg)
 }
 

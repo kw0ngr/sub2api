@@ -1210,8 +1210,17 @@ func classifyOpsPhase(errType, message, code string) string {
 	case "authentication_error":
 		return "auth"
 	case "billing_error", "subscription_error":
+		if strings.Contains(msg, "upstream endpoint") {
+			if strings.HasPrefix(msg, "configured") {
+				return "routing"
+			}
+			return "upstream"
+		}
 		return "request"
 	case "rate_limit_error":
+		if strings.Contains(msg, "gateway account") && strings.Contains(msg, "queue") {
+			return "routing"
+		}
 		if strings.Contains(msg, "concurrency") || strings.Contains(msg, "pending") || strings.Contains(msg, "queue") {
 			return "request"
 		}

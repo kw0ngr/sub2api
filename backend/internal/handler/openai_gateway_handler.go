@@ -1211,8 +1211,9 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
 		return nil, false, &service.UpstreamFailoverError{
-			StatusCode:   http.StatusTooManyRequests,
-			ResponseBody: []byte(`{"error":{"type":"rate_limit_error","message":"account wait queue full"}}`),
+			LocalConcurrency: true,
+			StatusCode:       http.StatusTooManyRequests,
+			ResponseBody:     []byte(`{"error":{"type":"rate_limit_error","message":"account wait queue full"}}`),
 		}
 	}
 
@@ -1770,6 +1771,11 @@ func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error,
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
+	if failoverErr.LocalConcurrency {
+		c.Header("Retry-After", "2")
+		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Gateway account concurrency queue is full; retry later", streamStarted)
+		return
+	}
 
 	// 先检查透传规则
 	if h.errorPassthroughService != nil && len(responseBody) > 0 {
@@ -1802,6 +1808,11 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformGLM && service.IsGLMResourceUnavailableError(responseBody) {
+		h.handleStreamingAwareError(c, http.StatusPaymentRequired, "billing_error", "Upstream endpoint has no available balance or resources; restore its resources before retrying", streamStarted)
+		return
+	}
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)

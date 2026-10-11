@@ -101,3 +101,15 @@ func TestClassifyNoAccountError_SkipsDiagnosisWithoutGroupOrModel(t *testing.T) 
 	}
 	require.Empty(t, diag.calls)
 }
+
+func TestClassifyNoAccountErrorReportsConfiguredResourceOutageWithout404Or503(t *testing.T) {
+	diag := &fakeModelAvailabilityDiagnoser{resp: service.ModelAvailabilityDiagnosis{
+		HasAccountsInPool: true, HasModelSupport: true, ResourceUnavailable: true,
+	}}
+	cls := classifyNoAccountError(context.Background(), noAccountDiagnosisRequest{
+		Diagnoser: diag, APIKey: &service.APIKey{GroupID: groupIDPtr(19)}, RoutingModel: "glm-5.3", Platform: service.PlatformGLM,
+	})
+	require.Equal(t, http.StatusPaymentRequired, cls.Status)
+	require.Equal(t, "billing_error", cls.ErrType)
+	require.False(t, cls.ModelNotFound)
+}

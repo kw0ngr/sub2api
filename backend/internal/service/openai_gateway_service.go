@@ -3614,6 +3614,30 @@ func openAIStreamDataStartsVisibleOutput(data, eventType string) bool {
 	if eventType == "" {
 		eventType = strings.TrimSpace(gjson.Get(trimmed, "type").String())
 	}
+	for _, choice := range gjson.Get(trimmed, "choices").Array() {
+		delta := choice.Get("delta")
+		for _, field := range []string{"content", "reasoning_content", "reasoning", "refusal"} {
+			value := delta.Get(field)
+			if value.Type == gjson.String && value.String() != "" {
+				return true
+			}
+			if field == "content" {
+				for _, part := range value.Array() {
+					if part.Get("text").String() != "" {
+						return true
+					}
+				}
+			}
+		}
+		if delta.Get("function_call.name").String() != "" || delta.Get("function_call.arguments").String() != "" {
+			return true
+		}
+		for _, tool := range delta.Get("tool_calls").Array() {
+			if tool.Get("function.name").String() != "" || tool.Get("function.arguments").String() != "" {
+				return true
+			}
+		}
+	}
 	if strings.HasSuffix(eventType, ".delta") {
 		delta := gjson.Get(trimmed, "delta")
 		return delta.Exists() && delta.String() != ""

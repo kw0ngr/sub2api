@@ -1583,6 +1583,10 @@ func (s *AccountTestService) testGLMOpenAIAccountConnection(c *gin.Context, acco
 			{"role": "user", "content": userPrompt},
 		},
 	}
+	if isGLM53Model(testModelID) || strings.EqualFold(testModelID, "glm-5.3-flash") {
+		payload["thinking"] = map[string]string{"type": "enabled"}
+		payload["reasoning_effort"] = "low"
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
