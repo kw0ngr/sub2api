@@ -318,6 +318,7 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["deepseek-v4-flash"] = s.fallbackPrices["deepseek-flash"]
+	s.fallbackPrices["deepseek-v4.1-flash"] = s.fallbackPrices["deepseek-flash"]
 	s.fallbackPrices["deepseek-v4-flash-vision-exp"] = s.fallbackPrices["deepseek-flash"]
 	s.fallbackPrices["gemini-nano-banana-2.1"] = &ModelPricing{
 		InputPricePerToken: 1.5e-6, OutputPricePerToken: 7.5e-6, ImageOutputPricePerToken: 30e-6,
@@ -417,7 +418,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "deepseek-v4-pro") {
 		return s.fallbackPrices["deepseek-v4-pro"]
 	}
-	if strings.Contains(modelLower, "deepseek-v4-flash") ||
+	if strings.Contains(modelLower, "deepseek-v4.1-flash") ||
+		strings.Contains(modelLower, "deepseek-v4-flash") ||
 		lastSegment(modelLower) == "deepseek-flash" ||
 		strings.Contains(modelLower, "deepseek-chat") ||
 		strings.Contains(modelLower, "deepseek-reasoner") {

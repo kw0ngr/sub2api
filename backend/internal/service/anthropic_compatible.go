@@ -46,6 +46,9 @@ func anthropicCompatibleBaseURLForAccount(account *Account) string {
 			normalized == deepSeekOpenAICompatBaseURL+"/v1" {
 			return deepSeekAnthropicBaseURL
 		}
+		if strings.HasSuffix(normalized, "/v1") {
+			return rawBaseURL[:len(rawBaseURL)-len("/v1")]
+		}
 	case PlatformOpenRouter:
 		if normalized == "" ||
 			normalized == "https://openrouter.ai" ||

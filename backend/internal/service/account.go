@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -666,7 +667,7 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 	if mappingSupportsRequestedModel(mapping, requestedModel) {
 		return true
 	}
-	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
+	normalized := a.normalizeOfficialDeepSeekFlashModel(normalizeRequestedModelForLookup(a.Platform, requestedModel))
 	return normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized)
 }
 
@@ -682,18 +683,38 @@ func (a *Account) GetMappedModel(requestedModel string) string {
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
-		return requestedModel, false
+		return a.normalizeOfficialDeepSeekFlashModel(requestedModel), false
 	}
 	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
-		return mappedModel, true
+		return a.normalizeOfficialDeepSeekFlashModel(mappedModel), true
 	}
-	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
+	normalized := a.normalizeOfficialDeepSeekFlashModel(normalizeRequestedModelForLookup(a.Platform, requestedModel))
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
-			return mappedModel, true
+			return a.normalizeOfficialDeepSeekFlashModel(mappedModel), true
 		}
 	}
-	return requestedModel, false
+	return a.normalizeOfficialDeepSeekFlashModel(requestedModel), false
+}
+
+func (a *Account) normalizeOfficialDeepSeekFlashModel(model string) string {
+	if a.Platform != PlatformDeepSeek {
+		return model
+	}
+	rawURL := strings.TrimSpace(a.GetCredential("base_url"))
+	if rawURL != "" {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || !strings.EqualFold(parsed.Hostname(), "api.deepseek.com") {
+			return model
+		}
+	}
+	// V4.1 keeps the official API ID; custom providers may use versioned IDs.
+	switch model {
+	case "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		return "deepseek-flash"
+	default:
+		return model
+	}
 }
 
 func (a *Account) GetBaseURL() string {

@@ -56,6 +56,7 @@ git diff --check
 
 - Gemini 新模型须用真实 `generateContent` 验证；`/models` 成功不等于有对应模型额度。健康检查默认使用 `gemini-3.5-flash-lite`，避免新项目无 Gemini 2.5 权限被误判。Nano Banana 图像探活须实际收到非空 `inlineData`，不能以仅文本的 200 判定成功。
 - DeepSeek 当前 Flash ID 是 `deepseek-flash`（V4.1）；旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 保留兼容，并使用同一 Flash 价格。默认价格采用官方峰时基准，未自动应用上游按时段/节假日变化的折扣；渠道自定义价格仍优先。
+- DeepSeek V4.1 的客户端显示名可使用 `deepseek-v4.1-flash`，官方 API 仍须发送 `deepseek-flash`。只对官方 `api.deepseek.com` 归一化旧/新 Flash 别名；第三方渠道须实测其原生模型 ID，不套用官方 ID。兼容渠道的 OpenAI base URL 常含 `/v1`，Anthropic 测试拼接 `/v1/messages` 前须去除末尾 `/v1`，避免 `/v1/v1/messages`。账户 `3210` 的 HubCore 入口使用 `https://api.hubcore.cn/v1`，Flash 别名映射到该上游原生 `deepseek-v4.1-flash`；根路径返回 HTML 200 不算推理成功。
 - DeepSeek 回归须覆盖 Chat/Responses 的 402：账号停调后返回未提交响应的换号错误；命名或 `required` 工具选择须复用原生 Messages 的思考兼容处理，普通 `auto` 调用仍保留 `max` 和思考回传。
 - Gemini 3.6–3.8 Flash 的本地促销价格截止 2026-12-31，须在 2027-01-01 前重新核实官方价格。
 - GLM `1113` 表示所选上游入口没有可用资源，不是普通短限流；只暂停该协议账号，不能联动禁用相同 Key 的其他协议账号。Coding Plan 的 OpenAI base URL 使用 `https://open.bigmodel.cn/api/coding/paas/v4`，须真实推理通过后才改配置和恢复。`/models=200` 不能单独恢复调度；本地等待队列满须记录为网关 routing 错误，不能填写伪造的上游 429。原始业务码保存在错误详情 `provider_error_code`。

@@ -524,7 +524,7 @@ func TestRateLimitService_HandleUpstreamError_DeepSeekBusy503UsesShortModelCoold
 
 			require.True(t, handled)
 			require.Zero(t, repo.tempCalls, "a transient model overload must not cool down the whole DeepSeek account for an hour")
-			require.Equal(t, []string{"deepseek-v4-flash"}, repo.modelRateLimitScopes)
+			require.Equal(t, []string{"deepseek-flash"}, repo.modelRateLimitScopes)
 			require.Len(t, repo.modelRateLimitResets, 1)
 			require.WithinDuration(t, before.Add(tt.cooldown), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
 		})

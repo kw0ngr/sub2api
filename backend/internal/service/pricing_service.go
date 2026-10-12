@@ -731,7 +731,7 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 func currentProviderPricing(model string) *LiteLLMModelPricing {
 	model = lastSegment(normalizeModelNameForPricing(strings.ToLower(strings.TrimSpace(model))))
 	switch model {
-	case "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+	case "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
 		model = "deepseek-flash"
 	}
 	return currentProviderStaticPricing[model]

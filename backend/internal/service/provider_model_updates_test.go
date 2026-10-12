@@ -15,7 +15,7 @@ func TestCurrentProviderPricingOverridesStaleRemoteAndKeepsFlashAliases(t *testi
 		"deepseek-v4-pro":  {InputCostPerToken: 99},
 		"gemini-3.8-flash": {InputCostPerToken: 99},
 	}}
-	for _, model := range []string{"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek/deepseek-flash"} {
+	for _, model := range []string{"deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek/deepseek-flash"} {
 		price := svc.GetModelPricing(model)
 		require.NotNil(t, price, model)
 		require.InDelta(t, .3e-6, price.InputCostPerToken, 1e-12)

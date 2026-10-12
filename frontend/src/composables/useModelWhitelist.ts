@@ -128,6 +128,7 @@ const qwenModels = [
 
 // DeepSeek
 const deepseekModels = [
+  'deepseek-v4.1-flash',
   'deepseek-flash',
   'deepseek-chat', 'deepseek-coder', 'deepseek-reasoner',
   'deepseek-v3', 'deepseek-v3-0324',
@@ -287,6 +288,12 @@ export const allModels = allModelsList.map(m => ({ value: m, label: m }))
 // =====================
 // 预设映射
 // =====================
+
+const deepseekPresetMappings = [
+  { label: 'DeepSeek V4.1 Flash', from: 'deepseek-v4.1-flash', to: 'deepseek-flash', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
+  { label: 'DeepSeek V4 Pro', from: 'deepseek-v4-pro', to: 'deepseek-v4-pro', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'V4 Flash → V4.1', from: 'deepseek-v4-flash', to: 'deepseek-flash', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' }
+]
 
 const anthropicPresetMappings = [
   { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
@@ -471,6 +478,7 @@ export function getModelsByPlatform(platform: string): string[] {
 
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
+  if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'glm' || platform === 'zhipu') return []

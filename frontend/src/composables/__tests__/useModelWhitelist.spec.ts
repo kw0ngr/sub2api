@@ -63,16 +63,17 @@ describe('useModelWhitelist', () => {
     const models = getModelsByPlatform('gemini')
 
     expect(models.slice(0, 5)).toEqual([
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-nano-banana-2.1',
       'gemini-3.6-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-3.1-flash-lite',
-      'gemini-3.1-pro-preview'
+      'gemini-3.5-flash-lite'
     ])
-    expect(models).toContain('gemini-2.5-flash-image')
+    expect(models).toContain('gemini-nano-banana-2.1')
     expect(models).toContain('gemini-3.1-flash-image')
     expect(models).not.toContain('gemini-2.0-flash')
-    expect(models.indexOf('gemini-2.5-flash-image')).toBeLessThan(models.indexOf('gemini-2.5-flash'))
+    expect(models).not.toContain('gemini-2.5-flash-image')
+    expect(models.indexOf('gemini-nano-banana-2.1')).toBeLessThan(models.indexOf('gemini-2.5-flash'))
   })
 
   it('gemini 预设映射包含最新 Flash 与 Flash Lite', () => {
@@ -86,8 +87,16 @@ describe('useModelWhitelist', () => {
   it('deepseek 模型列表包含 v4 pro/flash', () => {
     const models = getModelsByPlatform('deepseek')
 
+    expect(models[0]).toBe('deepseek-v4.1-flash')
+    expect(models).toContain('deepseek-flash')
     expect(models).toContain('deepseek-v4-pro')
     expect(models).toContain('deepseek-v4-flash')
+    expect(getPresetMappingsByPlatform('deepseek')).toContainEqual(
+      expect.objectContaining({ from: 'deepseek-v4.1-flash', to: 'deepseek-flash' })
+    )
+    expect(getPresetMappingsByPlatform('deepseek')).not.toContainEqual(
+      expect.objectContaining({ from: 'claude-fable-5' })
+    )
   })
 
   it('GLM 模型列表优先包含 5.x 和 4.7 系列', () => {
