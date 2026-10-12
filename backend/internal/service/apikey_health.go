@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,10 +18,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const (
-	apiKeyProbeCooldown        = 72 * time.Hour
-	apiKeyMinimumUsableBalance = 1.0
-)
+const apiKeyProbeCooldown = 72 * time.Hour
 
 type APIKeyHealthCheckResult struct {
 	Platform   string                    `json:"platform"`
@@ -53,6 +51,12 @@ func DetectAPIKeyPlatform(rawKey string) (string, bool) {
 	case strings.HasPrefix(lower, "xai-"):
 		return PlatformGrok, true
 	case strings.HasPrefix(lower, "sk-"):
+		// Short hexadecimal keys are shared by providers; a prefix is not proof of OpenAI ownership.
+		if len(key) == 35 {
+			if _, err := hex.DecodeString(key[3:]); err == nil {
+				return "", false
+			}
+		}
 		return PlatformOpenAI, true
 	default:
 		return "", false
@@ -673,30 +677,26 @@ func (s *AccountTestService) checkOpenRouterAPIKey(ctx context.Context, account 
 		balance, total, used, remaining := parseOpenRouterCredits(body)
 		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformOpenRouter, statusCode, balance, total, used, remaining, "", time.Now())
 		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
-		if low, ok := apiKeyProbeBalanceBelowMinimum(firstNonEmpty(remaining, total), apiKeyMinimumUsableBalance); ok && low {
+		if depleted, ok := apiKeyProbeBalanceDepleted(firstNonEmpty(remaining, total)); ok && depleted {
 			snapshot.Note = lowBalanceProbeNote()
 			return &APIKeyHealthCheckResult{
 				Platform:   PlatformOpenRouter,
 				StatusCode: statusCode,
 				Invalid:    true,
-				Message:    balanceBelowMinimumMessage(balance),
+				Message:    depletedBalanceMessage(balance),
 				ProbeQuota: snapshot,
 			}, nil
 		}
-		return &APIKeyHealthCheckResult{
-			Platform:   PlatformOpenRouter,
-			StatusCode: statusCode,
-			Valid:      true,
-			Message:    balanceMessage(balance),
-			ProbeQuota: snapshot,
-		}, nil
+		health, err := s.checkAPIKeyChatProbe(ctx, account, baseURL, account.GetMappedModel("openai/gpt-4o-mini"))
+		attachProbeQuota(health, snapshot)
+		return health, err
 	}
 	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
 		return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, body), nil
 	}
 
 	// Some OpenRouter keys cannot access /credits but can still be used for inference.
-	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformOpenRouter, baseURL+"/models")
+	return s.checkAPIKeyChatProbe(ctx, account, baseURL, account.GetMappedModel("openai/gpt-4o-mini"))
 }
 
 func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
@@ -713,29 +713,26 @@ func (s *AccountTestService) checkDeepSeekAPIKey(ctx context.Context, account *A
 		balance, currency, amounts := parseDeepSeekBalanceDetails(body)
 		snapshot := BuildAPIKeyProbeBalanceSnapshot(PlatformDeepSeek, statusCode, balance, "", "", "", currency, time.Now())
 		s.persistAPIKeyProbeQuotaSnapshot(ctx, account, snapshot)
-		if apiKeyProbeBalancesBelowMinimum(amounts, apiKeyMinimumUsableBalance) {
+		available := gjson.GetBytes(body, "is_available")
+		if available.Type == gjson.False || (!available.Exists() && apiKeyProbeBalancesDepleted(amounts)) {
 			snapshot.Note = lowBalanceProbeNote()
 			return &APIKeyHealthCheckResult{
 				Platform:   PlatformDeepSeek,
 				StatusCode: statusCode,
 				Invalid:    true,
-				Message:    balanceBelowMinimumMessage(balance),
+				Message:    depletedBalanceMessage(balance),
 				ProbeQuota: snapshot,
 			}, nil
 		}
-		return &APIKeyHealthCheckResult{
-			Platform:   PlatformDeepSeek,
-			StatusCode: statusCode,
-			Valid:      true,
-			Message:    balanceMessage(balance),
-			ProbeQuota: snapshot,
-		}, nil
+		health, err := s.checkAPIKeyChatProbe(ctx, account, baseURL, account.GetMappedModel("deepseek-flash"))
+		attachProbeQuota(health, snapshot)
+		return health, err
 	}
 	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
 		return buildAPIKeyHealthCheckResultFromProbe(account, statusCode, body), nil
 	}
 
-	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformDeepSeek, baseURL+"/models")
+	return s.checkAPIKeyChatProbe(ctx, account, baseURL, account.GetMappedModel("deepseek-flash"))
 }
 
 func (s *AccountTestService) checkGrokAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
@@ -743,7 +740,27 @@ func (s *AccountTestService) checkGrokAPIKey(ctx context.Context, account *Accou
 	if baseURL == "" {
 		baseURL = DefaultAPIKeyBaseURL(PlatformGrok)
 	}
-	return s.checkAPIKeyModelsEndpoint(ctx, account, PlatformGrok, baseURL+"/models")
+	model := account.GetMappedModel(grokQuotaDefaultModel)
+	body, err := buildGrokQuotaProbeBody(model)
+	if err != nil {
+		return nil, err
+	}
+	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, buildOpenAIResponsesURL(baseURL), map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
+		"Content-Type":  "application/json",
+		"Accept":        "application/json, text/event-stream",
+	}, body)
+	if err != nil {
+		return nil, err
+	}
+	health := buildAPIKeyHealthCheckResultFromProbe(account, statusCode, respBody)
+	if health.Valid {
+		if err := validateGrokInferenceProbeCompletion(respBody); err != nil {
+			health.Valid = false
+			health.Message = err.Error()
+		}
+	}
+	return health, nil
 }
 
 func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Account) (*APIKeyHealthCheckResult, error) {
@@ -753,7 +770,7 @@ func (s *AccountTestService) checkGLMAPIKey(ctx context.Context, account *Accoun
 			baseURL = DefaultAPIKeyBaseURL(PlatformGLM)
 		}
 		quota := s.fetchGLMQuotaLimitSnapshot(ctx, account, baseURL)
-		health, err := s.checkGLMOpenAIChatProbe(ctx, account, baseURL)
+		health, err := s.checkAPIKeyChatProbe(ctx, account, baseURL, glmAPIKeyProbeModel(account))
 		attachProbeQuota(health, quota)
 		return health, err
 	}
@@ -855,18 +872,23 @@ func glmAPIKeyProbeModel(account *Account) string {
 	return "glm-5.2"
 }
 
-func (s *AccountTestService) checkGLMOpenAIChatProbe(ctx context.Context, account *Account, baseURL string) (*APIKeyHealthCheckResult, error) {
-	model := glmAPIKeyProbeModel(account)
-	body, _ := json.Marshal(map[string]any{
-		"model":            model,
-		"max_tokens":       512,
-		"stream":           false,
-		"reasoning_effort": normalizeGLMOpenAIReasoningEffortForModel("low", model),
+func (s *AccountTestService) checkAPIKeyChatProbe(ctx context.Context, account *Account, baseURL, model string) (*APIKeyHealthCheckResult, error) {
+	payload := map[string]any{
+		"model":      model,
+		"max_tokens": 512,
+		"stream":     false,
 		"messages": []map[string]any{
 			{"role": "user", "content": "hi"},
 		},
-	})
-	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, buildOpenAICompatibleChatCompletionsURL(PlatformGLM, baseURL), map[string]string{
+	}
+	switch account.Platform {
+	case PlatformGLM:
+		payload["reasoning_effort"] = normalizeGLMOpenAIReasoningEffortForModel("low", model)
+	case PlatformDeepSeek:
+		payload["thinking"] = map[string]any{"type": "disabled"}
+	}
+	body, _ := json.Marshal(payload)
+	statusCode, respBody, err := s.doAPIKeyProbe(ctx, account, http.MethodPost, buildOpenAICompatibleChatCompletionsURL(account.Platform, baseURL), map[string]string{
 		"Authorization": "Bearer " + strings.TrimSpace(account.GetCredential("api_key")),
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
@@ -912,6 +934,9 @@ func (s *AccountTestService) doAPIKeyProbe(ctx context.Context, account *Account
 			req.Header.Set(key, value)
 		}
 	}
+	if account.IsGrok() {
+		applyGrokCLIRequestHeaders(req.Header, account, gjson.GetBytes(body, "model").String())
+	}
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -934,8 +959,8 @@ func (s *AccountTestService) doAPIKeyProbe(ctx context.Context, account *Account
 		return resp.StatusCode, nil, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, respBody, nil
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, respBody, readErr
 }
 
 func (s *AccountTestService) persistAPIKeyProbeQuotaSnapshot(ctx context.Context, account *Account, snapshot *APIKeyProbeQuotaSnapshot) {
@@ -1092,43 +1117,36 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func apiKeyProbeBalanceBelowMinimum(value string, minimum float64) (bool, bool) {
+func apiKeyProbeBalanceDepleted(value string) (bool, bool) {
 	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	if err != nil {
 		return false, false
 	}
-	return parsed < minimum, true
+	return parsed <= 0, true
 }
 
-func apiKeyProbeBalancesBelowMinimum(amounts []float64, minimum float64) bool {
+func apiKeyProbeBalancesDepleted(amounts []float64) bool {
 	if len(amounts) == 0 {
 		return false
 	}
 	for _, amount := range amounts {
-		if amount >= minimum {
+		if amount > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-func balanceBelowMinimumMessage(balance string) string {
+func depletedBalanceMessage(balance string) string {
 	balance = strings.TrimSpace(balance)
 	if balance == "" {
-		return "balance below 1"
+		return "balance depleted"
 	}
-	return "balance below 1: " + balance
+	return "balance depleted: " + balance
 }
 
 func lowBalanceProbeNote() string {
-	return "Balance is below 1; health check marks this API key invalid for scheduling."
-}
-
-func balanceMessage(balance string) string {
-	if strings.TrimSpace(balance) == "" {
-		return "balance available"
-	}
-	return "balance: " + strings.TrimSpace(balance)
+	return "Balance is depleted; scheduling is disabled until balance and inference are available."
 }
 
 func buildAPIKeyHealthCheckResultFromScheduledResult(account *Account, result *ScheduledTestResult) *APIKeyHealthCheckResult {

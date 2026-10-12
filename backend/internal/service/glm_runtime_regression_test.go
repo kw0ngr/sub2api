@@ -73,7 +73,7 @@ func TestGLMHealthRequiresActualTextNotJustHTTP200(t *testing.T) {
 	}}
 	svc := &AccountTestService{httpUpstream: upstream}
 	account := &Account{Platform: PlatformGLM, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-test"}}
-	health, err := svc.checkGLMOpenAIChatProbe(context.Background(), account, "https://open.bigmodel.cn/api/paas/v4")
+	health, err := svc.checkAPIKeyChatProbe(context.Background(), account, "https://open.bigmodel.cn/api/paas/v4", glmAPIKeyProbeModel(account))
 	require.NoError(t, err)
 	require.False(t, health.Valid)
 	require.False(t, health.Invalid, "empty output is not proof of an invalid credential")

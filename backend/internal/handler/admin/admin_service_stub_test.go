@@ -273,7 +273,10 @@ func (s *stubAdminService) CreateAccount(ctx context.Context, input *service.Cre
 	if s.createAccountErr != nil {
 		return nil, s.createAccountErr
 	}
-	account := service.Account{ID: 300, Name: input.Name, Status: service.StatusActive}
+	account := service.Account{ID: 300, Name: input.Name, Status: service.StatusActive, Schedulable: true}
+	if input.Schedulable != nil {
+		account.Schedulable = *input.Schedulable
+	}
 	return &account, nil
 }
 

@@ -151,7 +151,7 @@ const formatResultLine = (item: RawAPIKeyImportLineResult) => {
 
 const resultLineClass = (item: RawAPIKeyImportLineResult) => {
   if (item.error || item.invalid_disabled) return 'text-red-600 dark:text-red-300'
-  if (item.valid || item.created) return 'text-emerald-700 dark:text-emerald-300'
+  if (item.valid) return 'text-emerald-700 dark:text-emerald-300'
   return 'text-gray-700 dark:text-dark-300'
 }
 

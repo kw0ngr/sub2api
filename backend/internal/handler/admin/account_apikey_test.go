@@ -329,3 +329,62 @@ func TestImportRawAPIKeysValidateAfterImportStartsBackgroundHealthJob(t *testing
 	require.NotEmpty(t, result.HealthJobID)
 	require.Empty(t, result.HealthJobError)
 }
+
+func TestImportRawAPIKeysQuarantinesKeysUntilValidationSucceeds(t *testing.T) {
+	for _, busy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "failed_check", true: "busy_job"}[busy], func(t *testing.T) {
+			adminSvc := newStubAdminService()
+			handler := &AccountHandler{
+				adminService: adminSvc, accountTestService: &service.AccountTestService{},
+			}
+			handler.hcState.running = busy
+			c, rec := newJSONTestContext(http.MethodPost, "/admin/accounts/raw-import",
+				`{"raw_text":"sk-proj-new-key","validate_after_import":true}`)
+			handler.ImportRawAPIKeys(c)
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Len(t, adminSvc.createdAccounts, 1)
+			require.NotNil(t, adminSvc.createdAccounts[0].Schedulable)
+			require.False(t, *adminSvc.createdAccounts[0].Schedulable)
+			result := decodeAdminResponseData[RawAPIKeyImportResult](t, rec)
+			if busy {
+				require.False(t, result.HealthJobStarted)
+				require.Contains(t, result.HealthJobError, "running")
+			} else {
+				require.Eventually(t, func() bool {
+					handler.hcState.mu.RLock()
+					defer handler.hcState.mu.RUnlock()
+					return !handler.hcState.running
+				}, time.Second, 10*time.Millisecond)
+			}
+			adminSvc.mu.Lock()
+			defer adminSvc.mu.Unlock()
+			for _, call := range adminSvc.setSchedulableCalls {
+				require.False(t, call.schedulable, "failed checks must not activate imported keys")
+			}
+		})
+	}
+}
+
+func TestParseRawAPIKeyImportLinesRequiresPlatformForAmbiguousKeys(t *testing.T) {
+	key := "sk-0123456789abcdef0123456789abcdef"
+	total, lines, results, err := parseRawAPIKeyImportLines(key + "\ndeepseek," + key + "\nopenai," + key)
+	require.NoError(t, err)
+	require.Equal(t, 3, total)
+	require.Len(t, results, 1, "ambiguous bare keys must not silently become OpenAI accounts")
+	require.Len(t, lines, 2)
+	require.Equal(t, service.PlatformDeepSeek, lines[0].Platform)
+	require.Equal(t, service.PlatformOpenAI, lines[1].Platform)
+}
+
+func TestImportRawAPIKeysWithoutValidationPreservesScheduling(t *testing.T) {
+	adminSvc := newStubAdminService()
+	handler := &AccountHandler{adminService: adminSvc}
+	c, rec := newJSONTestContext(http.MethodPost, "/admin/accounts/raw-import",
+		`{"raw_text":"sk-proj-unchecked","validate_after_import":false}`)
+	handler.ImportRawAPIKeys(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.NotNil(t, adminSvc.createdAccounts[0].Schedulable)
+	require.True(t, *adminSvc.createdAccounts[0].Schedulable)
+	require.False(t, decodeAdminResponseData[RawAPIKeyImportResult](t, rec).HealthJobStarted)
+}

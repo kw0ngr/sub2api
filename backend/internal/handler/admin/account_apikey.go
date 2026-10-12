@@ -296,6 +296,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 	}
 
 	createdForHealthCheck := make([]*service.Account, 0, len(lines))
+	schedulable := !req.ValidateAfterImport
 	for _, line := range lines {
 		identity := buildAPIKeyIdentity(line.Platform, line.Key, line.BaseURL, inferGLMCompatModeFromBaseURL(line.BaseURL))
 		if existing, ok := existingByIdentity[identity]; ok && existing != nil {
@@ -334,6 +335,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 			Credentials:          credentials,
 			Concurrency:          3,
 			Priority:             50,
+			Schedulable:          &schedulable,
 			SkipDefaultGroupBind: req.SkipDefaultGroupBind,
 		})
 
@@ -352,6 +354,9 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 
 		item.Created = true
 		item.AccountID = account.ID
+		if req.ValidateAfterImport {
+			item.Message = "awaiting successful validation; scheduling disabled"
+		}
 		result.Created++
 		existingByIdentity[identity] = account
 		healthAccount := *account
@@ -371,7 +376,7 @@ func (h *AccountHandler) ImportRawAPIKeys(c *gin.Context) {
 			result.HealthJobStarted = true
 			result.HealthJobID = jobID
 		} else {
-			result.HealthJobError = "health check is already running"
+			result.HealthJobError = "health check is already running; imported keys remain unschedulable until a successful health check"
 		}
 	}
 
@@ -495,6 +500,9 @@ func (h *AccountHandler) runHealthCheckBackground(jobID string, accounts []*serv
 				item.Message = health.Message
 				item.Valid = health.Valid
 				item.APIKeyProbeQuota = health.ProbeQuota
+				if !health.Valid && !health.Invalid && !acc.Schedulable {
+					item.Message += " | validation inconclusive; scheduling remains disabled"
+				}
 
 				if health.Valid {
 					valid = true
@@ -687,7 +695,7 @@ func parseRawAPIKeyImportLines(raw string) (int, []rawAPIKeyImportLine, []RawAPI
 				results = append(results, RawAPIKeyImportLineResult{
 					Line:       lineNo,
 					KeyPreview: maskRawAPIKey(key),
-					Error:      "unsupported key format, could not detect platform",
+					Error:      "unsupported or ambiguous key format, could not detect platform; specify platform,key or key,base_url",
 				})
 				continue
 			}

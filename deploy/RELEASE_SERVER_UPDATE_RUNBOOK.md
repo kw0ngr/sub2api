@@ -59,6 +59,7 @@ git diff --check
 - DeepSeek 回归须覆盖 Chat/Responses 的 402：账号停调后返回未提交响应的换号错误；命名或 `required` 工具选择须复用原生 Messages 的思考兼容处理，普通 `auto` 调用仍保留 `max` 和思考回传。
 - Gemini 3.6–3.8 Flash 的本地促销价格截止 2026-12-31，须在 2027-01-01 前重新核实官方价格。
 - GLM `1113` 表示所选上游入口没有可用资源，不是普通短限流；只暂停该协议账号，不能联动禁用相同 Key 的其他协议账号。Coding Plan 的 OpenAI base URL 使用 `https://open.bigmodel.cn/api/coding/paas/v4`，须真实推理通过后才改配置和恢复。`/models=200` 不能单独恢复调度；本地等待队列满须记录为网关 routing 错误，不能填写伪造的上游 429。原始业务码保存在错误详情 `provider_error_code`。
+- 原始 Key 批量导入勾选验证时，新账号须在入库时即不可调度；仅验证成功后恢复。健康任务冲突、网络错误、权限或限额未解决时保持停调，不能把 `created` 当成 `valid`。短十六进制 `sk-` Key 须明确 `platform,key` 或 `key,base_url`，`# deepseek` 等注释不会设置平台。OpenRouter/DeepSeek 余额只能作为辅助信号，须真实 Chat 完成；正余额小于 1 不应误禁用，DeepSeek 优先遵循 `is_available`。Grok 验证复用原生 Responses 探活及 CLI 头，须收到完成事件。发布前保存尚在内存的健康任务结果，待任务完成再升级；导入与目标分组绑定是两件事，未匹配 `platform-default` 时保留未分组，不擅自改原有生产分组。
 
 ```bash
 cd backend

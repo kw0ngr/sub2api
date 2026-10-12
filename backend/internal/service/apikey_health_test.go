@@ -207,10 +207,11 @@ func TestDefaultAPIKeyBaseURL_OpenRouterAndDeepSeek(t *testing.T) {
 	require.Equal(t, "https://api.x.ai/v1", DefaultAPIKeyBaseURL(PlatformGrok))
 }
 
-func TestCheckOpenRouterAPIKey_LowBalanceIsInvalid(t *testing.T) {
+func TestCheckOpenRouterAPIKey_PositiveBalanceBelowOneCanInfer(t *testing.T) {
 	svc := &AccountTestService{
 		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
 			newJSONResponse(http.StatusOK, `{"data":{"total_credits":1.2,"total_usage":0.5}}`),
+			newJSONResponse(http.StatusOK, `{"choices":[{"message":{"content":"hi"}}]}`),
 		}},
 	}
 	account := &Account{
@@ -224,18 +225,18 @@ func TestCheckOpenRouterAPIKey_LowBalanceIsInvalid(t *testing.T) {
 	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
 
 	require.NoError(t, err)
-	require.False(t, health.Valid)
-	require.True(t, health.Invalid)
+	require.True(t, health.Valid)
+	require.False(t, health.Invalid)
 	require.Equal(t, http.StatusOK, health.StatusCode)
 	require.NotNil(t, health.ProbeQuota)
 	require.Equal(t, "0.7000", health.ProbeQuota.CreditsRemaining)
-	require.Contains(t, health.Message, "below 1")
 }
 
-func TestCheckDeepSeekAPIKey_LowBalanceIsInvalid(t *testing.T) {
+func TestCheckDeepSeekAPIKey_PositiveBalanceBelowOneCanInfer(t *testing.T) {
 	svc := &AccountTestService{
 		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
 			newJSONResponse(http.StatusOK, `{"balance_infos":[{"total_balance":"0.50","currency":"USD"}]}`),
+			newJSONResponse(http.StatusOK, `{"choices":[{"message":{"content":"hi"}}]}`),
 		}},
 	}
 	account := &Account{
@@ -249,18 +250,18 @@ func TestCheckDeepSeekAPIKey_LowBalanceIsInvalid(t *testing.T) {
 	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
 
 	require.NoError(t, err)
-	require.False(t, health.Valid)
-	require.True(t, health.Invalid)
+	require.True(t, health.Valid)
+	require.False(t, health.Invalid)
 	require.Equal(t, http.StatusOK, health.StatusCode)
 	require.NotNil(t, health.ProbeQuota)
 	require.Equal(t, "0.50 USD", health.ProbeQuota.Balance)
-	require.Contains(t, health.Message, "below 1")
 }
 
 func TestCheckDeepSeekAPIKey_AnyBalanceAtLeastOneStaysValid(t *testing.T) {
 	svc := &AccountTestService{
 		httpUpstream: &queuedHTTPUpstream{responses: []*http.Response{
 			newJSONResponse(http.StatusOK, `{"balance_infos":[{"total_balance":"0.50","currency":"USD"},{"total_balance":"2.00","currency":"CNY"}]}`),
+			newJSONResponse(http.StatusOK, `{"choices":[{"message":{"content":"hi"}}]}`),
 		}},
 	}
 	account := &Account{
