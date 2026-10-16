@@ -731,10 +731,24 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 func currentProviderPricing(model string) *LiteLLMModelPricing {
 	model = lastSegment(normalizeModelNameForPricing(strings.ToLower(strings.TrimSpace(model))))
 	switch model {
+	case "gemini-4-argon":
+		return geminiArgonPricing(time.Now())
 	case "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
 		model = "deepseek-flash"
 	}
 	return currentProviderStaticPricing[model]
+}
+
+func geminiArgonPricing(now time.Time) *LiteLLMModelPricing {
+	input, cached, output := 2e-6, .1e-6, 10e-6
+	if !now.Before(time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC)) {
+		input, cached, output = 4e-6, .2e-6, 20e-6
+	}
+	return &LiteLLMModelPricing{
+		InputCostPerToken: input, CacheReadInputTokenCost: cached, OutputCostPerToken: output,
+		InputCostPerTokenPriority: input * 1.8, CacheReadInputTokenCostPriority: cached * 1.8, OutputCostPerTokenPriority: output * 1.8,
+		LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
+	}
 }
 
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {
@@ -797,7 +811,7 @@ func normalizeModelNameForPricing(model string) string {
 }
 
 func normalizeGeminiThinkingTierAlias(model string) string {
-	for _, base := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+	for _, base := range []string{"gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
 		for _, tier := range []string{"-high", "-low", "-medium", "-tiered"} {
 			if model == base+tier {
 				return base

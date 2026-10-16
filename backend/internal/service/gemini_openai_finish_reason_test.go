@@ -75,3 +75,28 @@ func TestOpenAIGatewayGemini_stream_normalizes_extended_content_filter(t *testin
 	require.Contains(t, recorder.Body.String(), `"finish_reason":"content_filter"`)
 	require.NotContains(t, recorder.Body.String(), "PROHIBITED_CONTENT")
 }
+
+func TestGeminiOpenAIThoughtSignaturesSurviveResponseForwarding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	payload := `{"id":"chatcmpl-test","choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup_test_value","arguments":"{}"},"extra_content":{"google":{"thought_signature":"signed-context"}}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`
+	for _, stream := range []bool{false, true} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		body, contentType := payload, "application/json"
+		if stream {
+			body, contentType = "data: "+payload+"\n\ndata: [DONE]\n\n", "text/event-stream"
+		}
+		resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(body))}
+		svc := &OpenAIGatewayService{cfg: &config.Config{}}
+		account := &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}
+		if stream {
+			_, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gemini-4-argon", "gemini-4-argon")
+			require.NoError(t, err)
+		} else {
+			_, err := svc.handleNonStreamingResponse(context.Background(), resp, c, account, "gemini-4-argon", "gemini-4-argon")
+			require.NoError(t, err)
+		}
+		require.Contains(t, recorder.Body.String(), `"thought_signature":"signed-context"`)
+	}
+}

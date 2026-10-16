@@ -2884,6 +2884,7 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 
 // ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
 func ParseGeminiRateLimitResetTime(body []byte) *int64 {
+	body = unwrapGoogleAPIError(body)
 	// 第一阶段：gjson 结构化提取
 	errMsg := gjson.GetBytes(body, "error.message").String()
 	if looksLikeGeminiDailyQuota(errMsg) {
@@ -2896,6 +2897,9 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	var found *int64
 	gjson.GetBytes(body, "error.details").ForEach(func(_, detail gjson.Result) bool {
 		v := detail.Get("metadata.quotaResetDelay").String()
+		if v == "" && detail.Get("@type").String() == "type.googleapis.com/google.rpc.RetryInfo" {
+			v = detail.Get("retryDelay").String()
+		}
 		if v == "" {
 			return true
 		}
@@ -3464,10 +3468,12 @@ func convertClaudeGenerationConfig(req map[string]any, model string) map[string]
 		out["topP"] = topP
 	}
 	switch lastSegment(strings.ToLower(model)) {
-	case "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
-		// Sampling is deprecated for these models; explicit effort must not be lost in conversion.
-		delete(out, "temperature")
-		delete(out, "topP")
+	case "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+		// Preserve effort; Flash deprecates sampling, while Argon still accepts it.
+		if lastSegment(strings.ToLower(model)) != "gemini-4-argon" {
+			delete(out, "temperature")
+			delete(out, "topP")
+		}
 		outputConfig, _ := req["output_config"].(map[string]any)
 		effort, _ := outputConfig["effort"].(string)
 		effort = strings.ToLower(strings.TrimSpace(effort))

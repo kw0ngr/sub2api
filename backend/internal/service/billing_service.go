@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 )
@@ -370,6 +371,13 @@ func (s *BillingService) initFallbackPricing() {
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
+	if lastSegment(normalizeModelNameForPricing(modelLower)) == "gemini-4-argon" {
+		p := geminiArgonPricing(time.Now())
+		return &ModelPricing{
+			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost, OutputPricePerToken: p.OutputCostPerToken,
+			InputPricePerTokenPriority: p.InputCostPerTokenPriority, CacheReadPricePerTokenPriority: p.CacheReadInputTokenCostPriority, OutputPricePerTokenPriority: p.OutputCostPerTokenPriority,
+		}
+	}
 	switch lastSegment(strings.TrimSpace(modelLower)) {
 	case "grok-4.7", "grok-4.7-latest":
 		return s.fallbackPrices["grok-4.7"]

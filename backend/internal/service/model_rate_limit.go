@@ -97,6 +97,7 @@ func (s *RateLimitService) handleGeminiModelQuotaLimit(ctx context.Context, acco
 	if s == nil || s.accountRepo == nil || account == nil {
 		return false
 	}
+	responseBody = unwrapGoogleAPIError(responseBody)
 
 	limitedModel := ""
 	ambiguous := false

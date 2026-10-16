@@ -7481,7 +7481,20 @@ func ExtractUpstreamErrorMessage(body []byte) string {
 	return extractUpstreamErrorMessage(body)
 }
 
+func unwrapGoogleAPIError(body []byte) []byte {
+	// Google's OpenAI endpoint returns errors inside a one-element JSON array.
+	root := gjson.ParseBytes(body)
+	if root.IsArray() {
+		items := root.Array()
+		if len(items) == 1 && items[0].Get("error").IsObject() {
+			return []byte(items[0].Raw)
+		}
+	}
+	return body
+}
+
 func extractUpstreamErrorMessage(body []byte) string {
+	body = unwrapGoogleAPIError(body)
 	// Claude 风格：{"type":"error","error":{"type":"...","message":"..."}}
 	if m := gjson.GetBytes(body, "error.message").String(); strings.TrimSpace(m) != "" {
 		inner := strings.TrimSpace(m)
@@ -7517,6 +7530,7 @@ func extractUpstreamErrorMessage(body []byte) string {
 }
 
 func extractUpstreamErrorCode(body []byte) string {
+	body = unwrapGoogleAPIError(body)
 	if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
 		return code
 	}
@@ -7545,6 +7559,7 @@ func extractUpstreamErrorCode(body []byte) string {
 // extractUpstreamErrorType extracts the error type field from Anthropic-style responses:
 // {"type":"error","error":{"type":"authentication_error","message":"..."}}
 func extractUpstreamErrorType(body []byte) string {
+	body = unwrapGoogleAPIError(body)
 	if errType := strings.TrimSpace(gjson.GetBytes(body, "error.type").String()); errType != "" {
 		return errType
 	}

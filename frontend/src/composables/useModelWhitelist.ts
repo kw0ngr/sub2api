@@ -55,6 +55,7 @@ export const claudeModels = [
 const geminiModels = [
   // Keep in sync with backend curated Gemini lists.
   // This list is intentionally conservative (models commonly available across OAuth/API key).
+  'gemini-4-argon',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-nano-banana-2.1',
@@ -334,6 +335,8 @@ const openaiPresetMappings = [
 ]
 
 const geminiPresetMappings = [
+  { label: '4 Argon', from: 'gemini-4-argon', to: 'gemini-4-argon', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  { label: '3.8 Flash', from: 'gemini-3.8-flash', to: 'gemini-3.8-flash', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
   { label: '3.6 Flash', from: 'gemini-3.6-flash', to: 'gemini-3.6-flash', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
   { label: '3.5 Flash Lite', from: 'gemini-3.5-flash-lite', to: 'gemini-3.5-flash-lite', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: '2.5 Flash', from: 'gemini-2.5-flash', to: 'gemini-2.5-flash', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },

@@ -67,7 +67,7 @@ const (
 	apiKey429Cooldown              = 60 * time.Minute
 	apiKey529Cooldown              = 120 * time.Minute
 	apiKeyServerErrorCooldown      = 60 * time.Minute
-	apiKeyDeepSeekBusyCooldown     = 30 * time.Second
+	apiKeyModelBusyCooldown        = 30 * time.Second
 	apiKeyGLMGeneric429Cooldown    = 15 * time.Minute
 	apiKeyGLMModelOverloadCooldown = 5 * time.Minute
 	apiKeyGLMNetworkErrorCooldown  = 30 * time.Second
@@ -159,6 +159,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if account != nil && account.Platform == PlatformGemini {
+		responseBody = unwrapGoogleAPIError(responseBody)
+	}
 	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
 		return false
 	}
@@ -993,17 +996,18 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		now := time.Now()
 		until := now.Add(apiKeyServerErrorCooldown)
-		if account.Platform == PlatformDeepSeek && statusCode == http.StatusServiceUnavailable {
-			until = now.Add(apiKeyDeepSeekBusyCooldown)
+		if statusCode == http.StatusServiceUnavailable && (account.Platform == PlatformDeepSeek ||
+			(account.Platform == PlatformGemini && strings.Contains(strings.ToLower(extractUpstreamErrorMessage(responseBody)), "this model is currently experiencing high demand"))) {
+			until = now.Add(apiKeyModelBusyCooldown)
 			if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
 				until = *parsed
 			}
 			if model := strings.TrimSpace(account.GetMappedModel(firstRequestedModel(requestedModel))); model != "" {
 				if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, model, until); err != nil {
-					slog.Warn("deepseek_busy_model_cooldown_failed", "account_id", account.ID, "model", model, "error", err)
+					slog.Warn("apikey_busy_model_cooldown_failed", "account_id", account.ID, "platform", account.Platform, "model", model, "error", err)
 					return
 				}
-				slog.Info("deepseek_busy_model_cooldown", "account_id", account.ID, "model", model, "until", until)
+				slog.Info("apikey_busy_model_cooldown", "account_id", account.ID, "platform", account.Platform, "model", model, "until", until)
 				return
 			}
 		}

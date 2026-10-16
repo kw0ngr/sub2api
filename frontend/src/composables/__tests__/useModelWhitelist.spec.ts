@@ -62,7 +62,8 @@ describe('useModelWhitelist', () => {
   it('gemini 模型列表优先暴露最新稳定模型并移除已下架模型', () => {
     const models = getModelsByPlatform('gemini')
 
-    expect(models.slice(0, 5)).toEqual([
+    expect(models.slice(0, 6)).toEqual([
+      'gemini-4-argon',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-nano-banana-2.1',
@@ -79,6 +80,8 @@ describe('useModelWhitelist', () => {
   it('gemini 预设映射包含最新 Flash 与 Flash Lite', () => {
     const presets = getPresetMappingsByPlatform('gemini')
 
+    expect(presets).toContainEqual(expect.objectContaining({ from: 'gemini-4-argon', to: 'gemini-4-argon' }))
+    expect(presets).toContainEqual(expect.objectContaining({ from: 'gemini-3.8-flash', to: 'gemini-3.8-flash' }))
     expect(presets).toContainEqual(expect.objectContaining({ from: 'gemini-3.6-flash', to: 'gemini-3.6-flash' }))
     expect(presets).toContainEqual(expect.objectContaining({ from: 'gemini-3.5-flash-lite', to: 'gemini-3.5-flash-lite' }))
     expect(presets).not.toContainEqual(expect.objectContaining({ from: 'gemini-2.0-flash' }))

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,40 @@ func TestCurrentProviderPricingOverridesStaleRemoteAndKeepsFlashAliases(t *testi
 		require.InDelta(t, 1.35e-6, price.InputCostPerTokenPriority, 1e-12)
 	}
 	require.Nil(t, currentProviderPricing("deepseek-unknown"))
+}
+
+func TestGeminiArgonPricingAndEffort(t *testing.T) {
+	deadline := time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		at                    time.Time
+		input, output, cached float64
+	}{
+		{deadline.Add(-time.Second), 2e-6, 10e-6, .1e-6},
+		{deadline, 4e-6, 20e-6, .2e-6},
+	} {
+		p := geminiArgonPricing(tt.at)
+		require.InDelta(t, tt.input, p.InputCostPerToken, 1e-12)
+		require.InDelta(t, tt.output, p.OutputCostPerToken, 1e-12)
+		require.InDelta(t, tt.cached, p.CacheReadInputTokenCost, 1e-12)
+		require.InDelta(t, tt.input*1.8, p.InputCostPerTokenPriority, 1e-12)
+		require.InDelta(t, tt.output*1.8, p.OutputCostPerTokenPriority, 1e-12)
+	}
+	pricing := (&PricingService{}).GetModelPricing("models/gemini-4-argon-high")
+	fallback := NewBillingService(&config.Config{}, nil).getFallbackPricing("gemini-4-argon")
+	require.InDelta(t, pricing.InputCostPerToken, fallback.InputPricePerToken, 1e-12)
+	require.InDelta(t, pricing.OutputCostPerToken, fallback.OutputPricePerToken, 1e-12)
+	for _, effort := range []string{"low", "medium", "high", "max"} {
+		body := []byte(`{"reasoning_effort":"` + effort + `"}`)
+		out, _ := normalizeGeminiOpenAIReasoningEffort(body, "gemini-4-argon")
+		want := effort
+		if want == "max" {
+			want = "high"
+		}
+		require.Equal(t, want, gjson.GetBytes(out, "reasoning_effort").String())
+		generation := convertClaudeGenerationConfig(map[string]any{"temperature": .5, "top_p": .8, "output_config": map[string]any{"effort": effort}}, "gemini-4-argon")
+		require.Equal(t, want, generation["thinkingConfig"].(map[string]any)["thinkingLevel"])
+		require.Equal(t, .5, generation["temperature"])
+	}
 }
 
 func TestNanoBanana21ImageRecognitionDefaultSizeAndExactPrices(t *testing.T) {

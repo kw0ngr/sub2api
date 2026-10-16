@@ -9,7 +9,7 @@ import (
 
 func normalizeGeminiOpenAIReasoningEffort(body []byte, model string) ([]byte, bool) {
 	switch lastSegment(strings.ToLower(strings.TrimSpace(model))) {
-	case "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+	case "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
 	default:
 		return body, false
 	}

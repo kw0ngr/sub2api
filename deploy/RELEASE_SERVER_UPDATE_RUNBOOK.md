@@ -56,6 +56,8 @@ git diff --check
 
 - Grok 的 `403 permission-denied` 必须结合原文分类：`I'm sorry, I can't help with that request.` 是本次内容拒绝，不能停调账号/模型，也不能换号重试。Chat、Responses、透传和媒体入口须保留拒绝响应；真正的 chat 权限拒绝、失效凭证和额度不足仍按原规则处理。恢复存量账号前须核对冷却原因并用真实推理验收，不能批量清除所有 403 状态。
 - Gemini 新模型须用真实 `generateContent` 验证；`/models` 成功不等于有对应模型额度。健康检查默认使用 `gemini-3.5-flash-lite`，避免新项目无 Gemini 2.5 权限被误判。Nano Banana 图像探活须实际收到非空 `inlineData`，不能以仅文本的 200 判定成功。
+- Gemini 4 Argon（`gemini-4-argon`，2026-10-13 GA）已验证原生/OpenAI 文本调用；支持 low/medium/high，客户端 max/xhigh 仅对该 Gemini 模型转换为 high，不影响 GPT Sol。原生采样参数实测可用，不沿用 3.8 Flash 的采样删除规则。仅在真实推理成功的账号上加映射；免费层/Google AI Pro 计划不默认拥有权限。标准输入/缓存/输出价为 $2/$0.10/$10 每百万 token，2026-12-01 UTC 自动调整为 $4/$0.20/$20；Priority 为标准价的 1.8 倍。来源：[发布记录](https://ai.google.dev/gemini-api/docs/changelog)、[模型说明](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)、[定价](https://ai.google.dev/gemini-api/docs/pricing)。单请求同步输出上限 65,536；超过它需要上游 Interactions/background 长解码，本轮未增加该协议。
+- Google OpenAI 错误可能包装为 `[{"error":...}]`，需解包后读取 QuotaFailure/RetryInfo；单模型 429 不应停调整账号。503 `This model is currently experiencing high demand` 仅短暂冷却目标模型。多轮工具调用必须由客户端回传原样的 `tool_calls[].extra_content.google.thought_signature`；网关不得伪造签名或把缺签名的 400 当失效 Key。
 - DeepSeek 当前 Flash ID 是 `deepseek-flash`（V4.1）；旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 保留兼容，并使用同一 Flash 价格。默认价格采用官方峰时基准，未自动应用上游按时段/节假日变化的折扣；渠道自定义价格仍优先。
 - DeepSeek V4.1 的客户端显示名可使用 `deepseek-v4.1-flash`，官方 API 仍须发送 `deepseek-flash`。只对官方 `api.deepseek.com` 归一化旧/新 Flash 别名；第三方渠道须实测其原生模型 ID，不套用官方 ID。兼容渠道的 OpenAI base URL 常含 `/v1`，Anthropic 测试拼接 `/v1/messages` 前须去除末尾 `/v1`，避免 `/v1/v1/messages`。账户 `3210` 的 HubCore 入口使用 `https://api.hubcore.cn/v1`，Flash 别名映射到该上游原生 `deepseek-v4.1-flash`；根路径返回 HTML 200 不算推理成功。
 - DeepSeek 回归须覆盖 Chat/Responses 的 402：账号停调后返回未提交响应的换号错误；命名或 `required` 工具选择须复用原生 Messages 的思考兼容处理，普通 `auto` 调用仍保留 `max` 和思考回传。
@@ -130,6 +132,8 @@ gh release view "$TAG" --repo "$REPO"
 ```
 
 不要在 assets 还没出来时升级服务器；否则 install 脚本可能检测到 main 版本已更新，但下载不到 release asset。
+
+Actions 被禁用时，只有用户明确同意后才可手动生成 Release：从干净 tag 导出源码，先构建前端，再按 `.goreleaser.yaml` 的 `CGO_ENABLED=0`、`-tags=embed` 和 commit/date/release ldflags 构建目标平台；上传同名 archive 和 `checksums.txt` 到 GitHub Release，核验资产后仍执行下节安装脚本。发布说明必须标明未构建的平台/Docker 镜像；禁止夹带工作区其他并行改动。
 
 ## 6. 服务器升级：只用 GitHub 上的 install.sh
 

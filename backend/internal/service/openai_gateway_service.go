@@ -4768,6 +4768,11 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		mapped.ErrorType = "content_policy_violation"
 		mapped.Message = "Request rejected by upstream content policy"
 	}
+	if account.Platform == PlatformGemini && resp.StatusCode == http.StatusBadRequest && strings.Contains(upstreamMsg, "missing a thought_signature") {
+		mapped.StatusCode = http.StatusBadRequest
+		mapped.ErrorType = "invalid_request_error"
+		mapped.Message = "Gemini tool history is missing thought_signature. The client must preserve tool_calls[].extra_content.google.thought_signature from the previous response."
+	}
 	MarkResponseCommitted(c)
 	writeError(c, mapped.StatusCode, mapped.ErrorType, mapped.Message)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
