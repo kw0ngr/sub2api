@@ -54,6 +54,7 @@ git diff --check
 
 按改动范围跑最小验证：
 
+- Grok 的 `403 permission-denied` 必须结合原文分类：`I'm sorry, I can't help with that request.` 是本次内容拒绝，不能停调账号/模型，也不能换号重试。Chat、Responses、透传和媒体入口须保留拒绝响应；真正的 chat 权限拒绝、失效凭证和额度不足仍按原规则处理。恢复存量账号前须核对冷却原因并用真实推理验收，不能批量清除所有 403 状态。
 - Gemini 新模型须用真实 `generateContent` 验证；`/models` 成功不等于有对应模型额度。健康检查默认使用 `gemini-3.5-flash-lite`，避免新项目无 Gemini 2.5 权限被误判。Nano Banana 图像探活须实际收到非空 `inlineData`，不能以仅文本的 200 判定成功。
 - DeepSeek 当前 Flash ID 是 `deepseek-flash`（V4.1）；旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 保留兼容，并使用同一 Flash 价格。默认价格采用官方峰时基准，未自动应用上游按时段/节假日变化的折扣；渠道自定义价格仍优先。
 - DeepSeek V4.1 的客户端显示名可使用 `deepseek-v4.1-flash`，官方 API 仍须发送 `deepseek-flash`。只对官方 `api.deepseek.com` 归一化旧/新 Flash 别名；第三方渠道须实测其原生模型 ID，不套用官方 ID。兼容渠道的 OpenAI base URL 常含 `/v1`，Anthropic 测试拼接 `/v1/messages` 前须去除末尾 `/v1`，避免 `/v1/v1/messages`。账户 `3210` 的 HubCore 入口使用 `https://api.hubcore.cn/v1`，Flash 别名映射到该上游原生 `deepseek-v4.1-flash`；根路径返回 HTML 200 不算推理成功。

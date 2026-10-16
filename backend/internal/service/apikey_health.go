@@ -125,6 +125,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	if statusCode == http.StatusOK {
 		return APIKeyStatusActionValid
 	}
+	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
+		return APIKeyStatusActionIgnore
+	}
 
 	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
@@ -488,6 +491,13 @@ func isThirdPartyGrokAPIKey(account *Account) bool {
 	}
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 	return host != "" && host != "api.x.ai"
+}
+
+func isGrokContentPolicyRejection(account *Account, statusCode int, body []byte) bool {
+	// xAI also uses permission-denied for content refusals, not just invalid credentials.
+	return account != nil && account.Platform == PlatformGrok && statusCode == http.StatusForbidden &&
+		gjson.ValidBytes(body) && strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "code").String()), "permission-denied") &&
+		strings.EqualFold(strings.TrimSpace(extractUpstreamErrorMessage(body)), "I'm sorry, I can't help with that request.")
 }
 
 func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {

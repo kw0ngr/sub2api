@@ -79,8 +79,11 @@ func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, acco
 	_ = s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{grokQuotaSnapshotExtraKey: snapshot})
 }
 
-func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, _ []byte) {
+func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
 	if s == nil || account == nil {
+		return
+	}
+	if isGrokContentPolicyRejection(account, statusCode, body) {
 		return
 	}
 	switch statusCode {

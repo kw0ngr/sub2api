@@ -131,6 +131,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 	if account == nil {
 		return ErrorPolicyNone
 	}
+	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
+		return ErrorPolicyNone
+	}
 	if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
 		// Keep this guard ahead of user-defined temp/custom rules. grok-build-0.1
 		// is an optional CLI capability probe, not evidence about account health.
@@ -156,6 +159,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
+		return false
+	}
 	if account != nil {
 		// Grok OAuth AT-only / invalid token: xAI returns 400 "Incorrect API key provided".
 		if account.Platform == PlatformGrok && isGrokInvalidCredentialError(statusCode, responseBody) {
@@ -2154,6 +2160,9 @@ func firstRequestedModel(requestedModel []string) string {
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) bool {
 	if account == nil {
+		return false
+	}
+	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
 		return false
 	}
 	if isIgnorableGrokBuildProbeError(account, statusCode, responseBody, firstRequestedModel(requestedModel)) {

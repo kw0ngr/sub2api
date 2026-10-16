@@ -2044,6 +2044,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
 	upstreamBody []byte,
 	requestedModel string,
 ) bool {
+	if isGrokContentPolicyRejection(account, statusCode, upstreamBody) {
+		return false
+	}
 	// grok-build-0.1 is an optional CLI capability probe. Even statuses such as
 	// 400/404/426, which are normally returned directly to the caller, must stay
 	// request-local and release the scheduler to try another account. A genuine
@@ -3308,7 +3311,8 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	}
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
-	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(resp.StatusCode, body) {
+	if (account != nil && account.Platform == PlatformOpenAI && isOpenAIContentPolicyRejection(resp.StatusCode, body)) ||
+		isGrokContentPolicyRejection(account, resp.StatusCode, body) {
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:             account.Platform,
 			AccountID:            account.ID,
@@ -4628,6 +4632,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		body,
 		UpstreamFaultFormatOpenAIResponses,
 	)
+	if isGrokContentPolicyRejection(account, resp.StatusCode, body) {
+		mapped.StatusCode = http.StatusForbidden
+		mapped.ErrorType = "content_policy_violation"
+		mapped.Message = "Request rejected by upstream content policy"
+	}
 	MarkResponseCommitted(c)
 	c.JSON(mapped.StatusCode, gin.H{
 		"error": gin.H{
@@ -4754,6 +4763,11 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		body,
 		faultFormat,
 	)
+	if isGrokContentPolicyRejection(account, resp.StatusCode, body) {
+		mapped.StatusCode = http.StatusForbidden
+		mapped.ErrorType = "content_policy_violation"
+		mapped.Message = "Request rejected by upstream content policy"
+	}
 	MarkResponseCommitted(c)
 	writeError(c, mapped.StatusCode, mapped.ErrorType, mapped.Message)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
