@@ -998,6 +998,10 @@ func IsOpenAIChatCompletionsCompatiblePlatform(platform string) bool {
 	}
 }
 
+func IsOpenAIResponsesCompatiblePlatform(platform string) bool {
+	return IsOpenAICompatiblePlatform(platform) || strings.TrimSpace(platform) == PlatformGemini
+}
+
 func normalizeOpenAICompatiblePlatform(platform string) string {
 	platform = strings.TrimSpace(platform)
 	if IsOpenAIChatCompletionsCompatiblePlatform(platform) {

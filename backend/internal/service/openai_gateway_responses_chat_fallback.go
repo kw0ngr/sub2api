@@ -169,6 +169,12 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
 	}
+	if account.Platform == PlatformGemini {
+		if normalizedBody, normalized := normalizeGeminiOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
+			chatBody = normalizedBody
+		}
+		reasoningEffort = extractEffectiveOpenAIReasoningEffortFromBody(account, chatBody, upstreamModel, billingModel, originalModel)
+	}
 	chatBody, err = s.applyOpenAIFastPolicyToBody(ctx, account, upstreamModel, chatBody)
 	if err != nil {
 		var blocked *OpenAIFastBlockedError
