@@ -116,6 +116,11 @@ func (Group) Fields() []ent.Field {
 			Default(true).
 			Comment("是否注入 MCP XML 调用协议提示词（仅 antigravity 平台）"),
 
+		// 分组级破限开关 (added by migration 153, 仅 grok 平台)
+		field.Bool("jailbreak_enabled").
+			Default(false).
+			Comment("是否启用破限链（仅 grok 平台分组：S7 注入/remap 改写/拒绝检测/ladder 重试）"),
+
 		// 支持的模型系列 (added by migration 046)
 		field.JSON("supported_model_scopes", []string{}).
 			Default([]string{"claude", "gemini_text", "gemini_image"}).

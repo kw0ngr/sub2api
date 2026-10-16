@@ -45,6 +45,9 @@ type Group struct {
 	// MCP XML 协议注入开关（仅 antigravity 平台使用）
 	MCPXMLInject bool
 
+	// 破限链开关（仅 grok 平台分组）：S7 注入/remap 改写/拒绝检测/ladder 重试
+	JailbreakEnabled bool
+
 	// 支持的模型系列（仅 antigravity 平台使用）
 	// 可选值: claude, gemini_text, gemini_image
 	SupportedModelScopes []string

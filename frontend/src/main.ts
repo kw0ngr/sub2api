@@ -4,6 +4,7 @@ import App from './App.vue'
 import router from './router'
 import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
+import { showBootstrapFailure } from '@/utils/bootstrapFallback'
 import './style.css'
 
 function initThemeClass() {
@@ -42,4 +43,7 @@ async function bootstrap() {
   app.mount('#app')
 }
 
-bootstrap()
+bootstrap().catch((error) => {
+  console.error('Application startup failed:', error)
+  showBootstrapFailure()
+})

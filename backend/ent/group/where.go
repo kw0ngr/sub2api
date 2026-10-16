@@ -165,6 +165,11 @@ func McpXMLInject(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldMcpXMLInject, v))
 }
 
+// JailbreakEnabled applies equality check predicate on the "jailbreak_enabled" field. It's identical to JailbreakEnabledEQ.
+func JailbreakEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldJailbreakEnabled, v))
+}
+
 // SortOrder applies equality check predicate on the "sort_order" field. It's identical to SortOrderEQ.
 func SortOrder(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSortOrder, v))
@@ -1183,6 +1188,16 @@ func McpXMLInjectEQ(v bool) predicate.Group {
 // McpXMLInjectNEQ applies the NEQ predicate on the "mcp_xml_inject" field.
 func McpXMLInjectNEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldNEQ(FieldMcpXMLInject, v))
+}
+
+// JailbreakEnabledEQ applies the EQ predicate on the "jailbreak_enabled" field.
+func JailbreakEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldJailbreakEnabled, v))
+}
+
+// JailbreakEnabledNEQ applies the NEQ predicate on the "jailbreak_enabled" field.
+func JailbreakEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldJailbreakEnabled, v))
 }
 
 // SortOrderEQ applies the EQ predicate on the "sort_order" field.

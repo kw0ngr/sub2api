@@ -35,6 +35,7 @@ type AdminHandlers struct {
 	ChannelMonitor         *admin.ChannelMonitorHandler
 	ChannelMonitorTemplate *admin.ChannelMonitorRequestTemplateHandler
 	Payment                *admin.PaymentHandler
+	JailbreakPolicy       *admin.JailbreakPolicyHandler
 }
 
 // Handlers contains all HTTP handlers

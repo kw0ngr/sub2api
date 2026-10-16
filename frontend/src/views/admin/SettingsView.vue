@@ -5030,6 +5030,11 @@
           <BackupSettings />
         </div>
 
+        <!-- Tab: Jailbreak 破限链策略 -->
+        <div v-show="activeTab === 'jailbreak'">
+          <JailbreakPolicySettings />
+        </div>
+
         <!-- Save Button -->
         <div v-show="activeTab !== 'backup'" class="flex justify-end">
           <button
@@ -5131,6 +5136,7 @@ import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import SettingsToggleCard from "@/components/settings/SettingsToggleCard.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
+import JailbreakPolicySettings from './JailbreakPolicySettings.vue'
 import { useClipboard } from "@/composables/useClipboard";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
@@ -5171,6 +5177,7 @@ type SettingsTab =
   | "gateway"
   | "payment"
   | "email"
+  | "jailbreak"
   | "backup";
 const activeTab = ref<SettingsTab>("general");
 const settingsTabs = [
@@ -5181,6 +5188,7 @@ const settingsTabs = [
   { key: "gateway" as SettingsTab, icon: "server" as const },
   { key: "payment" as SettingsTab, icon: "creditCard" as const },
   { key: "email" as SettingsTab, icon: "mail" as const },
+  { key: "jailbreak" as SettingsTab, icon: "shield" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
 ];
 const { copyToClipboard } = useClipboard();

@@ -409,6 +409,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
 					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				}
+				// 破限记忆挂载：会话 key 放入 gin context（jailbreak 学习核读取）
+				if apiKey.Group != nil && apiKey.Group.JailbreakEnabled {
+					c.Set("jailbreak_session_key", sessionKey)
+				}
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
@@ -680,6 +684,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				releaseWait()
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), currentAPIKey.GroupID, sessionKey, account.ID); err != nil {
 					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				}
+				// 破限记忆挂载：会话 key 放入 gin context（jailbreak 学习核读取）
+				if currentAPIKey.Group != nil && currentAPIKey.Group.JailbreakEnabled {
+					c.Set("jailbreak_session_key", sessionKey)
 				}
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收

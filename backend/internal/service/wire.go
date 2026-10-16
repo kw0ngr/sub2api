@@ -420,6 +420,8 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	svc := NewSettingService(settingRepo, cfg)
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
+	// 破限策略读取器注入：jailbreak 引擎从 settings 表按 key 读策略 JSON。
+	svc.SetJailbreakPolicyAccessor()
 	return svc
 }
 

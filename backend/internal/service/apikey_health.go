@@ -495,9 +495,22 @@ func isThirdPartyGrokAPIKey(account *Account) bool {
 
 func isGrokContentPolicyRejection(account *Account, statusCode int, body []byte) bool {
 	// xAI also uses permission-denied for content refusals, not just invalid credentials.
-	return account != nil && account.Platform == PlatformGrok && statusCode == http.StatusForbidden &&
-		gjson.ValidBytes(body) && strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "code").String()), "permission-denied") &&
-		strings.EqualFold(strings.TrimSpace(extractUpstreamErrorMessage(body)), "I'm sorry, I can't help with that request.")
+	if account == nil || account.Platform != PlatformGrok || statusCode != http.StatusForbidden {
+		return false
+	}
+	if gjson.ValidBytes(body) && strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "code").String()), "permission-denied") {
+		msg := strings.TrimSpace(extractUpstreamErrorMessage(body))
+		if strings.EqualFold(msg, "I'm sorry, I can't help with that request.") {
+			return true
+		}
+		// 破限链扩容：permission-denied + 策略词表（P1/P2/死格）命中也视为内容拒绝，
+		// 走 ladder 重试而非账号健康度惩罚。仅在破限策略加载成功时生效。
+		policy := LoadJailbreakPolicy(context.Background())
+		if DetectJailbreakRefusal(policy, msg).Hit {
+			return true
+		}
+	}
+	return false
 }
 
 func isOpenAIContentPolicyRejection(statusCode int, responseBody []byte) bool {

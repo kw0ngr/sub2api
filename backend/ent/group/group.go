@@ -62,6 +62,8 @@ const (
 	FieldModelRoutingEnabled = "model_routing_enabled"
 	// FieldMcpXMLInject holds the string denoting the mcp_xml_inject field in the database.
 	FieldMcpXMLInject = "mcp_xml_inject"
+	// FieldJailbreakEnabled holds the string denoting the jailbreak_enabled field in the database.
+	FieldJailbreakEnabled = "jailbreak_enabled"
 	// FieldSupportedModelScopes holds the string denoting the supported_model_scopes field in the database.
 	FieldSupportedModelScopes = "supported_model_scopes"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
@@ -174,6 +176,7 @@ var Columns = []string{
 	FieldModelRouting,
 	FieldModelRoutingEnabled,
 	FieldMcpXMLInject,
+	FieldJailbreakEnabled,
 	FieldSupportedModelScopes,
 	FieldSortOrder,
 	FieldAllowMessagesDispatch,
@@ -242,6 +245,8 @@ var (
 	DefaultModelRoutingEnabled bool
 	// DefaultMcpXMLInject holds the default value on creation for the "mcp_xml_inject" field.
 	DefaultMcpXMLInject bool
+	// DefaultJailbreakEnabled holds the default value on creation for the "jailbreak_enabled" field.
+	DefaultJailbreakEnabled bool
 	// DefaultSupportedModelScopes holds the default value on creation for the "supported_model_scopes" field.
 	DefaultSupportedModelScopes []string
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
@@ -376,6 +381,11 @@ func ByModelRoutingEnabled(opts ...sql.OrderTermOption) OrderOption {
 // ByMcpXMLInject orders the results by the mcp_xml_inject field.
 func ByMcpXMLInject(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMcpXMLInject, opts...).ToFunc()
+}
+
+// ByJailbreakEnabled orders the results by the jailbreak_enabled field.
+func ByJailbreakEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldJailbreakEnabled, opts...).ToFunc()
 }
 
 // BySortOrder orders the results by the sort_order field.

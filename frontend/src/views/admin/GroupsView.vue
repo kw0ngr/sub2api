@@ -1223,6 +1223,43 @@
               />
             </button>
           </div>
+          <!-- jailbreak_enabled toggle（仅 grok 平台） -->
+          <div
+            v-if="createForm.platform === 'grok'"
+            class="flex items-center justify-between"
+          >
+            <div>
+              <label class="text-sm text-gray-600 dark:text-gray-400"
+                >破限链（Jailbreak）</label
+              >
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {{
+                  createForm.jailbreak_enabled
+                    ? "已启用 — 注入 CTF 沙箱 system + 请求改写 + 拒绝检测阶梯重试"
+                    : "未启用"
+                }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="createForm.jailbreak_enabled = !createForm.jailbreak_enabled"
+              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              :class="
+                createForm.jailbreak_enabled
+                  ? 'bg-primary-500'
+                  : 'bg-gray-300 dark:bg-dark-600'
+              "
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                :class="
+                  createForm.jailbreak_enabled
+                    ? 'translate-x-6'
+                    : 'translate-x-1'
+                "
+              />
+            </button>
+          </div>
         </div>
 
         <!-- 无效请求兜底（仅 anthropic/antigravity 平台，且非订阅分组） -->
@@ -2354,6 +2391,43 @@
               />
             </button>
           </div>
+          <!-- jailbreak_enabled toggle（仅 grok 平台） -->
+          <div
+            v-if="editForm.platform === 'grok'"
+            class="flex items-center justify-between"
+          >
+            <div>
+              <label class="text-sm text-gray-600 dark:text-gray-400"
+                >破限链（Jailbreak）</label
+              >
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {{
+                  editForm.jailbreak_enabled
+                    ? "已启用 — 注入 CTF 沙箱 system + 请求改写 + 拒绝检测阶梯重试"
+                    : "未启用"
+                }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="editForm.jailbreak_enabled = !editForm.jailbreak_enabled"
+              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              :class="
+                editForm.jailbreak_enabled
+                  ? 'bg-primary-500'
+                  : 'bg-gray-300 dark:bg-dark-600'
+              "
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                :class="
+                  editForm.jailbreak_enabled
+                    ? 'translate-x-6'
+                    : 'translate-x-1'
+                "
+              />
+            </button>
+          </div>
         </div>
 
         <!-- 无效请求兜底（仅 anthropic/antigravity 平台，且非订阅分组） -->
@@ -3015,6 +3089,7 @@ const createForm = reactive({
   exact_model_mappings: [] as MessagesDispatchMappingRow[],
   // 账号过滤控制（OpenAI/Antigravity 平台）
   require_oauth_only: false,
+  jailbreak_enabled: false,
   require_privacy_set: false,
   // 模型路由开关
   model_routing_enabled: false,
@@ -3298,6 +3373,7 @@ const editForm = reactive({
   exact_model_mappings: [] as MessagesDispatchMappingRow[],
   // 账号过滤控制（OpenAI/Antigravity 平台）
   require_oauth_only: false,
+  jailbreak_enabled: false,
   require_privacy_set: false,
   // 模型路由开关
   model_routing_enabled: false,
@@ -3478,6 +3554,7 @@ const closeCreateModal = () => {
   resetMessagesDispatchFormState(createForm);
   createForm.require_oauth_only = false;
   createForm.require_privacy_set = false;
+      createForm.jailbreak_enabled = false;
   createForm.supported_model_scopes = ["claude", "gemini_text", "gemini_image"];
   createForm.mcp_xml_inject = true;
   createForm.copy_accounts_from_group_ids = [];
@@ -3592,6 +3669,7 @@ const handleEdit = async (group: AdminGroup) => {
     messagesDispatchFormState.exact_model_mappings;
   editForm.require_oauth_only = group.require_oauth_only ?? false;
   editForm.require_privacy_set = group.require_privacy_set ?? false;
+  editForm.jailbreak_enabled = group.jailbreak_enabled ?? false;
   editForm.model_routing_enabled = group.model_routing_enabled || false;
   editForm.supported_model_scopes = group.supported_model_scopes || [
     "claude",
@@ -3775,6 +3853,7 @@ watch(
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
       editForm.require_privacy_set = false;
+      editForm.jailbreak_enabled = false;
     }
   },
 );

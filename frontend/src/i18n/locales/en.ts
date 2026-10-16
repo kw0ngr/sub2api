@@ -4798,6 +4798,7 @@ export default {
         users: 'Users',
         gateway: 'Gateway',
         email: 'Email',
+        jailbreak: 'Jailbreak Policy',
         backup: 'Backup',
         payment: 'Payment',
       },

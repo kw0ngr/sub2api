@@ -22,6 +22,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -2224,6 +2225,24 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		reqBody["instructions"] = "You are a helpful coding assistant."
 		bodyModified = true
 		markPatchSet("instructions", "You are a helpful coding assistant.")
+	}
+
+	// 破限链挂载点 2：破限分组的 Grok 请求，instructions 为空时注入策略 system。
+	if account.Platform == PlatformGrok {
+		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
+			if isInstructionsEmpty(reqBody) {
+				policy := LoadJailbreakPolicy(ctx)
+				if policy.System.Enabled && policy.System.Text != "" {
+					reqBody["instructions"] = policy.System.Text
+					bodyModified = true
+					markPatchSet("instructions", policy.System.Text)
+					logger.FromContext(ctx).Info("jailbreak system injected (responses)",
+						zap.Int64("jailbreak.group_id", jbGroup.ID),
+						zap.Int("jailbreak.system_len", len(policy.System.Text)),
+					)
+				}
+			}
+		}
 	}
 
 	if account.Platform != PlatformGrok && isCodexCLI && ensureOpenAIResponsesImageGenerationTool(reqBody) {

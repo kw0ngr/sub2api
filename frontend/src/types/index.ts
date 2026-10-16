@@ -479,6 +479,8 @@ export interface Group {
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   require_oauth_only: boolean
   require_privacy_set: boolean
+  // 破限链（jailbreak）分组开关：仅 grok 平台生效
+  jailbreak_enabled?: boolean
   created_at: string
   updated_at: string
 }

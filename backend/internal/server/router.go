@@ -67,17 +67,17 @@ func SetupRouter(
 		if err != nil {                                              //nolint:staticcheck // Non-embed builds can still return an error here.
 			log.Printf("Warning: Failed to create frontend server with settings injection: %v, using legacy mode", err)
 			r.Use(web.ServeEmbeddedFrontend())
-			settingService.SetOnUpdateCallback(refreshFrameOrigins)
+			settingService.SetOnUpdateCallback(combineUpdateCallbacks(refreshFrameOrigins))
 		} else {
 			// Register combined callback: invalidate HTML cache + refresh frame origins
-			settingService.SetOnUpdateCallback(func() {
+			settingService.SetOnUpdateCallback(combineUpdateCallbacks(func() {
 				frontendServer.InvalidateCache()
 				refreshFrameOrigins()
-			})
+			}))
 			r.Use(frontendServer.Middleware())
 		}
 	} else {
-		settingService.SetOnUpdateCallback(refreshFrameOrigins)
+		settingService.SetOnUpdateCallback(combineUpdateCallbacks(refreshFrameOrigins))
 	}
 
 	// 注册路由
@@ -112,4 +112,15 @@ func registerRoutes(
 	routes.RegisterAdminRoutes(v1, h, adminAuth)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, cfg)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, settingService)
+}
+
+// combineUpdateCallbacks 把既有更新回调与破限策略缓存失效打包，
+// 避免覆盖 frontend cache / frame origins 的原钩子。
+func combineUpdateCallbacks(base func()) func() {
+	return func() {
+		if base != nil {
+			base()
+		}
+		service.InvalidateJailbreakPolicyCache()
+	}
 }

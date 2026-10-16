@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
@@ -422,6 +423,10 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		}
 	}
 	if account.Platform == PlatformGrok {
+		// 破限链挂载点 1：分组开关开启时做 remap 类目改写（无 raw 泄漏的整句替换）
+		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
+			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
+		}
 		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())
 		normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, upstreamModel)
 		if normalizedEffort != "" && normalizedEffort != rawEffort {
@@ -448,63 +453,100 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		return nil, fmt.Errorf("get access token: %w", err)
 	}
 
-	upstreamReq, err := s.buildUpstreamRequestOpenAICompatibleChatCompletions(ctx, c, account, chatBody, token)
-	if err != nil {
-		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-	setOpsUpstreamRequestBody(c, chatBody)
-
-	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
+	// 破限链挂载点 5：Grok 破限分组的 ladder 同账号重试。
+	// 内容拒绝（403 permission-denied）且非死格时：解析拒因 → 下一轮策略
+	// （跟随开价/帧转换）→ 改写最后一条 user 消息 → 原账号重发。
+	// 每请求轮次预算 = policy.Ladder.MaxRounds；死格（DZ）或轮数用尽直接透传。
+	jbGroup, jbEnabled := ctx.Value(ctxkey.Group).(*Group)
+	jbActive := jbEnabled && account.Platform == PlatformGrok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled
+	var upstreamReq *http.Request
+	var resp *http.Response
+	if jbActive {
+		jbRound := 0
+		for {
+			upstreamReq, err = s.buildUpstreamRequestOpenAICompatibleChatCompletions(ctx, c, account, chatBody, token)
+			if err != nil {
+				return nil, fmt.Errorf("build upstream request: %w", err)
+			}
+			proxyURL := ""
+			if account.Proxy != nil {
+				proxyURL = account.Proxy.URL()
+			}
+			setOpsUpstreamRequestBody(c, chatBody)
+			upstreamStart := time.Now()
+			resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+			SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+			if err != nil {
+				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
+			}
+			if resp.StatusCode < http.StatusBadRequest {
+				break // 成功：带 resp 跳出，走统一响应处理
+			}
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			_ = resp.Body.Close()
+			refusalText := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+			detectRes := DetectJailbreakRefusal(LoadJailbreakPolicy(ctx), refusalText)
+			isContentRejection := isGrokContentPolicyRejection(account, resp.StatusCode, respBody) || (resp.StatusCode == http.StatusForbidden && detectRes.Hit)
+			logger.FromContext(ctx).Info("jailbreak ladder upstream_error",
+				zap.Int64("jailbreak.group_id", jbGroup.ID),
+				zap.Int("jailbreak.round", jbRound),
+				zap.Int("jailbreak.status", resp.StatusCode),
+				zap.Bool("jailbreak.refusal_detected", detectRes.Hit),
+				zap.String("jailbreak.level", detectRes.Level),
+				zap.Bool("jailbreak.deadzone", detectRes.Deadzone),
+			)
+			if !isContentRejection || detectRes.Deadzone {
+				// 非内容拒绝（账号/配额问题）或死格：交给常规 failover / 透传
+				resp.Body = io.NopCloser(bytes.NewReader(respBody))
+				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
+			}
+			plan := NextJailbreakLadderStep(LoadJailbreakPolicy(ctx), jbRound, refusalText)
+			if plan == nil {
+				resp.Body = io.NopCloser(bytes.NewReader(respBody))
+				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
+			}
+			// ladder 改写：最后一条 user 消息末尾追加策略文本
+			rewritten, rerr := appendToLastUserMessage(chatBody, plan.AppendToUser)
+			if rerr != nil {
+				resp.Body = io.NopCloser(bytes.NewReader(respBody))
+				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
+			}
+			chatBody = rewritten
+			jbRound++
+			logger.FromContext(ctx).Info("jailbreak ladder retry",
+				zap.Int64("jailbreak.group_id", jbGroup.ID),
+				zap.Int("jailbreak.round", jbRound),
+				zap.String("jailbreak.strategy", plan.Reason),
+			)
+		}
+		// ladder 成功路径：记 comply 记忆（会话学习核）
+		if sk := getJailbreakSessionKey(c); sk != "" {
+			RecordJailbreakDelivery(jbGroup.ID, sk, nil, int64(len(chatBody)))
+		}
+	} else {
+		upstreamReq, err = s.buildUpstreamRequestOpenAICompatibleChatCompletions(ctx, c, account, chatBody, token)
+		if err != nil {
+			return nil, fmt.Errorf("build upstream request: %w", err)
+		}
+		proxyURL := ""
+		if account.Proxy != nil {
+			proxyURL = account.Proxy.URL()
+		}
+		setOpsUpstreamRequestBody(c, chatBody)
+		upstreamStart := time.Now()
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		if err != nil {
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
+		}
+		if resp.StatusCode >= http.StatusBadRequest {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			_ = resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		_ = resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(respBody))
-
-		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
-		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
-			upstreamDetail := ""
-			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-				maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
-				if maxBytes <= 0 {
-					maxBytes = 2048
-				}
-				upstreamDetail = truncateString(string(respBody), maxBytes)
-			}
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: resp.StatusCode,
-				UpstreamRequestID:  resp.Header.Get("x-request-id"),
-				Kind:               "failover",
-				Message:            upstreamMsg,
-				Detail:             upstreamDetail,
-			})
-			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
-			}
-			return nil, &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseBody:           respBody,
-				ResponseHeaders:        resp.Header.Clone(),
-				RetryableOnSameAccount: account.IsPoolMode() && isPoolModeRetryableStatus(resp.StatusCode),
-			}
-		}
-		return s.handleChatCompletionsErrorResponse(resp, c, account, upstreamModel)
-	}
 
 	clientStream := chatReq != nil && chatReq.Stream
 	var usage *OpenAIUsage

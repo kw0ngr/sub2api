@@ -123,6 +123,9 @@ type AdminGroup struct {
 	// MCP XML 协议注入（仅 antigravity 平台使用）
 	MCPXMLInject bool `json:"mcp_xml_inject"`
 
+	// 破限开关（仅 grok 平台使用）：S7 注入/remap 改写/拒绝检测/ladder 重试
+	JailbreakEnabled bool `json:"jailbreak_enabled"`
+
 	// OpenAI Messages 调度配置（仅 openai 平台使用）
 	DefaultMappedModel          string                                   `json:"default_mapped_model"`
 	MessagesDispatchModelConfig domain.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`

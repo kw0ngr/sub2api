@@ -56,6 +56,7 @@ func ProvideAdminHandlers(
 		Redeem:                 redeemHandler,
 		Promo:                  promoHandler,
 		Setting:                settingHandler,
+		JailbreakPolicy:       admin.NewJailbreakPolicyHandler(settingHandler.SettingService()),
 		Ops:                    opsHandler,
 		System:                 systemHandler,
 		Subscription:           subscriptionHandler,

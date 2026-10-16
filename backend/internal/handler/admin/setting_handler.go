@@ -56,6 +56,11 @@ type SettingHandler struct {
 }
 
 // NewSettingHandler 创建系统设置处理器
+// SettingService 暴露内部 SettingService（jailbreak 策略 handler 复用）。
+func (h *SettingHandler) SettingService() *service.SettingService {
+	return h.settingService
+}
+
 func NewSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService) *SettingHandler {
 	return &SettingHandler{
 		settingService:       settingService,

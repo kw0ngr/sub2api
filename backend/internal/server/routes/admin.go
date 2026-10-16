@@ -453,6 +453,11 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/web-search-emulation", h.Admin.Setting.UpdateWebSearchEmulationConfig)
 		adminSettings.POST("/web-search-emulation/test", h.Admin.Setting.TestWebSearchEmulation)
 		adminSettings.POST("/web-search-emulation/reset-usage", h.Admin.Setting.ResetWebSearchUsage)
+		// 破限策略（Grok 分组）：grok-lab 导出 JSON 导入热更新
+		adminSettings.GET("/jailbreak-grok-policy", h.Admin.JailbreakPolicy.GetJailbreakPolicy)
+		adminSettings.PUT("/jailbreak-grok-policy", h.Admin.JailbreakPolicy.UpdateJailbreakPolicy)
+		adminSettings.POST("/jailbreak-grok-policy/validate", h.Admin.JailbreakPolicy.ValidateJailbreakPolicy)
+		adminSettings.DELETE("/jailbreak-grok-policy", h.Admin.JailbreakPolicy.ResetJailbreakPolicy)
 	}
 }
 
