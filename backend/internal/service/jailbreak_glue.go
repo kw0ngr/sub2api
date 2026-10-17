@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -131,4 +132,46 @@ func joinTexts(texts []string) string {
 		out += t
 	}
 	return out
+}
+
+// appendTextToResponsesSystemInput 把 text 追加到 Responses 请求 input 内首条
+// system/developer 消息的文本末尾。返回 true 表示已写入。
+// xAI 对 instructions 的优先级低于 input 内 system 消息，只写 instructions 会被
+// 客户端自带的 agent system 压住，因此优先原地追加。
+func appendTextToResponsesSystemInput(reqBody map[string]any, text string) bool {
+	items, ok := reqBody["input"].([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		msg, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "system" && role != "developer" {
+			continue
+		}
+		switch content := msg["content"].(type) {
+		case string:
+			msg["content"] = strings.TrimSpace(content) + "\n\n" + text
+			return true
+		case []any:
+			for _, part := range content {
+				partMap, ok := part.(map[string]any)
+				if !ok {
+					continue
+				}
+				if partText, ok := partMap["text"].(string); ok {
+					partMap["text"] = strings.TrimSpace(partText) + "\n\n" + text
+					return true
+				}
+			}
+			content = append(content, map[string]any{"type": "input_text", "text": text})
+			msg["content"] = content
+			return true
+		}
+		return false
+	}
+	return false
 }
