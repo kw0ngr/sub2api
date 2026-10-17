@@ -2228,16 +2228,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// 破限链挂载点 2：破限分组的 Grok 请求，按策略把 system 送达上游。
-	// InjectOnlyWhenEmpty=false（默认）时客户端自带 instructions 也要追加，保留 xAI 原生 L0。
+	// 文本与 chat 路径同源（S7 帧 + boost），InjectOnlyWhenEmpty=false（默认）时
+	// 客户端自带 instructions 也要追加，保留 xAI 原生 L0。
 	if account.Platform == PlatformGrok {
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
 			policy := LoadJailbreakPolicy(ctx)
-			if policy.System.Enabled && policy.System.Text != "" &&
-				(!policy.System.InjectOnlyWhenEmpty || isInstructionsEmpty(reqBody)) {
-				merged := policy.System.Text
+			text := composeJailbreakSystemText(policy)
+			if text != "" && (!policy.System.InjectOnlyWhenEmpty || isInstructionsEmpty(reqBody)) {
+				merged := text
 				appended := false
 				if existing, ok := reqBody["instructions"].(string); ok && strings.TrimSpace(existing) != "" {
-					merged = strings.TrimSpace(existing) + "\n\n" + policy.System.Text
+					merged = strings.TrimSpace(existing) + "\n\n" + text
 					appended = true
 				}
 				reqBody["instructions"] = merged
@@ -2245,7 +2246,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				markPatchSet("instructions", merged)
 				logger.FromContext(ctx).Info("jailbreak system injected (responses)",
 					zap.Int64("jailbreak.group_id", jbGroup.ID),
-					zap.Int("jailbreak.system_len", len(policy.System.Text)),
+					zap.Int("jailbreak.system_len", len(text)),
 					zap.Bool("jailbreak.system_appended", appended),
 					zap.Int("jailbreak.instructions_len", len(merged)),
 				)
