@@ -2227,20 +2227,28 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", "You are a helpful coding assistant.")
 	}
 
-	// 破限链挂载点 2：破限分组的 Grok 请求，instructions 为空时注入策略 system。
+	// 破限链挂载点 2：破限分组的 Grok 请求，按策略把 system 送达上游。
+	// InjectOnlyWhenEmpty=false（默认）时客户端自带 instructions 也要追加，保留 xAI 原生 L0。
 	if account.Platform == PlatformGrok {
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
-			if isInstructionsEmpty(reqBody) {
-				policy := LoadJailbreakPolicy(ctx)
-				if policy.System.Enabled && policy.System.Text != "" {
-					reqBody["instructions"] = policy.System.Text
-					bodyModified = true
-					markPatchSet("instructions", policy.System.Text)
-					logger.FromContext(ctx).Info("jailbreak system injected (responses)",
-						zap.Int64("jailbreak.group_id", jbGroup.ID),
-						zap.Int("jailbreak.system_len", len(policy.System.Text)),
-					)
+			policy := LoadJailbreakPolicy(ctx)
+			if policy.System.Enabled && policy.System.Text != "" &&
+				(!policy.System.InjectOnlyWhenEmpty || isInstructionsEmpty(reqBody)) {
+				merged := policy.System.Text
+				appended := false
+				if existing, ok := reqBody["instructions"].(string); ok && strings.TrimSpace(existing) != "" {
+					merged = strings.TrimSpace(existing) + "\n\n" + policy.System.Text
+					appended = true
 				}
+				reqBody["instructions"] = merged
+				bodyModified = true
+				markPatchSet("instructions", merged)
+				logger.FromContext(ctx).Info("jailbreak system injected (responses)",
+					zap.Int64("jailbreak.group_id", jbGroup.ID),
+					zap.Int("jailbreak.system_len", len(policy.System.Text)),
+					zap.Bool("jailbreak.system_appended", appended),
+					zap.Int("jailbreak.instructions_len", len(merged)),
+				)
 			}
 		}
 	}
