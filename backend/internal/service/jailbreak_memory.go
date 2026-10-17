@@ -16,8 +16,8 @@ import (
 // ============================================================================
 
 type jailbreakSessionMemory struct {
-	hitAt    time.Time
-	cats     []string
+	hitAt     time.Time
+	cats      []string
 	delivered int64 // 该会话累计交付字节数
 }
 

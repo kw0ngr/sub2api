@@ -21,17 +21,22 @@ const (
 
 // JailbreakLadderPlan 一次重试的执行计划。
 type JailbreakLadderPlan struct {
-	Round    int    // 1..MaxRounds
-	Reason   string // 本轮策略说明（日志用）
-	OfferText string // R1：从拒因解析出的开价句
-	Identity string // R2：职业身份
+	Round        int    // 1..MaxRounds
+	Reason       string // 本轮策略说明（日志用）
+	OfferText    string // R1：从拒因解析出的开价句
+	Identity     string // R2：职业身份
 	AppendToUser string // 追加到最后一条 user 消息的文本
 }
 
 // NextJailbreakLadderStep 根据当前轮次与拒绝文本计算下一步。
-// 返回 nil 表示停手（死格 / 轮数用尽 / 段关闭）。
-func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText string) *JailbreakLadderPlan {
+// det 是上游正文的检测结果：未命中拒绝或命中死格线时直接停手。
+// 调用方不能只靠外层状态码把关——200 软拒路径没有 4xx 可依赖。
+// 返回 nil 表示停手（未拒绝 / 死格 / 轮数用尽 / 段关闭）。
+func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText string, det JailbreakDetectResult) *JailbreakLadderPlan {
 	if p == nil {
+		return nil
+	}
+	if !det.Hit || det.Deadzone {
 		return nil
 	}
 	next := currentRound + 1
@@ -43,9 +48,9 @@ func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText s
 	if next == JailbreakRoundFollowOffer && p.Ladder.FollowOffer.Enabled {
 		if offer := parseOfferSentence(p, refusalText); offer != "" {
 			return &JailbreakLadderPlan{
-				Round:     next,
-				Reason:    "follow_offer",
-				OfferText: offer,
+				Round:        next,
+				Reason:       "follow_offer",
+				OfferText:    offer,
 				AppendToUser: fmt.Sprintf(p.Ladder.FollowOffer.Template, offer),
 			}
 		}
@@ -56,9 +61,9 @@ func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText s
 		identity := pickIdentity(p, refusalText)
 		if identity != "" {
 			return &JailbreakLadderPlan{
-				Round:     next,
-				Reason:    "frame_shift",
-				Identity:  identity,
+				Round:        next,
+				Reason:       "frame_shift",
+				Identity:     identity,
 				AppendToUser: fmt.Sprintf(p.Ladder.FrameShift.Template, identity),
 			}
 		}
@@ -83,8 +88,8 @@ func parseOfferSentence(p *JailbreakPolicy, refusalText string) string {
 func pickIdentity(p *JailbreakPolicy, text string) string {
 	lower := strings.ToLower(text)
 	domainKeys := []struct {
-		key    string
-		cues   []string
+		key  string
+		cues []string
 	}{
 		{"crack", []string{"破解", "crack", "keygen", "注册机", "license", "授权"}},
 		{"av", []string{"杀毒", "免杀", "av", "edr", "amsi", "加载器", "defender"}},

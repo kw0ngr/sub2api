@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -47,30 +48,58 @@ func applyJailbreakRemap(ctx context.Context, group *Group, body []byte) []byte 
 	return body
 }
 
-// applyJailbreakSystemInjection system 注入入口：messages 无 system 指令时
-// 在数组头部插入策略 system.text。返回（可能注入后的）body。
+// applyJailbreakSystemInjection system 注入入口：把 S7 帧 + boost 送达上游。
+// 语义与 dsh-purge 一致——注入而非替换：
+//   - 无 system：插入一条到头部；
+//   - 已有 system：追加到该系统 content 末尾，客户端自己的 system 原样保留；
+//   - InjectOnlyWhenEmpty=true 时才退回「有 system 就不注入」的旧行为。
 func applyJailbreakSystemInjection(ctx context.Context, group *Group, body []byte) []byte {
-	policy := LoadJailbreakPolicy(ctx)
-	if !policy.System.Enabled || policy.System.Text == "" {
-		return body
-	}
-	if policy.System.InjectOnlyWhenEmpty && hasAnySystemMessage(body) {
+	return applyJailbreakSystemInjectionWithPolicy(ctx, group, body, LoadJailbreakPolicy(ctx))
+}
+
+// applyJailbreakSystemInjectionWithPolicy 同上的显式策略版本（便于测试与灰度）。
+func applyJailbreakSystemInjectionWithPolicy(ctx context.Context, group *Group, body []byte, policy *JailbreakPolicy) []byte {
+	text := composeJailbreakSystemText(policy)
+	if text == "" {
 		return body
 	}
 	msgs := gjson.GetBytes(body, "messages").Array()
 	if len(msgs) == 0 {
 		return body
 	}
-	newMsgs := make([]any, 0, len(msgs)+1)
-	newMsgs = append(newMsgs, map[string]any{"role": "system", "content": policy.System.Text})
-	for _, m := range msgs {
-		var v any
-		if raw, ok := m.Value().(map[string]any); ok {
-			v = raw
-		} else {
-			continue
+
+	if idx := firstSystemIndex(msgs); idx >= 0 {
+		if policy.System.InjectOnlyWhenEmpty {
+			return body
 		}
-		newMsgs = append(newMsgs, v)
+		path := fmt.Sprintf("messages.%d.content", idx)
+		cur := gjson.GetBytes(body, path)
+		var out []byte
+		var err error
+		if cur.Type == gjson.String {
+			out, err = sjson.SetBytes(body, path, cur.String()+"\n\n"+text)
+		} else if cur.IsArray() {
+			out, err = sjson.SetBytes(body, path+".-1", map[string]any{"type": "text", "text": text})
+		} else {
+			out, err = sjson.SetBytes(body, path, text)
+		}
+		if err != nil {
+			return body
+		}
+		logger.FromContext(ctx).Info("jailbreak system appended",
+			zap.Int64("jailbreak.group_id", group.ID),
+			zap.Int("jailbreak.system_len", len(text)),
+			zap.Int("jailbreak.system_index", idx),
+		)
+		return out
+	}
+
+	newMsgs := make([]any, 0, len(msgs)+1)
+	newMsgs = append(newMsgs, map[string]any{"role": "system", "content": text})
+	for _, m := range msgs {
+		if raw, ok := m.Value().(map[string]any); ok {
+			newMsgs = append(newMsgs, raw)
+		}
 	}
 	out, err := sjson.SetBytes(body, "messages", newMsgs)
 	if err != nil {
@@ -78,19 +107,19 @@ func applyJailbreakSystemInjection(ctx context.Context, group *Group, body []byt
 	}
 	logger.FromContext(ctx).Info("jailbreak system injected",
 		zap.Int64("jailbreak.group_id", group.ID),
-		zap.Int("jailbreak.system_len", len(policy.System.Text)),
+		zap.Int("jailbreak.system_len", len(text)),
 	)
 	return out
 }
 
-// hasAnySystemMessage 判断请求是否已带 system 指令。
-func hasAnySystemMessage(body []byte) bool {
-	for _, m := range gjson.GetBytes(body, "messages").Array() {
-		if m.Get("role").String() == "system" || m.Get("role").String() == "developer" {
-			return true
+// firstSystemIndex 返回首条 system / developer 消息下标，无则 -1。
+func firstSystemIndex(msgs []gjson.Result) int {
+	for i, m := range msgs {
+		if r := m.Get("role").String(); r == "system" || r == "developer" {
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 func joinTexts(texts []string) string {

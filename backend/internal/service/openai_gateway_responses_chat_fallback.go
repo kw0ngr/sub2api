@@ -167,9 +167,10 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if err != nil {
 		return nil, fmt.Errorf("marshal chat completions fallback request: %w", err)
 	}
-	// 破限链挂载点 3：Responses 桥接路径同样走 remap 改写（Grok 破限分组）
+	// 破限链挂载点 3：Responses 桥接路径同样走 system 注入 + remap（Grok 破限分组）
 	if account.Platform == PlatformGrok {
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
+			chatBody = applyJailbreakSystemInjection(ctx, jbGroup, chatBody)
 			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
 		}
 	}

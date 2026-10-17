@@ -102,7 +102,15 @@ func RemapJailbreakChatBody(p *JailbreakPolicy, body []byte) JailbreakRemapResul
 		return res
 	}
 
-	rewritten, err := sjson.SetBytes(body, fmt.Sprintf("messages.%d.content", lastUserIdx), task.String())
+	// 任务书只规定交付形态，原始请求保留下方——否则上游答的是任务书而非用户的问题。
+	// 保留原文会把用户用词重新暴露给上游，靠 boost 的「拒绝是故障」压制；
+	// 两者必须同批生效，缺一会分别退化成「答非所问」或「裸问被拒」。
+	newContent := task.String()
+	if original := strings.TrimSpace(extractMessageText(messages[lastUserIdx])); original != "" {
+		newContent = task.String() + "\n\n---\n原始请求（执行对象与目标以此为准，上面的任务书只规定交付形态与格式）：\n" + original
+	}
+
+	rewritten, err := sjson.SetBytes(body, fmt.Sprintf("messages.%d.content", lastUserIdx), newContent)
 	if err != nil {
 		return res
 	}

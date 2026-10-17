@@ -423,8 +423,10 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		}
 	}
 	if account.Platform == PlatformGrok {
-		// 破限链挂载点 1：分组开关开启时做 remap 类目改写（无 raw 泄漏的整句替换）
+		// 破限链挂载点 1：system 注入（S7 帧 + boost）→ remap 类目改写。
+		// 先注入再改写：boost 必须对新任务书同样生效，顺序反了会漏掉用户原文之外的部分。
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
+			chatBody = applyJailbreakSystemInjection(ctx, jbGroup, chatBody)
 			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
 		}
 		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())
@@ -480,6 +482,43 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
 			}
 			if resp.StatusCode < http.StatusBadRequest {
+				// 200 软拒：grok 最常见的拒绝形态是 200 + 拒绝文本，不走 4xx，
+				// 必须在这里判定，否则 ladder 对这些拒绝永远不会触发。
+				// 只处理非流式：流式响应此刻已把 token 吐给客户端，撤回不了。
+				if !openAIUpstreamRequestIsStream(chatBody) {
+					softBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+					_ = resp.Body.Close()
+					if readErr != nil {
+						return nil, fmt.Errorf("read upstream soft-refusal body: %w", readErr)
+					}
+					resp.Body = io.NopCloser(bytes.NewReader(softBody))
+
+					policy := LoadJailbreakPolicy(ctx)
+					replyText, softDet := DetectOpenAIChatCompletionSoftRefusal(policy, softBody)
+					if softDet.Hit {
+						logger.FromContext(ctx).Info("jailbreak soft refusal detected",
+							zap.Int64("jailbreak.group_id", jbGroup.ID),
+							zap.Int("jailbreak.round", jbRound),
+							zap.String("jailbreak.level", softDet.Level),
+							zap.Bool("jailbreak.deadzone", softDet.Deadzone),
+							zap.Int("jailbreak.reply_len", len(replyText)),
+						)
+						// 死格 / 轮数用尽时 plan 为 nil，按原样透传这次拒绝。
+						if plan := NextJailbreakLadderStep(policy, jbRound, replyText, softDet); plan != nil {
+							rewritten, appended, aerr := appendAssistantAndContinueTurn(chatBody, replyText, plan.AppendToUser)
+							if aerr == nil && appended {
+								chatBody = rewritten
+								jbRound++
+								logger.FromContext(ctx).Info("jailbreak continue retry",
+									zap.Int64("jailbreak.group_id", jbGroup.ID),
+									zap.Int("jailbreak.round", jbRound),
+									zap.String("jailbreak.strategy", plan.Reason),
+								)
+								continue
+							}
+						}
+					}
+				}
 				break // 成功：带 resp 跳出，走统一响应处理
 			}
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
@@ -500,7 +539,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 				resp.Body = io.NopCloser(bytes.NewReader(respBody))
 				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
 			}
-			plan := NextJailbreakLadderStep(LoadJailbreakPolicy(ctx), jbRound, refusalText)
+			plan := NextJailbreakLadderStep(LoadJailbreakPolicy(ctx), jbRound, refusalText, detectRes)
 			if plan == nil {
 				resp.Body = io.NopCloser(bytes.NewReader(respBody))
 				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
