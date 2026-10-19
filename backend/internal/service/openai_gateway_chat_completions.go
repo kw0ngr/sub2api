@@ -454,6 +454,13 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	} else if normalized {
 		chatBody = normalizedBody
 	}
+	// Grok 三方 key 的工具 schema 兼容：剥掉 parameters root 级 anyOf/oneOf
+	// （xAI 校验只认纯 object root，OpenAI 宽容——agent 工具常只在 Grok 炸）。
+	if normalizedBody, normalized, normalizeErr := normalizeGrokThirdPartyChatToolSchemas(account, chatBody, chatReq); normalizeErr != nil {
+		return nil, normalizeErr
+	} else if normalized {
+		chatBody = normalizedBody
+	}
 
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
