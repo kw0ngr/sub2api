@@ -14,13 +14,14 @@ import (
 // anyOf/oneOf（哪怕同时标了 type:object，且分支无 type 字段）会被判为
 // union 直接 400 [invalid_client_tool_schema]。OpenAI 对此宽容，因此部分
 // agent 工具（如 tool_wait 用 oneOf 做「seconds 与 targets/timeout 互斥」）
-// 只在 Grok 上炸。本兼容层只对 Grok 三方 key 生效，把 root 级 union 剥掉：
+// 只在 Grok 上炸。生产实证（2026-10-20）：官方 key 直连 api.x.ai 同样拒收，
+// 故对 Grok 平台全量生效（三方与官方），剥掉 root 级 union：
 //   - anyOf/oneOf 分支里的 required 合并进 root required（并集，宽松化——
 //     互斥语义降级为文档语义，交给 description 约束）；
 //   - properties/additionalProperties 等其余字段原样保留；
 //   - 嵌套层级的 anyOf/oneOf 不动（xAI 只校验 root）。
 func normalizeGrokThirdPartyChatToolSchemas(account *Account, body []byte, chatReq *apicompat.ChatCompletionsRequest) ([]byte, bool, error) {
-	if !isThirdPartyGrokAPIKey(account) {
+	if account == nil || account.Platform != PlatformGrok {
 		return body, false, nil
 	}
 	if !hasRootUnionToolSchema(chatReq, body) {

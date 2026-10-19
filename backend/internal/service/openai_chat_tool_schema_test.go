@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/tidwall/gjson"
 )
 
 // 生产实证 schema（2026-10-20 ops_error_logs 抓取）：tool_wait 的 parameters
@@ -125,7 +126,7 @@ func TestNormalizeGrokToolSchemaFullBody(t *testing.T) {
 }
 
 func TestNormalizeGrokToolSchemaNonGrokUntouched(t *testing.T) {
-	// 非 Grok 平台 / 官方 api.x.ai：零改动（不影响其他平台与其他 agent 工具）
+	// 非 Grok 平台：零改动（不影响其他平台与其他 agent 工具）
 	body := []byte(`{"model":"gpt-5.6","tools":[{"type":"function","function":{"name":"tool_wait","parameters":` + toolWaitUnionSchema + `}}]}`)
 	openaiAcct := &Account{Platform: "openai", Type: AccountTypeAPIKey}
 	out, modified, err := normalizeGrokThirdPartyChatToolSchemas(openaiAcct, body, nil)
@@ -136,14 +137,18 @@ func TestNormalizeGrokToolSchemaNonGrokUntouched(t *testing.T) {
 		t.Fatal("non-grok account must not be touched")
 	}
 
+	// 官方 api.x.ai key 同样生效（生产实证：官方校验器一样拒 union root）
 	grokOfficial := &Account{Platform: PlatformGrok, Type: AccountTypeAPIKey}
 	grokOfficial.Credentials = map[string]any{"base_url": "https://api.x.ai/v1"}
 	out2, modified2, err := normalizeGrokThirdPartyChatToolSchemas(grokOfficial, body, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modified2 || string(out2) != string(body) {
-		t.Fatal("official x.ai account must not be touched")
+	if !modified2 {
+		t.Fatal("official x.ai account must also be normalized (verified in prod)")
+	}
+	if _, ok := jsonToMap(gjsonGet(t, out2, "tools.0.function.parameters"))["oneOf"]; ok {
+		t.Fatal("official x.ai path union must be stripped")
 	}
 }
 
@@ -151,4 +156,13 @@ func jsonToMap(raw json.RawMessage) map[string]any {
 	var m map[string]any
 	_ = json.Unmarshal(raw, &m)
 	return m
+}
+
+func gjsonGet(t *testing.T, body []byte, path string) json.RawMessage {
+	t.Helper()
+	raw := gjson.GetBytes(body, path).Raw
+	if raw == "" {
+		t.Fatalf("path %s not found", path)
+	}
+	return json.RawMessage(raw)
 }
