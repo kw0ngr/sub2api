@@ -168,12 +168,13 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		return nil, fmt.Errorf("marshal chat completions fallback request: %w", err)
 	}
 	// 破限链挂载点 3：Responses 桥接路径同样走 历史清洗 → system 注入 + remap（Grok 破限分组）
+	// （桥接路径无 ladder 循环，categories 仅日志用，此处丢弃）
 	if account.Platform == PlatformGrok {
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
 			jbPolicy := LoadJailbreakPolicy(ctx)
 			chatBody = sanitizeJailbreakChatHistory(ctx, jbGroup, chatBody, jbPolicy)
 			chatBody = applyJailbreakSystemInjectionWithPolicy(ctx, jbGroup, chatBody, jbPolicy)
-			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
+			chatBody, _ = applyJailbreakRemapWithResult(ctx, jbGroup, chatBody)
 		}
 	}
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {

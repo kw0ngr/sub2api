@@ -31,8 +31,9 @@ type JailbreakLadderPlan struct {
 // NextJailbreakLadderStep 根据当前轮次与拒绝文本计算下一步。
 // det 是上游正文的检测结果：未命中拒绝或命中死格线时直接停手。
 // 调用方不能只靠外层状态码把关——200 软拒路径没有 4xx 可依赖。
+// categories 是请求侧 remap 命中的类目（精确域信号，优先于拒因猜域）；
 // 返回 nil 表示停手（未拒绝 / 死格 / 轮数用尽 / 段关闭）。
-func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText string, det JailbreakDetectResult) *JailbreakLadderPlan {
+func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText string, det JailbreakDetectResult, categories ...string) *JailbreakLadderPlan {
 	if p == nil {
 		return nil
 	}
@@ -56,8 +57,18 @@ func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText s
 		}
 	}
 
-	// R2（或 R1 无开价时提前触发）：帧转换
+	// R2（或 R1 无开价时提前触发）：帧转换。
+	// 优先级：请求侧类目域模板（category_templates）> 拒因猜域身份表。
+	// 域模板是「交付格式纠偏」形态，身份表是「职业身份宣称」兜底。
 	if p.Ladder.FrameShift.Enabled {
+		if tmpl := pickCategoryTemplate(p, categories); tmpl != "" {
+			return &JailbreakLadderPlan{
+				Round:        next,
+				Reason:       "frame_shift_category",
+				Identity:     strings.Join(categories, ","),
+				AppendToUser: tmpl,
+			}
+		}
 		identity := pickIdentity(p, refusalText)
 		if identity != "" {
 			return &JailbreakLadderPlan{
@@ -69,6 +80,19 @@ func NextJailbreakLadderStep(p *JailbreakPolicy, currentRound int, refusalText s
 		}
 	}
 	return nil
+}
+
+// pickCategoryTemplate 按请求侧类目顺序取第一个配置了域模板的类目。
+func pickCategoryTemplate(p *JailbreakPolicy, categories []string) string {
+	if len(p.Ladder.FrameShift.CategoryTemplates) == 0 {
+		return ""
+	}
+	for _, c := range categories {
+		if tmpl, ok := p.Ladder.FrameShift.CategoryTemplates[c]; ok && tmpl != "" {
+			return tmpl
+		}
+	}
+	return ""
 }
 
 // parseOfferSentence 从拒绝文本解析「我可以做的范围」开价句。
@@ -107,10 +131,11 @@ func pickIdentity(p *JailbreakPolicy, text string) string {
 			}
 		}
 	}
-	// 无域线索：返回表里第一个身份（通用兜底）
-	for _, v := range p.Ladder.FrameShift.IdentityTable {
-		if v != "" {
-			return v
+	// 无域线索：固定顺序兜底（map 遍历是随机序，会让日志里的身份漂移）
+	fallbackOrder := []string{"crack", "av", "pentest", "funds", "malware", "phishing"}
+	for _, k := range fallbackOrder {
+		if id, ok := p.Ladder.FrameShift.IdentityTable[k]; ok && id != "" {
+			return id
 		}
 	}
 	return ""

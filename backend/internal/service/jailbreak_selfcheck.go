@@ -112,7 +112,11 @@ func RunJailbreakSelfCheckWithPolicy(group *Group, p *JailbreakPolicy) []Jailbre
 	case strings.Contains(p.Ladder.FrameShift.Template, "{identity}"):
 		add("ladder", jbLayerBroken, "frame_shift.template 残留未替换的 {identity} 占位符")
 	default:
-		add("ladder", jbLayerOK, fmt.Sprintf("max_rounds=%d", p.Ladder.MaxRounds))
+		extra := ""
+		if n := len(p.Ladder.FrameShift.CategoryTemplates); n > 0 {
+			extra = fmt.Sprintf("，域模板=%d（R2 按类目直通）", n)
+		}
+		add("ladder", jbLayerOK, fmt.Sprintf("max_rounds=%d%s", p.Ladder.MaxRounds, extra))
 	}
 
 	// 7. detect（拒绝判定：P1 硬拒 / P2 开价 / DZ 死格）

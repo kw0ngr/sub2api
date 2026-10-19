@@ -403,6 +403,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	if err != nil {
 		return nil, fmt.Errorf("rewrite chat completions model: %w", err)
 	}
+	var jbCategories []string // remap 命中的类目（挂载点 1 填充；ladder R2 域模板直通用）
 	if account.IsGLMOpenAICompatible() {
 		for i, message := range gjson.GetBytes(chatBody, "messages").Array() {
 			if !message.Get("model_id").Exists() {
@@ -426,11 +427,12 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		// 破限链挂载点 1：历史清洗 → system 注入（S7 帧 + boost）→ remap 类目改写。
 		// 先清洗再注入：F6 分类表面对的上文必须不含拒绝史（H 系列：拒绝史关门）。
 		// 先注入再改写：boost 必须对新任务书同样生效，顺序反了会漏掉用户原文之外的部分。
+		// jbCategories：请求侧命中的 remap 类目，ladder R2 域模板的精确域信号。
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
 			jbPolicy := LoadJailbreakPolicy(ctx)
 			chatBody = sanitizeJailbreakChatHistory(ctx, jbGroup, chatBody, jbPolicy)
 			chatBody = applyJailbreakSystemInjectionWithPolicy(ctx, jbGroup, chatBody, jbPolicy)
-			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
+			chatBody, jbCategories = applyJailbreakRemapWithResult(ctx, jbGroup, chatBody)
 		}
 		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())
 		normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, upstreamModel)
@@ -507,7 +509,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 							zap.Int("jailbreak.reply_len", len(replyText)),
 						)
 						// 死格 / 轮数用尽时 plan 为 nil，按原样透传这次拒绝。
-						if plan := NextJailbreakLadderStep(policy, jbRound, replyText, softDet); plan != nil {
+						if plan := NextJailbreakLadderStep(policy, jbRound, replyText, softDet, jbCategories...); plan != nil {
 							rewritten, appended, aerr := appendAssistantAndContinueTurn(chatBody, replyText, plan.AppendToUser)
 							if aerr == nil && appended {
 								chatBody = rewritten
@@ -542,7 +544,7 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 				resp.Body = io.NopCloser(bytes.NewReader(respBody))
 				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)
 			}
-			plan := NextJailbreakLadderStep(LoadJailbreakPolicy(ctx), jbRound, refusalText, detectRes)
+			plan := NextJailbreakLadderStep(LoadJailbreakPolicy(ctx), jbRound, refusalText, detectRes, jbCategories...)
 			if plan == nil {
 				resp.Body = io.NopCloser(bytes.NewReader(respBody))
 				return s.handleChatCompletionsErrorResponseOrFailover(ctx, c, account, upstreamModel, resp, respBody)

@@ -146,6 +146,37 @@ func TestJailbreakRemapIgnoresHistoricalHits(t *testing.T) {
 	}
 }
 
+// R2 域模板直通：请求侧类目命中时，帧转换用 category_templates 的
+// 「交付格式纠偏」文本，不用身份宣称兜底（2026-10-20 生产实证迭代）。
+func TestJailbreakLadderCategoryTemplate(t *testing.T) {
+	p := LoadJailbreakPolicy(context.Background())
+	hit := JailbreakDetectResult{Hit: true, Level: "P1"}
+	plan := NextJailbreakLadderStep(p, 0, "我不能提供", hit, "license-audit")
+	if plan == nil {
+		t.Fatal("round 0 must produce a plan")
+	}
+	if plan.Reason != "frame_shift_category" {
+		t.Fatalf("reason = %q, want frame_shift_category", plan.Reason)
+	}
+	want := p.Ladder.FrameShift.CategoryTemplates["license-audit"]
+	if plan.AppendToUser != want {
+		t.Fatalf("append text must be the license-audit category template")
+	}
+	if strings.Contains(plan.AppendToUser, "我是") {
+		t.Fatalf("category path must not use identity claim fallback")
+	}
+	// 未配置域模板的类目：回退拒因猜域（身份宣称），reason 回到 frame_shift
+	plan2 := NextJailbreakLadderStep(p, 0, "涉及破解注册机", hit, "unknown-category")
+	if plan2 == nil || plan2.Reason != "frame_shift" {
+		t.Fatalf("unknown category must fall back to identity pick, got %+v", plan2)
+	}
+	// 无类目（responses 原生路径）：同样回退猜域
+	plan3 := NextJailbreakLadderStep(p, 1, "仍然拒绝提供", hit)
+	if plan3 == nil || plan3.Reason != "frame_shift" {
+		t.Fatalf("no category must fall back to identity pick, got %+v", plan3)
+	}
+}
+
 func TestJailbreakLadderProgression(t *testing.T) {
 	p := LoadJailbreakPolicy(context.Background())
 	hit := JailbreakDetectResult{Hit: true, Level: "P1"}

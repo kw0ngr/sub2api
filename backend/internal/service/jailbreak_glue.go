@@ -17,12 +17,12 @@ import (
 // 所有入口都先判「分组开关 + 平台」，非破限分组零路径变化。
 // ============================================================================
 
-// applyJailbreakRemap 请求侧改写入口（chat completions 及 Responses 桥接共用）。
-// 返回（可能被改写的）body。改写动作打日志 field（jailbreak_* 前缀）。
-func applyJailbreakRemap(ctx context.Context, group *Group, body []byte) []byte {
+// applyJailbreakRemapWithResult 请求侧改写入口（chat completions 及 Responses 桥接共用）。
+// 返回（可能被改写的）body 与命中的类目（ladder 域模板用）。改写动作打日志 field（jailbreak_* 前缀）。
+func applyJailbreakRemapWithResult(ctx context.Context, group *Group, body []byte) ([]byte, []string) {
 	policy := LoadJailbreakPolicy(ctx)
 	if !policy.Remap.Enabled {
-		return body
+		return body, nil
 	}
 
 	// 收集请求文本（全部 user 消息）用于预检
@@ -35,7 +35,7 @@ func applyJailbreakRemap(ctx context.Context, group *Group, body []byte) []byte 
 	requestText := joinTexts(texts)
 
 	if policy.Remap.TriggerOnDetect && !ShouldRemapJailbreakRequest(policy, requestText) {
-		return body
+		return body, nil
 	}
 
 	res := RemapJailbreakChatBody(policy, body)
@@ -44,9 +44,9 @@ func applyJailbreakRemap(ctx context.Context, group *Group, body []byte) []byte 
 			zap.Int64("jailbreak.group_id", group.ID),
 			zap.Strings("jailbreak.categories", res.Categories),
 		)
-		return res.Body
+		return res.Body, res.Categories
 	}
-	return body
+	return body, nil
 }
 
 // applyJailbreakSystemInjection system 注入入口：把 S7 帧 + boost 送达上游。
