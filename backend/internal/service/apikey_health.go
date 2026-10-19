@@ -329,7 +329,8 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 			// a temporary cooldown avoids hammering a key that may be account-level suspended.
 			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusBadRequest:
-			if strings.Contains(bodyUpper, "API_KEY_INVALID") || googleapi.IsServiceDisabledError(string(responseBody)) {
+			if strings.TrimSuffix(msg, ".") == "please pass a valid api key" ||
+				strings.Contains(bodyUpper, "API_KEY_INVALID") || googleapi.IsServiceDisabledError(string(responseBody)) {
 				return APIKeyStatusActionPermanentDisable
 			}
 			// FAILED_PRECONDITION with billing/free-tier messages: permanent disable.

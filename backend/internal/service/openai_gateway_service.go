@@ -2048,6 +2048,11 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
 	if isGrokContentPolicyRejection(account, statusCode, upstreamBody) {
 		return false
 	}
+	// Google reports invalid API keys as 400; retry another account, not the same credentials.
+	if account != nil && account.Platform == PlatformGemini && statusCode == http.StatusBadRequest &&
+		ClassifyAPIKeyStatusAction(account, statusCode, upstreamBody) == APIKeyStatusActionPermanentDisable {
+		return true
+	}
 	// grok-build-0.1 is an optional CLI capability probe. Even statuses such as
 	// 400/404/426, which are normally returned directly to the caller, must stay
 	// request-local and release the scheduler to try another account. A genuine
