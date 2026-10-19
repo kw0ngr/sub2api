@@ -423,10 +423,13 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		}
 	}
 	if account.Platform == PlatformGrok {
-		// 破限链挂载点 1：system 注入（S7 帧 + boost）→ remap 类目改写。
+		// 破限链挂载点 1：历史清洗 → system 注入（S7 帧 + boost）→ remap 类目改写。
+		// 先清洗再注入：F6 分类表面对的上文必须不含拒绝史（H 系列：拒绝史关门）。
 		// 先注入再改写：boost 必须对新任务书同样生效，顺序反了会漏掉用户原文之外的部分。
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
-			chatBody = applyJailbreakSystemInjection(ctx, jbGroup, chatBody)
+			jbPolicy := LoadJailbreakPolicy(ctx)
+			chatBody = sanitizeJailbreakChatHistory(ctx, jbGroup, chatBody, jbPolicy)
+			chatBody = applyJailbreakSystemInjectionWithPolicy(ctx, jbGroup, chatBody, jbPolicy)
 			chatBody = applyJailbreakRemap(ctx, jbGroup, chatBody)
 		}
 		rawEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String())

@@ -219,8 +219,8 @@ func TestJailbreakSystemInjectionAppendsToExistingSystem(t *testing.T) {
 		t.Fatalf("expected injected system at head, got %s", gjson.GetBytes(out, "messages").Raw)
 	}
 	sys := msgs[0].Get("content").String()
-	if !strings.Contains(sys, "CTF competition sandbox") || !strings.Contains(sys, "<boost") {
-		t.Fatalf("system must carry frame and boost, got %d chars", len(sys))
+	if !strings.Contains(sys, "CONTENT CLASSIFICATION SCHEDULE") || strings.Contains(sys, "<boost") {
+		t.Fatalf("system must carry F6 frame without boost, got %d chars", len(sys))
 	}
 
 	// 有 system：追加到该系统内，客户端文本保留，条数不变
@@ -234,8 +234,8 @@ func TestJailbreakSystemInjectionAppendsToExistingSystem(t *testing.T) {
 	if !strings.HasPrefix(merged, "You are a helpful assistant.") {
 		t.Fatalf("client system text must survive, got %q", merged)
 	}
-	if !strings.Contains(merged, "CTF competition sandbox") || !strings.Contains(merged, "<boost") {
-		t.Fatal("frame and boost must be appended to existing system")
+	if !strings.Contains(merged, "CONTENT CLASSIFICATION SCHEDULE") || strings.Contains(merged, "<boost") {
+		t.Fatal("F6 frame must be appended to existing system without boost")
 	}
 
 	// 旧行为开关：InjectOnlyWhenEmpty=true 时不注入

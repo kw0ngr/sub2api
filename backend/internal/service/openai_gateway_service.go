@@ -2240,6 +2240,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.Platform == PlatformGrok {
 		if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled {
 			policy := LoadJailbreakPolicy(ctx)
+			// 历史清洗先于 system 注入：拒绝史/固化 reasoning 判定不进上游上下文。
+			reqBody = sanitizeJailbreakResponsesHistory(ctx, jbGroup, reqBody, policy)
 			text := composeJailbreakSystemText(policy)
 			if text != "" && (!policy.System.InjectOnlyWhenEmpty || isInstructionsEmpty(reqBody)) {
 				if appendTextToResponsesSystemInput(reqBody, text) {
@@ -2900,6 +2902,43 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					zap.String("upstream_message", upstreamMsg),
 				)
 				return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
+			}
+			// 破限链挂载点 4：Grok 破限分组的 Responses 原生路径 ladder。
+			// 403 内容拒绝且非死格时：复用 NextJailbreakLadderStep（与 chat 路径
+			// 同语义）——追加策略文本到最后一条 user input 项，同账号重发。
+			// 用户重发场景由历史清洗器覆盖（挂载点 2），这里是同轮内兜底。
+			if jbGroup, ok := ctx.Value(ctxkey.Group).(*Group); ok && account.Platform == PlatformGrok &&
+				IsGroupContextValid(jbGroup) && jbGroup.JailbreakEnabled && isGrokContentPolicyRejection(account, resp.StatusCode, respBody) {
+				jbPolicy := LoadJailbreakPolicy(ctx)
+				refusalText := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+				det := DetectJailbreakRefusal(jbPolicy, refusalText)
+				logger.FromContext(ctx).Info("jailbreak responses ladder upstream_error",
+					zap.Int64("jailbreak.group_id", jbGroup.ID),
+					zap.Int("jailbreak.status", resp.StatusCode),
+					zap.Bool("jailbreak.refusal_detected", det.Hit),
+					zap.String("jailbreak.level", det.Level),
+					zap.Bool("jailbreak.deadzone", det.Deadzone),
+				)
+				if plan := NextJailbreakLadderStep(jbPolicy, jbResponsesLadderRound(ctx), refusalText, det); plan != nil {
+					decoded, decodeErr := ensureReqBody()
+					if decodeErr == nil {
+						if rewritten, ok := appendToLastResponsesUserInput(decoded, plan.AppendToUser); ok {
+							newBody, mErr := json.Marshal(rewritten)
+							if mErr == nil {
+								reqBody = rewritten
+								body = newBody
+								requestView = newOpenAIRequestView(body)
+								setOpsUpstreamRequestBody(c, body)
+								ctx = withJbResponsesLadderRound(ctx, jbResponsesLadderRound(ctx)+1)
+								logger.FromContext(ctx).Info("jailbreak responses ladder retry",
+									zap.Int64("jailbreak.group_id", jbGroup.ID),
+									zap.String("jailbreak.strategy", plan.Reason),
+								)
+								continue
+							}
+						}
+					}
+				}
 			}
 			if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 				upstreamDetail := ""

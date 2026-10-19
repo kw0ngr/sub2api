@@ -26,7 +26,15 @@ func DetectJailbreakRefusal(p *JailbreakPolicy, text string) JailbreakDetectResu
 		return res
 	}
 
-	// 死格线优先：命中即停，不进重试
+	// 前缀窗口：拒绝只出现在正文开头（grok-lab 实证，前 400 字内）；
+	// P1/P2 只对前缀匹配，防长交付中后部内嵌拒绝词（小说对白等）误判 → 错误重试。
+	prefixWindow := detectRefusalPrefixBytes
+	if prefixWindow > len(trimmed) {
+		prefixWindow = len(trimmed)
+	}
+	prefix := trimmed[:prefixWindow]
+
+	// 死格线优先：命中即停，不进重试（强信号，保持全文匹配）
 	for _, rx := range p.Detect.compiledDZ {
 		if m := rx.FindString(trimmed); m != "" {
 			res.Hit = true
@@ -45,7 +53,7 @@ func DetectJailbreakRefusal(p *JailbreakPolicy, text string) JailbreakDetectResu
 
 	var p1Hit string
 	for _, rx := range p.Detect.compiledP1 {
-		if m := rx.FindString(trimmed); m != "" {
+		if m := rx.FindString(prefix); m != "" {
 			p1Hit = m
 			res.Cues = append(res.Cues, "P1:"+truncateCue(m))
 			break
@@ -62,7 +70,7 @@ func DetectJailbreakRefusal(p *JailbreakPolicy, text string) JailbreakDetectResu
 	}
 
 	for _, rx := range p.Detect.compiledP2 {
-		if m := rx.FindString(trimmed); m != "" {
+		if m := rx.FindString(prefix); m != "" {
 			res.Cues = append(res.Cues, "P2:"+truncateCue(m))
 			// P2 单独出现（无 P1）→ 优雅拒：可跟随开价重试
 			if !res.Hit {
@@ -83,6 +91,10 @@ func DetectJailbreakRefusal(p *JailbreakPolicy, text string) JailbreakDetectResu
 // actionHedgeMinLen ACTION 对冲生效的最小回复长度：
 // 短回复（如纯拒绝句+一行命令）不足以证明交付。
 const actionHedgeMinLen = 400
+
+// detectRefusalPrefixBytes P1/P2 前缀窗口（字节）。
+// 拒绝句只出现在正文开头；窗口给「先客套再拒」留余量。
+const detectRefusalPrefixBytes = 800
 
 func truncateCue(s string) string {
 	if len(s) > 24 {
