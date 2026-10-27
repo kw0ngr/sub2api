@@ -125,6 +125,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	if statusCode == http.StatusOK {
 		return APIKeyStatusActionValid
 	}
+	if statusCode == http.StatusForbidden && isCloudflareBotBlockResponse(responseBody) {
+		return APIKeyStatusActionIgnore
+	}
 	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
 		return APIKeyStatusActionIgnore
 	}

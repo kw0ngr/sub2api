@@ -5437,7 +5437,7 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 		if chatUsage.Get("prompt_tokens").Exists() || chatUsage.Get("completion_tokens").Exists() {
 			usage.InputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens").Int())
 			usage.OutputTokens = int(gjson.GetBytes(data, "usage.completion_tokens").Int())
-			usage.CacheReadInputTokens = int(gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens").Int())
+			usage.CacheReadInputTokens = openAIChatCacheReadTokens(chatUsage)
 			return
 		}
 	}
@@ -5464,7 +5464,7 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 				return OpenAIUsage{
 					InputTokens:          int(gjson.GetBytes(body, promptTokens).Int()),
 					OutputTokens:         int(gjson.GetBytes(body, completionTokens).Int()),
-					CacheReadInputTokens: int(gjson.GetBytes(body, usagePath+".prompt_tokens_details.cached_tokens").Int()),
+					CacheReadInputTokens: openAIChatCacheReadTokens(usage),
 				}, true
 			}
 			values := gjson.GetManyBytes(
@@ -5486,6 +5486,15 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 		}
 	}
 	return OpenAIUsage{}, false
+}
+
+func openAIChatCacheReadTokens(usage gjson.Result) int {
+	for _, path := range []string{"prompt_tokens_details.cached_tokens", "prompt_cache_hit_tokens"} {
+		if value := usage.Get(path); value.Exists() && value.Type != gjson.Null {
+			return max(int(value.Int()), 0)
+		}
+	}
+	return 0
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, error) {

@@ -665,6 +665,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 		return nil, err
 	}
 	targetURL := buildOpenAICompatibleChatCompletionsURL(account.Platform, validatedURL)
+	body, err = normalizeStrictChatDeveloperRoles(account, targetURL, body)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

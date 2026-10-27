@@ -149,6 +149,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 	if account == nil {
 		return ErrorPolicyNone
 	}
+	if statusCode == http.StatusForbidden && isCloudflareBotBlockResponse(responseBody) {
+		return ErrorPolicyNone
+	}
 	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
 		return ErrorPolicyNone
 	}
@@ -179,6 +182,10 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	if account != nil && account.Platform == PlatformGemini {
 		responseBody = unwrapGoogleAPIError(responseBody)
+	}
+	if statusCode == http.StatusForbidden && isCloudflareBotBlockResponse(responseBody) {
+		slog.Warn("403_cloudflare_bot_block_skips_account_penalty")
+		return false
 	}
 	if isGrokContentPolicyRejection(account, statusCode, responseBody) {
 		return false
@@ -1101,6 +1108,9 @@ func isGLMTransientNetworkError(statusCode int, responseBody []byte) bool {
 // Antigravity 平台区分 validation/violation/generic 三种类型，均 SetError 永久禁用；
 // 其他平台保持原有 SetError 行为。
 func (s *RateLimitService) handle403(ctx context.Context, account *Account, upstreamMsg string, responseBody []byte) (shouldDisable bool) {
+	if isCloudflareBotBlockResponse(responseBody) {
+		return false
+	}
 	if account.Platform == PlatformAntigravity {
 		return s.handleAntigravity403(ctx, account, upstreamMsg, responseBody)
 	}
@@ -2196,6 +2206,9 @@ func firstRequestedModel(requestedModel []string) string {
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) bool {
 	if account == nil {
+		return false
+	}
+	if statusCode == http.StatusForbidden && isCloudflareBotBlockResponse(responseBody) {
 		return false
 	}
 	if isGrokContentPolicyRejection(account, statusCode, responseBody) {

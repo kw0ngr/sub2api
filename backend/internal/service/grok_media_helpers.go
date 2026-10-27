@@ -83,6 +83,9 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	if s == nil || account == nil {
 		return
 	}
+	if statusCode == http.StatusForbidden && isCloudflareBotBlockResponse(body) {
+		return
+	}
 	if isGrokContentPolicyRejection(account, statusCode, body) {
 		return
 	}

@@ -97,8 +97,12 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
+		exists := s.fileExists(cleanPath)
+		if !exists && serveMissingAsset(c, cleanPath) {
+			return
+		}
 		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		if cleanPath == "index.html" || !exists {
 			s.serveIndexHTML(c)
 			return
 		}
@@ -277,8 +281,21 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
-		serveIndexHTML(c, distFS)
+		if !serveMissingAsset(c, cleanPath) {
+			serveIndexHTML(c, distFS)
+		}
 	}
+}
+
+// Stale chunks must fail as assets so the client's chunk-reload recovery can run.
+func serveMissingAsset(c *gin.Context, cleanPath string) bool {
+	if !strings.HasPrefix(cleanPath, "assets/") {
+		return false
+	}
+	c.Header("Cache-Control", "no-store")
+	c.String(http.StatusNotFound, "Asset not found")
+	c.Abort()
+	return true
 }
 
 // tryServeOverrideFile is a standalone version of tryServeOverride for legacy usage.

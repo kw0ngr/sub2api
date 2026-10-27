@@ -20,6 +20,32 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func TestEmbeddedMissingAssetsDoNotFallBackToHTML(t *testing.T) {
+	server, err := NewFrontendServer(&mockSettingsProvider{})
+	require.NoError(t, err)
+	for name, handler := range map[string]gin.HandlerFunc{
+		"settings": server.Middleware(),
+		"legacy":   ServeEmbeddedFrontend(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(handler)
+			for _, path := range []string{"/assets/deleted-build.js", "/assets/deleted-build.css", "/assets/nested/missing.js.map"} {
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusNotFound, rec.Code, path)
+				require.Equal(t, "no-store", rec.Header().Get("Cache-Control"), path)
+				require.NotContains(t, rec.Header().Get("Content-Type"), "text/html", path)
+				require.NotContains(t, rec.Body.String(), "<html", path)
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/settings", nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+		})
+	}
+}
+
 func TestInjectSiteTitle(t *testing.T) {
 	t.Run("replaces_title_with_site_name", func(t *testing.T) {
 		html := []byte(`<html><head><title>Sub2API - AI API Gateway</title></head><body></body></html>`)

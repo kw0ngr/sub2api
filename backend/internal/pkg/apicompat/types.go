@@ -634,6 +634,34 @@ type ChatUsage struct {
 	CompletionTokensDetails *ChatTokenDetails `json:"completion_tokens_details,omitempty"`
 }
 
+// DeepSeek reports cache hits outside OpenAI's nested token details.
+func (u *ChatUsage) UnmarshalJSON(data []byte) error {
+	type plain ChatUsage
+	var aux struct {
+		plain
+		PromptCacheHitTokens *int `json:"prompt_cache_hit_tokens"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	var presence struct {
+		Details *struct {
+			CachedTokens *int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	}
+	if err := json.Unmarshal(data, &presence); err != nil {
+		return err
+	}
+	*u = ChatUsage(aux.plain)
+	if aux.PromptCacheHitTokens != nil && (presence.Details == nil || presence.Details.CachedTokens == nil) {
+		if u.PromptTokensDetails == nil {
+			u.PromptTokensDetails = &ChatTokenDetails{}
+		}
+		u.PromptTokensDetails.CachedTokens = max(*aux.PromptCacheHitTokens, 0)
+	}
+	return nil
+}
+
 // ChatTokenDetails provides a breakdown of token usage. The same type is
 // reused for both prompt_tokens_details and completion_tokens_details;
 // unset fields are omitted so each side only emits the fields that apply.

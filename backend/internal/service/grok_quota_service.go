@@ -358,7 +358,10 @@ func (s *GrokQuotaService) probeRateLimitHeaders(ctx context.Context, account *A
 		return nil, 0, infraerrors.Newf(http.StatusBadGateway, "GROK_PROBE_REQUEST_FAILED", "xAI models probe failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusForbidden && isCloudflareBotBlockResponse(body) {
+		return nil, resp.StatusCode, infraerrors.New(http.StatusForbidden, "GROK_PROBE_EDGE_BLOCKED", "xAI models probe blocked by Cloudflare 1010")
+	}
 
 	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe")
 	if snapshot == nil {

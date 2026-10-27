@@ -88,3 +88,24 @@
 - GLM 首次实测返回上游 429，并将 1784 的 `rate_limit_reset_at` 精确持久化为 `2026-10-28 05:51:54+08`；随后请求按现有无账号分支返回 503，无需再次撞上游。**这是配额保护验收，不是 GLM 推理成功验收。**
 - 现有分组开关、策略哈希及全部数据库迁移校验与升级前一致；管理员策略/分组读取正常，设置页 HTML 与入口 JS/CSS 类型正常；本轮未改写策略或分组配置。
 - 服务 `active`、`NRestarts=0`，自报版本/commit/build_type 与发布对应。
+
+## 续轮：高价值兼容与发布可靠性（v0.1.337）
+
+再次拉取官方 `upstream/main`，核对到 `f178e5ae3`。本轮选择性采用以下更新，未做整库合并：
+
+1. **DOMPurify 3.4.17**（官方 `828626804`）：仅更新直接依赖和 pnpm override/lock 下限，实际解析从 3.4.11 升为 3.4.17。SVG 图标及公告 HTML 继续使用既有净化器；补合法 SVG/filter、事件处理器/脚本/危险链接回归。
+2. **Cloudflare 1010 不惩罚账号**（官方 `e0fa4b94f`）：精确识别 HTML 错误页、结构化 `browser_signature_banned` 或同对象 `cloudflare_error=true + code/error_code=1010`。覆盖 API Key 分类、OAuth、自定义错误码、临时停调、Grok 媒体及 models/inference 探活。仍然返回请求失败并保留现有有界 failover；不把 1010 当有效凭证，也不忽略真正的 401/403。没有为此变更上游身份/绕过边缘拦截。
+3. **旧静态资源不再伪装首页成功**：两条 embed 服务入口的缺失 `/assets/` 均返回 `404 text/plain + Cache-Control: no-store`；SPA 页面仍返回 HTML。这让既有 chunk 加载失败恢复可以执行，不再因 HTML 被当 JS 解析而白屏。
+4. **DeepSeek developer 角色兼容**（参考官方 `ba5b21879`）：在账号、映射后模型及实际目标 URL 已选定后，将严格供应商的 `developer` 原位转换为 `system`。OpenCode 仅对 DeepSeek 模型启用；其他 OpenAI/Grok 请求不变，原始请求字节和大整数/未知字段保留，不合并或重排消息。按本分支平台名接线，没有引入整套 OpenCodeGo 平台模块。
+5. **DeepSeek 缓存计费识别**（官方 `3e18e78ab`）：`prompt_cache_hit_tokens` 作为嵌套 `cached_tokens` 缺失时的兜底，显式零仍优先。覆盖 Chat 流式/非流式和 Chat→Responses 的结构体反序列化；总输入 token 不重复减缓存。
+6. **安装脚本严格校验前移**：下载、精确匹配 checksum、验证 SHA-256、解包及检查二进制均在停服前执行；缺 checksum/哈希工具、下载失败、哈希不符、重复条目或缺二进制立即失败，旧服务不停止。保留既有安装/指定版本/升级入口，未自动回滚或删除备份。
+
+### 本轮验证
+
+- 修改前，新增测试已复现 Cloudflare 1010 健康状态误写和缺失静态资源返回 HTML。
+- 后端 `go test -tags unit ./internal/pkg/apicompat ./internal/pkg/xai ./internal/service ./internal/handler/admin -count=1` 通过；`go test -tags embed ./internal/web -count=1` 通过。
+- 安装脚本 `python3 deploy/test_install_release.py` 覆盖 upgrade/指定版本两条路径共 16 个隔离场景；不接触真实 systemd、网络、生产路径。
+- 前端全量测试第一次暴露既有过时断言：要求已从当前目录移除的 `gemini-2.5-flash-image`。只修正该断言，不重新添加旧模型。
+- 前端最终全量测试 **105 个文件、614/614 项通过**，`vue-tsc --noEmit` 和 Vite 生产构建通过。实际发布验收在完成后追加；不能仅凭单测宣称线上已生效。
+
+未接入 scoped admin keys、Grok 目录/CAS UI、全套 OpenCodeGo 平台、Gemini 客户端取消后计费等大模块；这些涉及独立协议/迁移或流生命周期，应单独回归。没有新增未经真实推理验证的模型映射、恢复账号或改写分组/策略。

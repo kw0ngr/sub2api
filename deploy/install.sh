@@ -744,8 +744,8 @@ get_current_version() {
     fi
 }
 
-# Download and extract
-download_and_extract() {
+# Stage and verify the release while the current service is still running.
+download_release() {
     local version_num=${LATEST_VERSION#v}
     local archive_name="sub2api_${version_num}_${OS}_${ARCH}.tar.gz"
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/${archive_name}"
@@ -766,32 +766,38 @@ download_and_extract() {
 
     # Download and verify checksum
     print_info "$(msg 'verifying_checksum')"
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
-        local expected_checksum=$(grep "$archive_name" "$TEMP_DIR/checksums.txt" | awk '{print $1}')
-        if [ -z "$expected_checksum" ]; then
-            print_warning "$(msg 'checksum_not_found')"
-        else
-            local actual_checksum
-            if ! actual_checksum=$(sha256_file "$TEMP_DIR/$archive_name"); then
-                print_warning "sha256sum/shasum not found; skipping checksum verification"
-            elif [ "$expected_checksum" != "$actual_checksum" ]; then
-                print_error "$(msg 'checksum_failed')"
-                print_error "Expected: $expected_checksum"
-                print_error "Actual: $actual_checksum"
-                exit 1
-            else
-                print_success "$(msg 'checksum_verified')"
-            fi
-
-        fi
-    else
-        print_warning "$(msg 'checksum_not_found')"
+    if ! curl -fsSL --connect-timeout 10 --max-time 30 "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
+        print_error "$(msg 'checksum_not_found')"
+        exit 1
     fi
+    local expected_checksum
+    expected_checksum=$(awk -v name="$archive_name" '$2 == name || $2 == "*" name {print $1}' "$TEMP_DIR/checksums.txt")
+    if [[ ! "$expected_checksum" =~ ^[a-fA-F0-9]{64}$ ]]; then
+        print_error "$(msg 'checksum_not_found')"
+        exit 1
+    fi
+    local actual_checksum
+    if ! actual_checksum=$(sha256_file "$TEMP_DIR/$archive_name"); then
+        print_error "sha256sum/shasum not found; cannot verify release"
+        exit 1
+    fi
+    expected_checksum=$(printf '%s' "$expected_checksum" | tr 'A-F' 'a-f')
+    if [ "$expected_checksum" != "$actual_checksum" ]; then
+        print_error "$(msg 'checksum_failed')"
+        exit 1
+    fi
+    print_success "$(msg 'checksum_verified')"
 
     # Extract
     print_info "$(msg 'extracting')"
     tar -xzf "$TEMP_DIR/$archive_name" -C "$TEMP_DIR"
+    if [ ! -f "$TEMP_DIR/sub2api" ] || [ -L "$TEMP_DIR/sub2api" ]; then
+        print_error "Release archive does not contain a regular sub2api binary"
+        exit 1
+    fi
+}
 
+install_downloaded_release() {
     # Create install directory
     mkdir -p "$INSTALL_DIR"
 
@@ -805,6 +811,11 @@ download_and_extract() {
     fi
 
     print_success "$(msg 'binary_installed') $INSTALL_DIR/sub2api"
+}
+
+download_and_extract() {
+    download_release
+    install_downloaded_release
 }
 
 # Create system user
@@ -1013,9 +1024,7 @@ upgrade() {
         print_warning "$(msg 'same_version')"
         return 0
     fi
-    local version_num=${LATEST_VERSION#v}
-    local archive_name="sub2api_${version_num}_${OS}_${ARCH}.tar.gz"
-    wait_for_release_asset "$LATEST_VERSION" "$archive_name"
+    download_release
 
     # Stop service
     if systemctl is-active --quiet sub2api; then
@@ -1027,8 +1036,8 @@ upgrade() {
     cp "$INSTALL_DIR/sub2api" "$INSTALL_DIR/sub2api.backup"
     print_info "$(msg 'backup_created'): $INSTALL_DIR/sub2api.backup"
 
-    # Download and install new version
-    download_and_extract
+    # Install the already verified release
+    install_downloaded_release
 
     # Set permissions
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/sub2api"
@@ -1072,9 +1081,7 @@ install_version() {
     # running service. A freshly pushed tag may exist before release assets are
     # uploaded by GitHub Actions.
     LATEST_VERSION="$target_version"
-    local target_version_num=${LATEST_VERSION#v}
-    local target_archive_name="sub2api_${target_version_num}_${OS}_${ARCH}.tar.gz"
-    wait_for_release_asset "$LATEST_VERSION" "$target_archive_name"
+    download_release
 
     # Stop service if running
     if systemctl is-active --quiet sub2api; then
@@ -1094,8 +1101,8 @@ install_version() {
         print_info "$(msg 'backup_created'): $INSTALL_DIR/$backup_name"
     fi
 
-    # Download and install
-    download_and_extract
+    # Install the already verified release
+    install_downloaded_release
 
     # Set permissions
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/sub2api"
