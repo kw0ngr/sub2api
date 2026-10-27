@@ -19,6 +19,7 @@ describe('useModelWhitelist', () => {
 
     expect(models.filter((model) => model === 'gpt-6-astra')).toHaveLength(1)
     expect(models.filter((model) => model === 'gpt-6.1-sol')).toHaveLength(1)
+    expect(models.filter((model) => model === 'gpt-6.1-terra')).toHaveLength(1)
     expect(models).not.toContain('gpt-6')
     expect(models).not.toContain('gpt5.6')
     expect(models).not.toContain('gpt-5.6')
@@ -29,6 +30,7 @@ describe('useModelWhitelist', () => {
 
     expect(presets.filter((preset) => preset.from === 'gpt-6-astra')).toHaveLength(1)
     expect(presets.filter((preset) => preset.from === 'gpt-6.1-sol')).toHaveLength(1)
+    expect(presets.filter((preset) => preset.from === 'gpt-6.1-terra')).toHaveLength(1)
     expect(presets).not.toContainEqual(expect.objectContaining({ from: 'gpt-6' }))
   })
 

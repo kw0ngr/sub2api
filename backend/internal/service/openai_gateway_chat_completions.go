@@ -139,7 +139,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	} else {
 		// Normal path: convert Chat Completions → Responses.
 		// ChatCompletionsToResponses always sets Stream=true (upstream always streams).
-		if openai.IsGPT61SolModelSpelling(upstreamModel) {
+		if openai.RequiresResponsesForToolCalls(upstreamModel) {
 			chatReq.Model = upstreamModel // sampling/effort rules apply to the mapped model
 		}
 		responsesReq, err = apicompat.ChatCompletionsToResponses(&chatReq)
@@ -394,8 +394,8 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 	upstreamModel string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
-	if openai.IsGPT61SolModelSpelling(upstreamModel) && chatReq != nil && (len(chatReq.Tools) > 0 || len(chatReq.Functions) > 0) {
-		err := fmt.Errorf("gpt-6.1-sol requires Responses for tool calls; this account only supports Chat Completions")
+	if openai.RequiresResponsesForToolCalls(upstreamModel) && chatReq != nil && (len(chatReq.Tools) > 0 || len(chatReq.Functions) > 0) {
+		err := fmt.Errorf("%s requires Responses for tool calls; this account only supports Chat Completions", upstreamModel)
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}

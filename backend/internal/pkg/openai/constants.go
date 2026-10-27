@@ -20,6 +20,7 @@ type Model struct {
 // DefaultModels OpenAI models list
 var DefaultModels = []Model{
 	{ID: "gpt-6-astra", Object: "model", Created: 1783555200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Astra"},
+	{ID: "gpt-6.1-terra", Object: "model", Created: 1791908780, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
 	{ID: "gpt-6-luna", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Luna"},
@@ -84,6 +85,32 @@ func IsGPT61SolModelSpelling(model string) bool {
 	default:
 		return false
 	}
+}
+
+// IsGPT61TerraModelSpelling recognizes the official ID and supported effort aliases.
+func IsGPT61TerraModelSpelling(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndexByte(model, '/'); idx >= 0 {
+		model = model[idx+1:]
+	}
+	model = strings.ReplaceAll(model, "_", "-")
+	if model == "gpt-6.1-terra" {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(model, "gpt-6.1-terra-")
+	if !ok {
+		return false
+	}
+	switch suffix {
+	case "none", "low", "medium", "high", "xhigh", "max", "openai-compact":
+		return true
+	default:
+		return false
+	}
+}
+
+func RequiresResponsesForToolCalls(model string) bool {
+	return IsGPT61SolModelSpelling(model) || IsGPT61TerraModelSpelling(model)
 }
 
 // ValidateGPT61SolReasoningEffort keeps unsupported no-reasoning requests visible to callers.

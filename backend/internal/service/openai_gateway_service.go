@@ -7084,7 +7084,7 @@ func filterOpenAIResponsesLogprobsInclude(reqBody map[string]any) bool {
 
 func openAIModelUsesResponsesReasoningParameterRestrictions(model string) bool {
 	base := openAIBaseModelIDForEffortSupport(model)
-	return base == "gpt-6-astra" || openai.IsChatLatestModelSpelling(base) || openai.IsGPT61SolModelSpelling(base) || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
+	return base == "gpt-6-astra" || openai.IsChatLatestModelSpelling(base) || openai.RequiresResponsesForToolCalls(base) || isOpenAIGPT6SolOrLunaModel(base) || strings.HasPrefix(base, "gpt-5")
 }
 
 func normalizeOpenAIResponsesReasoningEffortAlias(body []byte, model string) ([]byte, bool, error) {
@@ -7817,7 +7817,7 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 	switch value {
 	case "none", "minimal":
 		baseModel := openAIBaseModelIDForEffortSupport(model)
-		if value == "none" && isOpenAIGPT6SolOrLunaModel(baseModel) {
+		if value == "none" && (isOpenAIGPT6SolOrLunaModel(baseModel) || openai.IsGPT61TerraModelSpelling(baseModel)) {
 			return "none"
 		}
 		grokModel := strings.TrimSuffix(baseModel, "-latest")
@@ -7843,6 +7843,7 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 // openAIModelsSupportingMaxReasoning is the allowlist of *actual* upstream
 // model IDs that accept reasoning.effort="max". There is no bare "gpt-5.6".
 var openAIModelsSupportingMaxReasoning = map[string]struct{}{
+	"gpt-6.1-terra": {},
 	"gpt-6-astra":   {},
 	"gpt-6.1-sol":   {},
 	"gpt-6-sol":     {},

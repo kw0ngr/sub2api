@@ -14,7 +14,7 @@ const compatPromptCacheKeyPrefix = "compat_cc_"
 
 func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
 	normalized := strings.TrimSpace(strings.ToLower(normalizeCodexModel(model)))
-	return normalized == "gpt-6-astra" || openai.IsGPT61SolModelSpelling(normalized) || isOpenAIGPT6SolOrLunaModel(normalized) || strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
+	return normalized == "gpt-6-astra" || openai.RequiresResponsesForToolCalls(normalized) || isOpenAIGPT6SolOrLunaModel(normalized) || strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
 }
 
 func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedModel string) string {

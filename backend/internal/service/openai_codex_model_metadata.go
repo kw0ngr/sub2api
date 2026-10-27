@@ -141,7 +141,7 @@ func buildLocalCodexModelFromSpec(spec localCodexModelSpec, priority int) localC
 			model.DefaultReasoningLevel = "low"
 		}
 		model.SupportedReasoningLevels = localCodexReasoningLevels("low", "medium", "high", "xhigh", "max")
-		if isOpenAIGPT6SolOrLunaModel(baseModel) {
+		if isOpenAIGPT6SolOrLunaModel(baseModel) || openaiapi.IsGPT61TerraModelSpelling(baseModel) {
 			model.SupportedReasoningLevels = localCodexReasoningLevels("none", "low", "medium", "high", "xhigh", "max")
 		}
 		model.ServiceTiers = localCodexFastServiceTiers()

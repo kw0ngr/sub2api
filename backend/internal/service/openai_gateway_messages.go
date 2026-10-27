@@ -97,7 +97,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 3. Convert Anthropic → Responses after compatibility-only replay guard.
-	if openai.IsGPT61SolModelSpelling(upstreamModel) {
+	if openai.RequiresResponsesForToolCalls(upstreamModel) {
 		anthropicReq.Model = upstreamModel // conversion must use the mapped model's sampling/effort rules
 	}
 	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
@@ -116,7 +116,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	responsesReq.Model = upstreamModel
-	if openai.IsGPT61SolModelSpelling(upstreamModel) && anthropicReq.OutputConfig != nil && anthropicReq.OutputConfig.Effort == "max" && responsesReq.Reasoning != nil {
+	if openai.RequiresResponsesForToolCalls(upstreamModel) && anthropicReq.OutputConfig != nil && anthropicReq.OutputConfig.Effort == "max" && responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = "max"
 	}
 	if previousResponseID != "" {

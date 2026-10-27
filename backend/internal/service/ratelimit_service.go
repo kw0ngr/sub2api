@@ -88,6 +88,24 @@ const (
 
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
 
+var glmQuotaResetPattern = regexp.MustCompile(`限额将在\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*重置`)
+
+func parseGLMQuotaResetTime(body []byte, now time.Time) *time.Time {
+	if extractUpstreamErrorCode(body) != "1310" {
+		return nil
+	}
+	match := glmQuotaResetPattern.FindStringSubmatch(extractUpstreamErrorMessage(body))
+	if len(match) != 2 {
+		return nil
+	}
+	// GLM's published reset timestamps use China Standard Time, not the server's local zone.
+	reset, err := time.ParseInLocation("2006-01-02 15:04:05", match[1], time.FixedZone("CST", 8*60*60))
+	if err != nil || !reset.After(now) {
+		return nil
+	}
+	return &reset
+}
+
 // NewRateLimitService 创建RateLimitService实例
 func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService, tempUnschedCache TempUnschedCache) *RateLimitService {
 	return &RateLimitService{
@@ -981,6 +999,14 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 				resetAt = *parsed
 			}
 		}
+		if account.Platform == PlatformGLM {
+			if published := parseGLMQuotaResetTime(responseBody, now); published != nil {
+				resetAt = *published
+				if retry := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); retry != nil && retry.After(resetAt) {
+					resetAt = *retry
+				}
+			}
+		}
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
 			slog.Warn("apikey_rate_limit_set_failed", "account_id", account.ID, "status_code", statusCode, "error", err)
 			return
@@ -1043,6 +1069,12 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 			} else if isGLMResettableQuotaError(responseBody) {
 				if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
 					until = *parsed
+				}
+				if published := parseGLMQuotaResetTime(responseBody, now); published != nil {
+					until = *published
+					if retry := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); retry != nil && retry.After(until) {
+						until = *retry
+					}
 				}
 			}
 		}
