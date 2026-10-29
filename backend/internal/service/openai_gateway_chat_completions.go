@@ -656,6 +656,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 	token string,
 ) (*http.Request, error) {
 	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
+	body = s.restoreGeminiToolSignatures(ctx, c, account, body)
 	baseURL := account.GetOpenAIBaseURL()
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = DefaultAPIKeyBaseURL(account.Platform)

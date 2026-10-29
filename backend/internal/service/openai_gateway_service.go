@@ -4868,6 +4868,7 @@ type openaiStreamingResult struct {
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
+	geminiSignatures := s.newGeminiSignatureCollector(ctx, c, account)
 	observer := ensureUpstreamResponseModelObservation(c)
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -5146,6 +5147,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if startsVisibleOutput {
 				usableOutputSeen = true
 			}
+			geminiSignatures.observe(dataBytes)
 			if account != nil && account.Platform == PlatformOpenAI && (eventType == "response.completed" || eventType == "response.done") && !sawFailedEvent && !usableOutputSeen && !clientOutputStarted && openAIResponsesCompletedEventIsEmpty(dataBytes, validUsageSeen) {
 				streamFailoverErr = s.newOpenAIResponsesEmptyCompletedFailoverError(c, account, false, resp, dataBytes)
 				return
@@ -5539,6 +5541,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
 	usage := &usageValue
+	s.newGeminiSignatureCollector(ctx, c, account).observe(body)
 
 	// Replace model in response if needed
 	if originalModel != mappedModel {
