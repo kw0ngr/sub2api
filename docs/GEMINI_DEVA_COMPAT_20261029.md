@@ -42,7 +42,23 @@ sequenceDiagram
 - 通过独立临时 Redis 实测跨 repository 实例读取、作用域隔离和 TTL 到期；测试实例已退出。
 - `go test -tags unit ./internal/service ./internal/handler ./internal/handler/admin ./internal/repository -count=1`、embed 包测试通过。
 - 定向签名恢复的 `go test -race` 通过。
-- 发布及线上“客户端故意删除签名仍能续轮”验收在完成后补充。
+- 发布及线上“客户端故意删除签名仍能续轮”验收已完成，结果如下。
+
+### 已发布及线上验收
+
+- 版本 `v0.1.339`，代码提交 `dea39f3493faa50b08394e65a9e5776bd61bbdfa`，已推送。仅按此前授权的手动正式 Release 流程构建 Linux amd64，再由 VPS `install.sh upgrade -v v0.1.339` 升级，没有直接覆盖生产二进制。
+- 2026-10-29 22:17 +08 上线，磁盘、发布包和运行进程 SHA-256 一致：`1c4cfd2a85156f786b32439cdc0af0936a13af596ad738c28db5433749bbc428`。
+- 保留旧版备份 `/opt/sub2api/backups/sub2api-pre-0.1.339-20261029221331`；升级前后 28 个分组完整配置、策略哈希、148 条迁移记录、1324 个账号凭证/映射哈希以及 config.yaml 哈希相同。
+- 公网测试模拟 Deva：收到真实工具调用后，故意删除全部 `extra_content`，仅回传 id/type/function 与工具结果。
+
+| 首轮响应形式 | 首轮工具请求 | 不带签名的续轮 | 续轮结束状态 |
+| --- | --- | --- | --- |
+| SSE 流式 | 200 / 2.46s | **200 / 1.40s** | stop，含实际回答 |
+| JSON 非流式 | 200 / 1.18s | **200 / 1.41s** | stop，含实际回答 |
+
+- 服务日志对应两次 `gemini_tool_signatures_cached call_count=1`，续轮对应两次 `missing_calls=1, restored_count=1`；不是客户端替测试回传了签名。
+- 临时诊断粘性会话已删除，真实签名缓存按 6h TTL 过期；未修改用户会话。
+- health 200，服务 active / NRestarts=0，未见缓存读写失败或 panic。本机 Deva/Grok 客户端均未修改；这里验证的是实际公网网关对 Deva 丢元数据行为的模拟，不冒充已操作 Deva UI 完成验证。
 
 ## 不能凭空恢复的情况
 
