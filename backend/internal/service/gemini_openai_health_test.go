@@ -51,6 +51,39 @@ func TestGeminiArrayInvalidCredentialStillDisables(t *testing.T) {
 	require.Equal(t, 1, repo.setErrorCalls)
 }
 
+func TestGeminiPrepaymentDepletedRequiresBillingRecovery(t *testing.T) {
+	body := `{"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.","status":"PAYMENT_REQUIRED"}}`
+	for _, payload := range []string{body, "[" + body + "]"} {
+		t.Run(payload, func(t *testing.T) {
+			account := &Account{ID: 1803, Platform: PlatformGemini, Type: AccountTypeAPIKey, Schedulable: true}
+			repo := &grokQuotaAccountRepoStub{account: account}
+			svc := &RateLimitService{accountRepo: repo}
+			require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(account, 402, []byte(payload)))
+			require.True(t, svc.HandleUpstreamError(context.Background(), account, 402, nil, []byte(payload), "gemini-3.8-flash"))
+			require.Equal(t, StatusError, account.Status)
+			require.False(t, account.Schedulable)
+			require.Nil(t, repo.tempUnschedUntil, "depleted prepayment cannot recover on a short timer")
+			require.Zero(t, repo.modelRateLimitN)
+			require.Contains(t, repo.lastErrorMsg, "prepayment credits are depleted")
+		})
+	}
+}
+
+func TestGeminiPrepaymentClassificationStaysPrecise(t *testing.T) {
+	account := &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}
+	for _, body := range []string{
+		`{"error":{"message":"The selected model requires a paid plan."}}`,
+		`{"error":{"message":"Request text contains Your prepayment credits are depleted."}}`,
+		`{"error":{"message":"Payment processing is temporarily unavailable."}}`,
+	} {
+		require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(account, 402, []byte(body)))
+	}
+	body := []byte(`{"error":{"message":"Your prepayment credits are depleted."}}`)
+	require.Equal(t, APIKeyStatusActionIgnore, ClassifyAPIKeyStatusAction(account, 400, body))
+	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(
+		&Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}, 402, body))
+}
+
 func TestGeminiArrayRetryInfoWithoutMessageDelay(t *testing.T) {
 	body := []byte(`[{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"15.1s"}]}}]`)
 	reset := ParseGeminiRateLimitResetTime(body)

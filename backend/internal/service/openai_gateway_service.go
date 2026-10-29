@@ -4955,6 +4955,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
+	var geminiToolChoices map[int64]bool
+	if account != nil && account.Platform == PlatformGemini {
+		geminiToolChoices = make(map[int64]bool)
+	}
 	sendErrorEvent := func(reason string) {
 		if errorEventSent || clientDisconnected {
 			return
@@ -5067,7 +5071,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if openAIResponseUsageIsPresent(dataBytes) {
 				validUsageSeen = true
 			}
-			if normalizedData := normalizeGeminiOpenAIFinishReasons(account, dataBytes); !bytes.Equal(normalizedData, dataBytes) {
+			if normalizedData := normalizeGeminiOpenAIFinishReasons(account, dataBytes, geminiToolChoices); !bytes.Equal(normalizedData, dataBytes) {
 				dataBytes = normalizedData
 				data = string(normalizedData)
 				line = "data: " + data
@@ -5518,7 +5522,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
 		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
-	body = normalizeGeminiOpenAIFinishReasons(account, body)
+	body = normalizeGeminiOpenAIFinishReasons(account, body, nil)
 	ensureUpstreamResponseModelObservation(c).ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
 	if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "status").String()), "failed") ||
 		strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "type").String()), "response.failed") {

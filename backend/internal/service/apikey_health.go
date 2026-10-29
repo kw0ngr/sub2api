@@ -307,6 +307,12 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 		}
 	case PlatformGemini:
 		switch statusCode {
+		case http.StatusPaymentRequired:
+			if msg == "your prepayment credits are depleted" ||
+				strings.HasPrefix(msg, "your prepayment credits are depleted.") {
+				return APIKeyStatusActionPermanentDisable
+			}
+			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusTooManyRequests:
 			return APIKeyStatusActionTemporaryCooldown
 		case http.StatusUnauthorized:
