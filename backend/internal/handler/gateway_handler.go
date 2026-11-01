@@ -1336,6 +1336,10 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
+	if failoverErr.LocalTimeout {
+		h.handleStreamingAwareError(c, http.StatusGatewayTimeout, "upstream_timeout", "Gemini upstream did not respond within the gateway wait budget", streamStarted)
+		return
+	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
 

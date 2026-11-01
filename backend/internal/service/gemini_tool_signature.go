@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,7 +18,8 @@ import (
 
 const (
 	geminiSignatureScopeKey = "gemini_tool_signature_scope"
-	geminiSignatureTTL      = 6 * time.Hour
+	geminiSignatureRouteKey = "gemini_tool_signature_route"
+	geminiSignatureTTL      = 14 * 24 * time.Hour
 	geminiSignatureMaxCalls = 128
 	geminiSignatureMaxBytes = 32 * 1024
 	geminiArgumentsMaxBytes = 1 << 20
@@ -27,6 +29,36 @@ const (
 type GeminiToolSignatureCache interface {
 	GetGeminiToolSignatures(context.Context, string, []string) (map[string]string, error)
 	PutGeminiToolSignatures(context.Context, string, map[string]string, time.Duration) error
+}
+
+type geminiSignatureRoute struct {
+	groupID, accountID int64
+	sessionHash        string
+}
+
+func (s *OpenAIGatewayService) rememberGeminiSignatureRoute(c *gin.Context, account *Account, body []byte) {
+	if c == nil || account == nil || account.Platform != PlatformGemini || getAPIKeyIDFromContext(c) <= 0 {
+		return
+	}
+	raw, _ := c.Get("api_key")
+	key, ok := raw.(*APIKey)
+	if !ok {
+		return
+	}
+	c.Set(geminiSignatureRouteKey, geminiSignatureRoute{
+		groupID: derefGroupID(key.GroupID), accountID: account.ID, sessionHash: s.GenerateSessionHash(c, body),
+	})
+}
+
+func (s *OpenAIGatewayService) retainGeminiSignatureRoute(ctx context.Context, c *gin.Context) {
+	raw, exists := c.Get(geminiSignatureRouteKey)
+	route, ok := raw.(geminiSignatureRoute)
+	if !exists || !ok || route.sessionHash == "" {
+		return
+	}
+	if err := s.setStickySessionAccountID(ctx, &route.groupID, route.sessionHash, route.accountID, geminiSignatureTTL); err != nil {
+		slog.Warn("gemini_tool_signature_route_refresh_failed", "account_id", route.accountID, "error", err)
+	}
 }
 
 func geminiSignatureDigest(parts ...string) string {
@@ -78,11 +110,16 @@ func (s *OpenAIGatewayService) restoreGeminiToolSignatures(ctx context.Context, 
 		return body
 	}
 	paths := make(map[string][]string)
-	for i, message := range gjson.GetBytes(body, "messages").Array() {
+	messages := gjson.GetBytes(body, "messages").Array()
+	// Prefer the active/recent tool turns when a long conversation exceeds the cap.
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
 		if message.Get("role").String() != "assistant" {
 			continue
 		}
-		for j, call := range message.Get("tool_calls").Array() {
+		calls := message.Get("tool_calls").Array()
+		for j := len(calls) - 1; j >= 0; j-- {
+			call := calls[j]
 			if call.Get("type").String() != "function" || call.Get("extra_content.google.thought_signature").String() != "" {
 				continue
 			}
@@ -108,6 +145,7 @@ func (s *OpenAIGatewayService) restoreGeminiToolSignatures(ctx context.Context, 
 	}
 	updated := body
 	restored := 0
+	refresh := make(map[string]string)
 	for key, signature := range found {
 		if signature == "" || len(signature) > geminiSignatureMaxBytes {
 			continue
@@ -119,10 +157,59 @@ func (s *OpenAIGatewayService) restoreGeminiToolSignatures(ctx context.Context, 
 			}
 			updated = next
 			restored++
+			refresh[key] = signature
 		}
+	}
+	if len(refresh) > 0 {
+		if err := cache.PutGeminiToolSignatures(cacheCtx, scope, refresh, geminiSignatureTTL); err != nil {
+			slog.Warn("gemini_tool_signature_cache_refresh_failed", "account_id", account.ID, "error", err)
+		}
+		s.retainGeminiSignatureRoute(cacheCtx, c)
 	}
 	slog.Info("gemini_tool_signature_lookup", "account_id", account.ID, "missing_calls", len(paths), "restored_count", restored)
 	return updated
+}
+
+type GeminiToolSignatureMissingError struct{}
+
+func (*GeminiToolSignatureMissingError) Error() string {
+	return "Gemini tool history is missing a genuine thought_signature and the gateway has no matching retained signature. Start a new user turn or conversation instead of retrying the same tool result. Signatures that expired before this update cannot be reconstructed."
+}
+
+// Only validate the active user turn, not old history or unsigned parallel siblings.
+func validateGeminiToolSignatures(account *Account, target string, body []byte) error {
+	if account == nil || account.Platform != PlatformGemini {
+		return nil
+	}
+	u, err := url.Parse(target)
+	if err != nil || !strings.EqualFold(u.Hostname(), "generativelanguage.googleapis.com") {
+		return nil
+	}
+	model := strings.ToLower(lastSegment(gjson.GetBytes(body, "model").String()))
+	if !strings.HasPrefix(model, "gemini-3") && !strings.HasPrefix(model, "gemini-4") {
+		return nil
+	}
+	messages := gjson.GetBytes(body, "messages").Array()
+	lastUser := -1
+	for i, message := range messages {
+		if message.Get("role").String() == "user" {
+			lastUser = i
+		}
+	}
+	if lastUser < 0 {
+		return nil
+	}
+	for _, message := range messages[lastUser+1:] {
+		if message.Get("role").String() != "assistant" {
+			continue
+		}
+		calls := message.Get("tool_calls").Array()
+		if len(calls) > 0 && calls[0].Get("type").String() == "function" &&
+			calls[0].Get("extra_content.google.thought_signature").String() == "" {
+			return &GeminiToolSignatureMissingError{}
+		}
+	}
+	return nil
 }
 
 type geminiSignatureCall struct {
@@ -131,10 +218,11 @@ type geminiSignatureCall struct {
 }
 
 type geminiSignatureCollector struct {
-	ctx   context.Context
-	cache GeminiToolSignatureCache
-	scope string
-	calls map[string]*geminiSignatureCall
+	ctx         context.Context
+	cache       GeminiToolSignatureCache
+	scope       string
+	calls       map[string]*geminiSignatureCall
+	retainRoute func(context.Context)
 }
 
 func (s *OpenAIGatewayService) newGeminiSignatureCollector(ctx context.Context, c *gin.Context, account *Account) *geminiSignatureCollector {
@@ -147,7 +235,8 @@ func (s *OpenAIGatewayService) newGeminiSignatureCollector(ctx context.Context, 
 	if !ok || value == "" {
 		return nil
 	}
-	return &geminiSignatureCollector{ctx: ctx, cache: cache, scope: value, calls: make(map[string]*geminiSignatureCall)}
+	return &geminiSignatureCollector{ctx: ctx, cache: cache, scope: value, calls: make(map[string]*geminiSignatureCall),
+		retainRoute: func(ctx context.Context) { s.retainGeminiSignatureRoute(ctx, c) }}
 }
 
 // Observe only genuine upstream responses, never client-supplied signatures.
@@ -221,6 +310,9 @@ func (collector *geminiSignatureCollector) observe(body []byte) {
 		if len(values) > 0 {
 			ctx, cancel := context.WithTimeout(collector.ctx, time.Second)
 			err := collector.cache.PutGeminiToolSignatures(ctx, collector.scope, values, geminiSignatureTTL)
+			if err == nil && collector.retainRoute != nil {
+				collector.retainRoute(ctx)
+			}
 			cancel()
 			if err != nil {
 				slog.Warn("gemini_tool_signature_cache_write_failed", "error", err)

@@ -39,7 +39,7 @@ func TestGeminiOpenAIHighDemandOnlyBrieflyCoolsRequestedModel(t *testing.T) {
 	require.Zero(t, repo.tempCalls)
 	require.Zero(t, repo.setErrorCalls)
 	require.Equal(t, []string{"gemini-3.8-flash"}, repo.modelRateLimitScopes)
-	require.WithinDuration(t, time.Now().Add(30*time.Second), repo.modelRateLimitResets[0], 2*time.Second)
+	require.WithinDuration(t, time.Now().Add(2*time.Minute), repo.modelRateLimitResets[0], 2*time.Second)
 }
 
 func TestGeminiArrayInvalidCredentialStillDisables(t *testing.T) {

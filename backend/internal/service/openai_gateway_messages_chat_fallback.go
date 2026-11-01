@@ -111,7 +111,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		proxyURL = account.Proxy.URL()
 	}
 	setOpsUpstreamRequestBody(c, chatBody)
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAICompatibleUpstream(c, upstreamReq, proxyURL, account)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false, upstreamModel)
 	}

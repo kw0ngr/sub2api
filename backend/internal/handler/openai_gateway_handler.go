@@ -1769,6 +1769,10 @@ func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error,
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
+	if failoverErr.LocalTimeout {
+		h.handleStreamingAwareError(c, http.StatusGatewayTimeout, "upstream_timeout", "Gemini upstream did not respond within the gateway wait budget", streamStarted)
+		return
+	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
 	if failoverErr.LocalConcurrency {

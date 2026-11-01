@@ -75,6 +75,16 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 	if errors.Is(err, context.Canceled) {
 		return err
 	}
+	if account.Platform == PlatformGemini && (errors.Is(err, errGeminiHeaderTimeout) || errors.Is(err, errGeminiWaitBudget)) {
+		if errors.Is(err, errGeminiHeaderTimeout) {
+			s.backoffGeminiTimeout(ctx, account, account.GetMappedModel(firstRequestedModel(requestedModel)))
+		}
+		return &UpstreamFailoverError{
+			LocalTimeout: true,
+			StatusCode:   http.StatusGatewayTimeout,
+			ResponseBody: []byte(`{"error":{"type":"upstream_timeout","message":"Gemini upstream did not respond within the gateway wait budget"}}`),
+		}
+	}
 	if classifyOpenAITransportError(err).Persistent {
 		if isGrokBuildProbeRequest(account, firstRequestedModel(requestedModel)) {
 			logger.L().With(zap.String("component", "service.openai_gateway")).Info(

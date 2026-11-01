@@ -1032,6 +1032,9 @@ func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, ac
 		if statusCode == http.StatusServiceUnavailable && (account.Platform == PlatformDeepSeek ||
 			(account.Platform == PlatformGemini && strings.Contains(strings.ToLower(extractUpstreamErrorMessage(responseBody)), "this model is currently experiencing high demand"))) {
 			until = now.Add(apiKeyModelBusyCooldown)
+			if account.Platform == PlatformGemini {
+				until = now.Add(2 * time.Minute)
+			}
 			if parsed := parseAPIKeyRetryAfterResetTime(headers, responseBody, now); parsed != nil && parsed.After(now) {
 				until = *parsed
 			}

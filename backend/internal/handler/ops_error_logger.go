@@ -925,6 +925,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			CreatedAt:   time.Now(),
 		}
 		applyOpsLatencyFieldsFromContext(c, entry)
+		applyOpsClientCancellation(c, entry)
 
 		// Capture upstream error context set by gateway services (if present).
 		// This does NOT affect the client response; it enriches Ops troubleshooting data.
@@ -1060,6 +1061,16 @@ func applyOpsLatencyFieldsFromContext(c *gin.Context, entry *service.OpsInsertEr
 	entry.TimeToFirstTokenMs = getContextLatencyMs(c, service.OpsTimeToFirstTokenMsKey)
 }
 
+func applyOpsClientCancellation(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	if c == nil || entry == nil || !c.GetBool(service.OpsClientCanceledKey) {
+		return
+	}
+	entry.ErrorPhase, entry.ErrorType = "request", "client_canceled"
+	entry.ErrorOwner, entry.ErrorSource = "client", "client_request"
+	entry.ErrorMessage, entry.Severity = "Client canceled the request while waiting for Gemini", "P3"
+	entry.IsRetryable = false
+}
+
 func getContextLatencyMs(c *gin.Context, key string) *int64 {
 	if c == nil || strings.TrimSpace(key) == "" {
 		return nil
@@ -1174,6 +1185,7 @@ func isKnownOpsErrorType(t string) bool {
 		"billing_error",
 		"subscription_error",
 		"upstream_error",
+		"upstream_timeout",
 		"overloaded_error",
 		"api_error",
 		"not_found_error",
@@ -1229,6 +1241,8 @@ func classifyOpsPhase(errType, message, code string) string {
 		return "request"
 	case "upstream_error", "overloaded_error":
 		return "upstream"
+	case "upstream_timeout":
+		return "network"
 	case "api_error":
 		if strings.Contains(msg, opsErrNoAvailableAccounts) {
 			return "routing"

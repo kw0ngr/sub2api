@@ -115,6 +115,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	gatewayPlatform := resolveOpenAICompatibleGatewayPlatform(apiKey)
 
 	maxAccountSwitches := h.maxAccountSwitches
+	if gatewayPlatform == service.PlatformGemini && maxAccountSwitches > 2 {
+		maxAccountSwitches = 2
+	}
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
@@ -215,6 +218,21 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
+			if account.Platform == service.PlatformGemini && errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil {
+				c.Set(service.OpsClientCanceledKey, true)
+				if !c.Writer.Written() {
+					c.Status(499) // Local client-disconnect status, not an upstream HTTP response.
+				}
+				reqLog.Info("gemini.client_canceled")
+				return
+			}
+			var missingSignature *service.GeminiToolSignatureMissingError
+			if errors.As(err, &missingSignature) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+					"type": "invalid_request_error", "code": "gemini_tool_signature_unavailable", "message": missingSignature.Error(),
+				}})
+				return
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				cyberSafetyRetry := openAIFailoverIsCyberSafetyRetry(failoverErr)

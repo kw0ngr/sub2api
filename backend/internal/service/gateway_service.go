@@ -672,6 +672,7 @@ type ForwardResult struct {
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
 type UpstreamFailoverError struct {
 	LocalConcurrency       bool // local capacity failure; no upstream request was made
+	LocalTimeout           bool // gateway wait deadline; no upstream HTTP status was received
 	StatusCode             int
 	ResponseBody           []byte      // 上游响应体，用于错误透传规则匹配
 	ResponseHeaders        http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
