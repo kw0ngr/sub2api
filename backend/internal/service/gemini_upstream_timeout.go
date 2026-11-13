@@ -111,7 +111,7 @@ func geminiHeaderLimits(c *gin.Context) (time.Duration, time.Duration) {
 		if effort == "" {
 			effort = gjson.GetBytes(body, "extra_body.google.thinking_config.thinking_level").String()
 		}
-		if effort == "high" {
+		if effort == "high" || effort == "xhigh" {
 			// High-thinking tool calls can legitimately take over a minute before headers.
 			return 90 * time.Second, 120 * time.Second
 		}

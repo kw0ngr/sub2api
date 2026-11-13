@@ -28,6 +28,11 @@ var (
 		LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
 	}
 	currentProviderStaticPricing = map[string]*LiteLLMModelPricing{
+		"gemini-4-hydrogen": {
+			InputCostPerToken: 1.5e-6, CacheReadInputTokenCost: .075e-6, OutputCostPerToken: 7.5e-6,
+			InputCostPerTokenPriority: 7.5e-6, CacheReadInputTokenCostPriority: .375e-6, OutputCostPerTokenPriority: 37.5e-6,
+			LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
+		},
 		"gemini-3.6-flash": geminiFlash2026Pricing,
 		"gemini-3.7-flash": geminiFlash2026Pricing,
 		"gemini-3.8-flash": geminiFlash2026Pricing,
@@ -735,12 +740,26 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 func currentProviderPricing(model string) *LiteLLMModelPricing {
 	model = lastSegment(normalizeModelNameForPricing(strings.ToLower(strings.TrimSpace(model))))
 	switch model {
+	case "gemini-4-carbon":
+		return geminiCarbonPricing(time.Now())
 	case "gemini-4-argon":
 		return geminiArgonPricing(time.Now())
 	case "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
 		model = "deepseek-flash"
 	}
 	return currentProviderStaticPricing[model]
+}
+
+func geminiCarbonPricing(now time.Time) *LiteLLMModelPricing {
+	input, cached, output := 2e-6, .1e-6, 10e-6
+	if !now.Before(time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC)) {
+		input, cached, output = 4e-6, .2e-6, 20e-6
+	}
+	return &LiteLLMModelPricing{
+		InputCostPerToken: input, CacheReadInputTokenCost: cached, OutputCostPerToken: output,
+		InputCostPerTokenPriority: input * 5, CacheReadInputTokenCostPriority: cached * 5, OutputCostPerTokenPriority: output * 5,
+		LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
+	}
 }
 
 func geminiArgonPricing(now time.Time) *LiteLLMModelPricing {
@@ -815,8 +834,8 @@ func normalizeModelNameForPricing(model string) string {
 }
 
 func normalizeGeminiThinkingTierAlias(model string) string {
-	for _, base := range []string{"gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
-		for _, tier := range []string{"-high", "-low", "-medium", "-tiered"} {
+	for _, base := range []string{"gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+		for _, tier := range []string{"-xhigh", "-high", "-low", "-medium", "-tiered"} {
 			if model == base+tier {
 				return base
 			}

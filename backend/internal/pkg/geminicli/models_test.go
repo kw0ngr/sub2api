@@ -25,6 +25,8 @@ func TestDefaultModels_ContainsImageModels(t *testing.T) {
 	}
 
 	required := []string{
+		"gemini-4-carbon",
+		"gemini-4-hydrogen",
 		"gemini-4-argon",
 		"gemini-3.6-flash",
 		"gemini-3.5-flash-lite",

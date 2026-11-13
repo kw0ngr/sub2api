@@ -8,15 +8,23 @@ import (
 )
 
 func normalizeGeminiOpenAIReasoningEffort(body []byte, model string) ([]byte, bool) {
-	switch lastSegment(strings.ToLower(strings.TrimSpace(model))) {
-	case "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+	modelID := lastSegment(strings.ToLower(strings.TrimSpace(model)))
+	switch modelID {
+	case "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
 	default:
 		return body, false
 	}
 	effort := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String()))
 	switch effort {
 	case "max", "xhigh", "x-high", "ultra":
-		normalized, err := sjson.SetBytes(body, "reasoning_effort", "high")
+		target := "high"
+		if modelID == "gemini-4-hydrogen" {
+			target = "xhigh"
+		}
+		if gjson.GetBytes(body, "reasoning_effort").String() == target {
+			return body, false
+		}
+		normalized, err := sjson.SetBytes(body, "reasoning_effort", target)
 		if err == nil {
 			return normalized, true
 		}
@@ -41,7 +49,7 @@ func extractGeminiReasoningEffortFromBody(body []byte) *string {
 	}
 	effort := strings.ToLower(strings.TrimSpace(level.String()))
 	switch effort {
-	case "minimal", "low", "medium", "high":
+	case "minimal", "low", "medium", "high", "xhigh":
 		return &effort
 	default:
 		return nil

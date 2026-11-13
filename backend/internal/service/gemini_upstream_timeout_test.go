@@ -110,6 +110,7 @@ func TestGeminiHighThinkingGetsLongerButBoundedHeaderWait(t *testing.T) {
 	require.Equal(t, 90*time.Second, budget)
 	for _, body := range []string{
 		`{"reasoning_effort":"high"}`,
+		`{"reasoning_effort":"xhigh"}`,
 		`{"extra_body":{"google":{"thinking_config":{"thinking_level":"high"}}}}`,
 	} {
 		c.Set(OpsUpstreamRequestBodyKey, []byte(body))

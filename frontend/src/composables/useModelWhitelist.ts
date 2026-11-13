@@ -58,6 +58,8 @@ export const claudeModels = [
 
 // Google Gemini
 const geminiModels = [
+  'gemini-4-hydrogen',
+  'gemini-4-carbon',
   // Keep in sync with backend curated Gemini lists.
   // This list is intentionally conservative (models commonly available across OAuth/API key).
   'gemini-4-argon',
@@ -346,6 +348,8 @@ const openaiPresetMappings = [
 ]
 
 const geminiPresetMappings = [
+  { label: '4 Hydrogen', from: 'gemini-4-hydrogen', to: 'gemini-4-hydrogen', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  { label: '4 Carbon', from: 'gemini-4-carbon', to: 'gemini-4-carbon', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: '4 Argon', from: 'gemini-4-argon', to: 'gemini-4-argon', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: '3.8 Flash', from: 'gemini-3.8-flash', to: 'gemini-3.8-flash', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
   { label: '3.6 Flash', from: 'gemini-3.6-flash', to: 'gemini-3.6-flash', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },

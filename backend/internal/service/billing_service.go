@@ -375,8 +375,18 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return p
 	}
 	modelLower := strings.ToLower(model)
-	if lastSegment(normalizeModelNameForPricing(modelLower)) == "gemini-4-argon" {
+	if modelID := lastSegment(normalizeModelNameForPricing(modelLower)); modelID == "gemini-4-argon" || modelID == "gemini-4-carbon" {
 		p := geminiArgonPricing(time.Now())
+		if modelID == "gemini-4-carbon" {
+			p = geminiCarbonPricing(time.Now())
+		}
+		return &ModelPricing{
+			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost, OutputPricePerToken: p.OutputCostPerToken,
+			InputPricePerTokenPriority: p.InputCostPerTokenPriority, CacheReadPricePerTokenPriority: p.CacheReadInputTokenCostPriority, OutputPricePerTokenPriority: p.OutputCostPerTokenPriority,
+		}
+	}
+	if lastSegment(normalizeModelNameForPricing(modelLower)) == "gemini-4-hydrogen" {
+		p := currentProviderStaticPricing["gemini-4-hydrogen"]
 		return &ModelPricing{
 			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost, OutputPricePerToken: p.OutputCostPerToken,
 			InputPricePerTokenPriority: p.InputCostPerTokenPriority, CacheReadPricePerTokenPriority: p.CacheReadInputTokenCostPriority, OutputPricePerTokenPriority: p.OutputCostPerTokenPriority,
