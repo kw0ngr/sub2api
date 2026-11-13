@@ -10,9 +10,46 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestHandleResponsesBufferedStreamingResponse_PreservesThinkingSignatureDeltas(t *testing.T) {
+	for _, model := range []string{"claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"} {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		resp := &http.Response{Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_1","model":"relay-alias","content":[],"usage":{"input_tokens":1}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed-"}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"upstream"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+		}, "\n")))}
+		_, err := (&GatewayService{}).handleResponsesBufferedStreamingResponse(resp, c, "client-alias", model, nil, time.Now())
+		require.NoError(t, err)
+		var response apicompat.ResponsesResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+		require.Equal(t, "client-alias", response.Model)
+		require.NotEmpty(t, response.Output[0].EncryptedContent)
+		input, err := json.Marshal(response.Output)
+		require.NoError(t, err)
+		request, err := apicompat.ResponsesToAnthropicRequest(&apicompat.ResponsesRequest{Model: model, Input: input})
+		require.NoError(t, err)
+		require.Contains(t, string(request.Messages[0].Content), `"signature":"signed-upstream"`)
+	}
+}
 
 func TestExtractResponsesReasoningEffortFromBody(t *testing.T) {
 	t.Parallel()

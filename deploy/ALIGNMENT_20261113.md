@@ -1,4 +1,4 @@
-# 0.1.341：官方独立修复与模型池纠偏
+# 0.1.342：官方独立修复与模型池纠偏
 
 ## 基线和范围
 
@@ -23,6 +23,7 @@
 - SSE 转 JSON 后显式重置 Content-Type，避免继承上游 `text/event-stream`。
 - Claude 模型别名在协议转换前解析，避免按旧模型选择手动思考；转换参数不支持时返回 400，不访问上游。
 - Claude 原生签名历史、Responses 非流式及流式签名历史均保留；旧 Claude 与 DeepSeek/GLM 的思考回传行为不变。
+- 0.1.341 未部署；发布前补齐非流式桥接的 `signature_delta` 累积与别名识别后，以新 tag 0.1.342 上线，不覆写旧 tag/资产。
 - DeepSeek 兼容渠道的 `403 + code=INSUFFICIENT_BALANCE` 明确归类为余额故障，不当普通临时限流。
 
 ## 模型与计费
