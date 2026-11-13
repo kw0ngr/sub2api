@@ -208,7 +208,7 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	for k, v := range fields {
 		metadata[k] = v
 	}
-	if rebuilt, err := json.Marshal(metadata); err == nil {
+	if rebuilt, err := marshalCodexTurnMetadata(metadata); err == nil {
 		h.Set("x-codex-turn-metadata", string(rebuilt))
 	}
 }

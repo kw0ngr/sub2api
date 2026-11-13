@@ -431,13 +431,14 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 		return events
 
 	case "function_call":
-		// Emit function_call_arguments.done + output item done
+		// The done payload must match the streamed deltas before the item resets.
 		events := []ResponsesStreamEvent{
 			makeResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
 				OutputIndex: state.OutputIndex,
 				ItemID:      state.CurrentItemID,
 				CallID:      state.CurrentCallID,
 				Name:        state.CurrentName,
+				Arguments:   state.CurrentArgs,
 			}),
 		}
 		events = append(events, closeCurrentResponsesItem(state)...)

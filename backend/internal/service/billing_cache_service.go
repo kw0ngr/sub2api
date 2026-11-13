@@ -648,12 +648,23 @@ func (s *BillingCacheService) QueueUpdateAPIKeyRateLimitUsage(apiKeyID int64, co
 // 余额模式：检查缓存余额 > 0
 // 订阅模式：检查缓存用量未超过限额（Group限额从参数传入）
 func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user *User, apiKey *APIKey, group *Group, subscription *UserSubscription) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// 简易模式：跳过所有计费检查
 	if s.cfg.RunMode == config.RunModeSimple {
 		return nil
 	}
-	if s.circuitBreaker != nil && !s.circuitBreaker.Allow() {
-		return ErrBillingServiceUnavailable
+	if s.circuitBreaker != nil {
+		allowed, probe := s.circuitBreaker.Allow()
+		if !allowed {
+			return ErrBillingServiceUnavailable
+		}
+		defer func() {
+			if ctx.Err() != nil {
+				s.circuitBreaker.OnCanceled(probe)
+			}
+		}()
 	}
 
 	// 判断计费模式
@@ -676,13 +687,16 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 		}
 	}
 
-	return nil
+	return ctx.Err()
 }
 
 // checkBalanceEligibility 检查余额模式资格
 func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userID int64) error {
 	balance, err := s.GetUserBalance(ctx, userID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if s.circuitBreaker != nil {
 			s.circuitBreaker.OnFailure(err)
 		}
@@ -705,6 +719,9 @@ func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, 
 	// 获取订阅缓存数据
 	subData, err := s.GetSubscriptionStatus(ctx, userID, group.ID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if s.circuitBreaker != nil {
 			s.circuitBreaker.OnFailure(err)
 		}
@@ -750,14 +767,15 @@ const (
 )
 
 type billingCircuitBreaker struct {
-	mu                sync.Mutex
-	state             billingCircuitBreakerState
-	failures          int
-	openedAt          time.Time
-	failureThreshold  int
-	resetTimeout      time.Duration
-	halfOpenRequests  int
-	halfOpenRemaining int
+	mu                 sync.Mutex
+	state              billingCircuitBreakerState
+	failures           int
+	openedAt           time.Time
+	failureThreshold   int
+	resetTimeout       time.Duration
+	halfOpenRequests   int
+	halfOpenRemaining  int
+	halfOpenGeneration uint64
 }
 
 func newBillingCircuitBreaker(cfg config.CircuitBreakerConfig) *billingCircuitBreaker {
@@ -784,29 +802,30 @@ func newBillingCircuitBreaker(cfg config.CircuitBreakerConfig) *billingCircuitBr
 	}
 }
 
-func (b *billingCircuitBreaker) Allow() bool {
+func (b *billingCircuitBreaker) Allow() (bool, uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	switch b.state {
 	case billingCircuitClosed:
-		return true
+		return true, 0
 	case billingCircuitOpen:
 		if time.Since(b.openedAt) < b.resetTimeout {
-			return false
+			return false, 0
 		}
 		b.state = billingCircuitHalfOpen
 		b.halfOpenRemaining = b.halfOpenRequests
+		b.halfOpenGeneration++
 		logger.LegacyPrintf("service.billing_cache", "ALERT: billing circuit breaker entering half-open state")
 		fallthrough
 	case billingCircuitHalfOpen:
 		if b.halfOpenRemaining <= 0 {
-			return false
+			return false, 0
 		}
 		b.halfOpenRemaining--
-		return true
+		return true, b.halfOpenGeneration
 	default:
-		return false
+		return false, 0
 	}
 }
 
@@ -834,6 +853,18 @@ func (b *billingCircuitBreaker) OnFailure(err error) {
 			b.halfOpenRemaining = 0
 			logger.LegacyPrintf("service.billing_cache", "ALERT: billing circuit breaker opened after %d failures: %v", b.failures, err)
 		}
+	}
+}
+
+// A canceled client is not a health probe result; return its half-open permit.
+func (b *billingCircuitBreaker) OnCanceled(probe uint64) {
+	if b == nil || probe == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state == billingCircuitHalfOpen && probe == b.halfOpenGeneration && b.halfOpenRemaining < b.halfOpenRequests {
+		b.halfOpenRemaining++
 	}
 }
 

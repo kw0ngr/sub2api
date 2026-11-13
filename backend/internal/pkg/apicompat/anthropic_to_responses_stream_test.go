@@ -1,6 +1,11 @@
 package apicompat
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestAnthropicEventToResponses_TextEmitsContentPart(t *testing.T) {
 	state := NewAnthropicEventToResponsesState()
@@ -161,6 +166,70 @@ func TestAnthropicEventToResponses_ToolCallCompletedCarriesArguments(t *testing.
 	}
 	if functionCall.Name != "get_weather" {
 		t.Errorf("name = %q, want get_weather", functionCall.Name)
+	}
+}
+
+func TestAnthropicEventToResponses_ToolCallArgumentsDoneMatchesDeltas(t *testing.T) {
+	for _, model := range []string{
+		"claude-sonnet-4-5", "claude-fable-5-2", "claude-mythos-5-2",
+		"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
+		"deepseek-reasoner", "glm-4.7",
+	} {
+		t.Run(model, func(t *testing.T) {
+			state := NewAnthropicEventToResponsesState()
+			AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+				Type: "message_start", Message: &AnthropicResponse{ID: "msg_1", Model: model},
+			}, state)
+
+			arguments := [][]string{{`{"city":`, `"上海"}`}, {`{`, `}`}}
+			for idx, fragments := range arguments {
+				callID := []string{"toolu_weather", "toolu_refresh"}[idx]
+				events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+					Type: "content_block_start", Index: &idx,
+					ContentBlock: &AnthropicContentBlock{Type: "tool_use", ID: callID, Name: "lookup"},
+				}, state)
+				for _, fragment := range fragments {
+					events = append(events, AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+						Type: "content_block_delta", Index: &idx,
+						Delta: &AnthropicDelta{Type: "input_json_delta", PartialJSON: fragment},
+					}, state)...)
+				}
+				events = append(events, AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+					Type: "content_block_stop", Index: &idx,
+				}, state)...)
+
+				var streamed string
+				var done *ResponsesStreamEvent
+				var item *ResponsesOutput
+				for _, event := range events {
+					switch event.Type {
+					case "response.function_call_arguments.delta":
+						streamed += event.Delta
+					case "response.function_call_arguments.done":
+						raw, err := json.Marshal(event)
+						require.NoError(t, err)
+						require.NoError(t, json.Unmarshal(raw, &done))
+					case "response.output_item.done":
+						item = event.Item
+					}
+				}
+				require.NotEmpty(t, streamed)
+				require.NotNil(t, done)
+				require.Equal(t, streamed, done.Arguments)
+				require.Equal(t, idx, done.OutputIndex)
+				require.Equal(t, toResponsesCallID(callID), done.CallID)
+				require.NotNil(t, item)
+				require.Equal(t, item.ID, done.ItemID)
+				require.Equal(t, item.Arguments, done.Arguments)
+			}
+
+			events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+			require.Len(t, events, 1)
+			require.NotNil(t, events[0].Response)
+			require.Len(t, events[0].Response.Output, 2)
+			require.Equal(t, `{"city":"上海"}`, events[0].Response.Output[0].Arguments)
+			require.Equal(t, `{}`, events[0].Response.Output[1].Arguments)
+		})
 	}
 }
 

@@ -1154,6 +1154,12 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 				ensureCopy()
 				delete(newItem, "id")
 			}
+		} else if typ == "message" {
+			// 上游只接受 msg* message ID；不能将客户端 ID 改写为不存在的上游对象。
+			if id, ok := m["id"].(string); ok && id != "" && !strings.HasPrefix(id, "msg") {
+				ensureCopy()
+				delete(newItem, "id")
+			}
 		}
 
 		filtered = append(filtered, newItem)

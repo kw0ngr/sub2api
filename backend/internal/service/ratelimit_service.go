@@ -91,7 +91,7 @@ var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(
 var glmQuotaResetPattern = regexp.MustCompile(`限额将在\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*重置`)
 
 func parseGLMQuotaResetTime(body []byte, now time.Time) *time.Time {
-	if extractUpstreamErrorCode(body) != "1310" {
+	if code := extractUpstreamErrorCode(body); code != "1308" && code != "1310" {
 		return nil
 	}
 	match := glmQuotaResetPattern.FindStringSubmatch(extractUpstreamErrorMessage(body))
@@ -1279,12 +1279,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			return
 		}
 
-		// 其他平台：没有重置时间，使用默认5分钟
-		resetAt := time.Now().Add(5 * time.Minute)
-		slog.Warn("rate_limit_no_reset_time", "account_id", account.ID, "platform", account.Platform, "using_default", "5m")
-		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
-			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-		}
+		// 其他平台：没有重置时间，使用可配置的秒级默认回避，避免误伤长时间不可调度。
+		s.apply429FallbackRateLimit(ctx, account, "no_reset_time")
 		return
 	}
 
@@ -1292,10 +1288,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	ts, err := strconv.ParseInt(resetTimestamp, 10, 64)
 	if err != nil {
 		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "error", err)
-		resetAt := time.Now().Add(5 * time.Minute)
-		if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
-			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-		}
+		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed")
 		return
 	}
 
