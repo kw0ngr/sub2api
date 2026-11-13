@@ -56,3 +56,22 @@ func TestGeminiCarbonHydrogenFallbackPricing(t *testing.T) {
 	}
 	require.InDelta(t, 1.5e-6, (&PricingService{}).GetModelPricing("gemini-4-hydrogen").InputCostPerToken, 1e-12)
 }
+
+func TestGeminiOpenAIRequestRemovesZCodeThinkingAliases(t *testing.T) {
+	body := []byte(`{"model":"gemini-4-hydrogen","reasoning_effort":"none","reasoning":{"effort":"none"},"thinking":{"type":"disabled"},"enable_thinking":false}`)
+	out, changed := normalizeGeminiOpenAIReasoningEffort(body, "gemini-4-hydrogen")
+	require.True(t, changed)
+	require.Equal(t, "none", gjson.GetBytes(out, "reasoning_effort").String())
+	for _, field := range []string{"reasoning", "thinking", "enable_thinking"} {
+		require.False(t, gjson.GetBytes(out, field).Exists(), field)
+	}
+
+	out, changed = normalizeGeminiOpenAIReasoningEffort([]byte(`{"reasoning":{"effort":"max"}}`), "gemini-4-hydrogen")
+	require.True(t, changed)
+	require.Equal(t, "xhigh", gjson.GetBytes(out, "reasoning_effort").String())
+	require.False(t, gjson.GetBytes(out, "reasoning").Exists())
+
+	out, changed = normalizeGeminiOpenAIReasoningEffort([]byte(`{"thinking":{"type":"disabled"},"enable_thinking":true}`), "gemini-4-carbon")
+	require.True(t, changed)
+	require.Equal(t, "none", gjson.GetBytes(out, "reasoning_effort").String(), "explicit thinking.type wins over the legacy boolean")
+}

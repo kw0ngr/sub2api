@@ -64,3 +64,22 @@ func TestGeminiNewModelsChatEffortUsesMappedModel(t *testing.T) {
 		require.Equal(t, tc.want, *result.ReasoningEffort)
 	}
 }
+
+func TestGeminiChatStripsZCodeThinkingAliasesBeforeUpstream(t *testing.T) {
+	body := []byte(`{"model":"gemini-4-hydrogen","stream":true,"messages":[{"role":"system","content":"You are ZCode connectivity probe."},{"role":"user","content":"hi"}],"thinking":{"type":"disabled"},"reasoning":{"effort":"none"},"stream_options":{"include_usage":true},"enable_thinking":false,"reasoning_effort":"none","max_completion_tokens":512}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader("data: {\"id\":\"chatcmpl_test\",\"model\":\"gemini-4-hydrogen\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"OK\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl_test\",\"model\":\"gemini-4-hydrogen\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 1, Platform: PlatformGemini, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{"api_key": "test-key"}}
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+	require.NoError(t, err)
+	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	for _, field := range []string{"reasoning", "thinking", "enable_thinking"} {
+		require.False(t, gjson.GetBytes(upstream.lastBody, field).Exists(), field)
+	}
+}

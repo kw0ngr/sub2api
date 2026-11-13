@@ -1,4 +1,4 @@
-# Gemini 4 Carbon / Hydrogen：0.1.343
+# Gemini 4 Carbon / Hydrogen：0.1.344
 
 ## 真实上游验证
 
@@ -16,7 +16,7 @@ Carbon 在 1806/1809/1820 的免费层返回 429、对应模型配额为 0；
 
 ## 已复现并修复
 
-| 请求 | 上游实测 | 0.1.343 |
+| 请求 | 上游实测 | 0.1.344 |
 | --- | --- | --- |
 | Carbon `reasoning_effort=max` | 400：max 非法 | 发送 high |
 | Carbon `reasoning_effort=xhigh` | 400：不支持 XHIGH | 发送 high |
@@ -26,6 +26,7 @@ Carbon 在 1806/1809/1820 的免费层返回 429、对应模型配额为 0；
 Chat、Responses→Chat、Messages→Gemini 使用对应型号的规则。
 原生 xhigh 被正确记录为思考等级；xhigh 使用既有高思考 90s/120s 头等待/总预算，
 不新增无限重试，不截断已建立的正常 SSE，不影响 GPT Sol 的 max。
+兼容 ZCode 等客户端的 `thinking` / `enable_thinking` / `reasoning` 私有字段：先归并到 `reasoning_effort`，再从发往 Google 的 JSON 删除，避免 `Unknown name` 400。
 两个新模型沿用 Gemini 4 采样透传，不套用 Flash 的采样删除规则；
 上游可能忽略采样，200 不代表参数影响了生成结果。
 
