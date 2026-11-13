@@ -316,6 +316,12 @@ genericRuntimePath:
 	if upstreamMsg != "" {
 		upstreamMsg = truncateForLog([]byte(upstreamMsg), 512)
 	}
+	// Some DeepSeek-compatible providers use 403 with a top-level billing code.
+	if account.Platform == PlatformDeepSeek && statusCode == http.StatusForbidden &&
+		gjson.GetBytes(responseBody, "code").String() == "INSUFFICIENT_BALANCE" {
+		s.handleAuthError(ctx, account, "Credit balance exhausted (403): insufficient account balance")
+		return true
+	}
 
 	// xAI has emitted the same structured subscription/spending-limit code
 	// with both 402 and 403. Classify by the upstream code before the generic

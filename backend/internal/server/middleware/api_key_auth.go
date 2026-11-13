@@ -8,9 +8,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // NewAPIKeyAuthMiddleware 创建 API Key 认证中间件
@@ -70,6 +72,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
 				AbortWithError(c, 401, "INVALID_API_KEY", "Invalid API key")
+				return
+			}
+			if abortIfAPIKeyLookupClientGone(c, err) {
 				return
 			}
 			AbortWithError(c, 500, "INTERNAL_ERROR", "Failed to validate API key")
@@ -224,6 +229,15 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		c.Next()
 	}
+}
+
+func abortIfAPIKeyLookupClientGone(c *gin.Context, err error) bool {
+	if c.Request.Context().Err() != nil {
+		c.AbortWithStatus(499)
+		return true
+	}
+	logger.FromContext(c.Request.Context()).Warn("api key lookup failed", zap.Error(err))
+	return false
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

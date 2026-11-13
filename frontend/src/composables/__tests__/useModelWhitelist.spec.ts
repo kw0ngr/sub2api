@@ -7,6 +7,14 @@ vi.mock('@/api/admin/accounts', () => ({
 import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
+  it('Claude 新模型目录与预设使用原始 ID，不冒充旧模型', () => {
+    const models = getModelsByPlatform('anthropic')
+    const presets = getPresetMappingsByPlatform('anthropic')
+    for (const model of ['claude-fable-5-2', 'claude-mythos-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
+      expect(models).toContain(model)
+      expect(presets).toContainEqual(expect.objectContaining({ from: model, to: model }))
+    }
+  })
   it('openai 模型列表包含 GPT-5.6 官方模型', () => {
     const models = getModelsByPlatform('openai')
 

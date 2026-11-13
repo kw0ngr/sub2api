@@ -573,3 +573,13 @@ func TestAPIKeyService_GetByKey_SingleflightCollapses(t *testing.T) {
 	}
 	require.Equal(t, int32(1), atomic.LoadInt32(&calls))
 }
+
+func TestAPIKeyService_GetByKeyRejectsNonUTF8BeforeLookup(t *testing.T) {
+	repo := &authRepoStub{getByKeyForAuth: func(context.Context, string) (*APIKey, error) {
+		t.Fatal("non-UTF-8 credential reached repository")
+		return nil, nil
+	}}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+	_, err := svc.GetByKey(context.Background(), "sk-\xff\xfe")
+	require.ErrorIs(t, err, ErrAPIKeyNotFound)
+}

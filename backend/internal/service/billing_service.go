@@ -371,6 +371,9 @@ func (s *BillingService) initFallbackPricing() {
 
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
+	if p := currentClaudeBillingPricing(model); p != nil {
+		return p
+	}
 	modelLower := strings.ToLower(model)
 	if lastSegment(normalizeModelNameForPricing(modelLower)) == "gemini-4-argon" {
 		p := geminiArgonPricing(time.Now())

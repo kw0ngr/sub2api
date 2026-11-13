@@ -34,41 +34,46 @@ func deepSeekCompatTestRoutes() []struct {
 }
 
 func TestDeepSeekCompat402DisablesAccountAndReturnsUncommittedFailover(t *testing.T) {
-	for _, route := range deepSeekCompatTestRoutes() {
-		t.Run(route.name, func(t *testing.T) {
-			repo := &rateLimitAccountRepoStubWithSchedulable{}
-			errorBody := []byte(`{"error":{"type":"invalid_request_error","message":"Insufficient Balance"}}`)
-			upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
-				StatusCode: http.StatusPaymentRequired,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(bytes.NewReader(errorBody)),
-			}}
-			cfg := &config.Config{}
-			svc := &GatewayService{
-				cfg: cfg, httpUpstream: upstream,
-				tlsFPProfileService: NewTLSFingerprintProfileService(&tlsProfileRepoStub{}, nil),
-				rateLimitService:    NewRateLimitService(repo, nil, cfg, nil, nil),
-			}
-			account := &Account{ID: 2389, Platform: PlatformDeepSeek, Type: AccountTypeAPIKey,
-				Status: StatusActive, Schedulable: true, Concurrency: 3,
-				Credentials: map[string]any{"api_key": "sk-test", "model_mapping": map[string]any{"deepseek-v4-flash": "deepseek-flash"}},
-			}
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, route.path, bytes.NewBufferString(route.body))
-			result, err := route.forward(svc, context.Background(), c, account, []byte(route.body), &ParsedRequest{})
-			require.Nil(t, result)
-			var failover *UpstreamFailoverError
-			require.ErrorAs(t, err, &failover)
-			require.Equal(t, http.StatusPaymentRequired, failover.StatusCode)
-			require.Equal(t, errorBody, failover.ResponseBody)
-			require.Equal(t, 1, repo.setErrorCalls)
-			require.Equal(t, 1, repo.setSchedulableCalls)
-			require.False(t, repo.lastSchedulable)
-			require.Zero(t, repo.tempCalls)
-			require.False(t, c.Writer.Written(), "handler must be able to retry another account")
-			require.Empty(t, rec.Body.String())
-		})
+	for _, status := range []int{http.StatusPaymentRequired, http.StatusForbidden} {
+		for _, route := range deepSeekCompatTestRoutes() {
+			t.Run(route.name, func(t *testing.T) {
+				repo := &rateLimitAccountRepoStubWithSchedulable{}
+				errorBody := []byte(`{"error":{"type":"invalid_request_error","message":"Insufficient Balance"}}`)
+				if status == http.StatusForbidden {
+					errorBody = []byte(`{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}`)
+				}
+				upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+					StatusCode: status,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(bytes.NewReader(errorBody)),
+				}}
+				cfg := &config.Config{}
+				svc := &GatewayService{
+					cfg: cfg, httpUpstream: upstream,
+					tlsFPProfileService: NewTLSFingerprintProfileService(&tlsProfileRepoStub{}, nil),
+					rateLimitService:    NewRateLimitService(repo, nil, cfg, nil, nil),
+				}
+				account := &Account{ID: 2389, Platform: PlatformDeepSeek, Type: AccountTypeAPIKey,
+					Status: StatusActive, Schedulable: true, Concurrency: 3,
+					Credentials: map[string]any{"api_key": "sk-test", "model_mapping": map[string]any{"deepseek-v4-flash": "deepseek-flash"}},
+				}
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, route.path, bytes.NewBufferString(route.body))
+				result, err := route.forward(svc, context.Background(), c, account, []byte(route.body), &ParsedRequest{})
+				require.Nil(t, result)
+				var failover *UpstreamFailoverError
+				require.ErrorAs(t, err, &failover)
+				require.Equal(t, status, failover.StatusCode)
+				require.Equal(t, errorBody, failover.ResponseBody)
+				require.Equal(t, 1, repo.setErrorCalls)
+				require.Equal(t, 1, repo.setSchedulableCalls)
+				require.False(t, repo.lastSchedulable)
+				require.Zero(t, repo.tempCalls)
+				require.False(t, c.Writer.Written(), "handler must be able to retry another account")
+				require.Empty(t, rec.Body.String())
+			})
+		}
 	}
 }
 

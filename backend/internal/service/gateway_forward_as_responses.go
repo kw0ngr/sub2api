@@ -45,9 +45,19 @@ func (s *GatewayService) ForwardAsResponses(
 	originalModel := responsesReq.Model
 	clientStream := responsesReq.Stream
 
+	// Resolve aliases before selecting the upstream model's thinking protocol.
+	mappedModel := originalModel
+	if account.Type == AccountTypeAPIKey {
+		mappedModel = account.GetMappedModel(originalModel)
+	} else if account.Platform == PlatformAnthropic {
+		mappedModel = claude.NormalizeModelID(originalModel)
+	}
+	responsesReq.Model = mappedModel
+
 	// 2. Convert Responses → Anthropic
 	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
 	if err != nil {
+		writeResponsesError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
 	}
 
@@ -56,17 +66,7 @@ func (s *GatewayService) ForwardAsResponses(
 	reqStream := true
 
 	// 4. Model mapping
-	mappedModel := originalModel
 	reasoningEffort := ExtractResponsesReasoningEffortFromBody(body)
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(originalModel)
-	}
-	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-		normalized := claude.NormalizeModelID(originalModel)
-		if normalized != originalModel {
-			mappedModel = normalized
-		}
-	}
 	anthropicReq.Model = mappedModel
 
 	logger.L().Debug("gateway forward_as_responses: model mapping applied",
@@ -377,6 +377,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 
 	state := apicompat.NewAnthropicEventToResponsesState()
 	state.Model = originalModel
+	state.PreserveThinkingSignatures = claude.UsesAdaptiveThinking(mappedModel)
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	firstChunk := true

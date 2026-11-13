@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -420,6 +421,9 @@ func FilterThinkingBlocks(body []byte) []byte {
 }
 
 func FilterThinkingBlocksForModel(body []byte, mappedModel string) []byte {
+	if claude.UsesAdaptiveThinking(mappedModel) {
+		return body
+	}
 	if !ShouldPreFilterThinkingBlocks(mappedModel) {
 		return body
 	}
@@ -690,6 +694,9 @@ func FilterThinkingBlocksForRetry(body []byte) []byte {
 }
 
 func FilterThinkingBlocksForRetryModel(body []byte, mappedModel string) []byte {
+	if claude.UsesAdaptiveThinking(mappedModel) {
+		return body
+	}
 	if !ShouldApplyRetryFilters(mappedModel) {
 		return body
 	}
@@ -1057,6 +1064,17 @@ func NormalizeClaudeOutputEffortInBody(body []byte) []byte {
 	raw := gjson.GetBytes(body, "output_config.effort")
 	if !raw.Exists() || raw.Type != gjson.String {
 		return body
+	}
+	if strings.EqualFold(strings.TrimSpace(raw.String()), "xhigh") {
+		for _, level := range claude.EffortLevelsForModel(gjson.GetBytes(body, "model").String()) {
+			if level == "xhigh" {
+				out, err := sjson.SetBytes(body, "output_config.effort", "xhigh")
+				if err == nil {
+					return out
+				}
+				return body
+			}
+		}
 	}
 	normalized := NormalizeClaudeOutputEffort(raw.String())
 	if normalized == nil || *normalized == raw.String() {

@@ -44,6 +44,14 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	clientStream := ccReq.Stream
 	includeUsage := ccReq.StreamOptions != nil && ccReq.StreamOptions.IncludeUsage
 
+	mappedModel := originalModel
+	if account.Type == AccountTypeAPIKey {
+		mappedModel = account.GetMappedModel(originalModel)
+	} else if account.Platform == PlatformAnthropic {
+		mappedModel = claude.NormalizeModelID(originalModel)
+	}
+	ccReq.Model = mappedModel
+
 	// 2. Convert CC → Responses → Anthropic (chained conversion)
 	responsesReq, err := apicompat.ChatCompletionsToResponses(&ccReq)
 	if err != nil {
@@ -52,6 +60,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(responsesReq)
 	if err != nil {
+		writeGatewayCCError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
 	}
 
@@ -60,16 +69,6 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	reqStream := true
 
 	// 4. Model mapping
-	mappedModel := originalModel
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(originalModel)
-	}
-	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-		normalized := claude.NormalizeModelID(originalModel)
-		if normalized != originalModel {
-			mappedModel = normalized
-		}
-	}
 	anthropicReq.Model = mappedModel
 	if ResolveThinkingProtocol(mappedModel) == ThinkingProtocolPassbackRequired {
 		apicompat.RestoreAnthropicThinkingBlocks(anthropicReq)
