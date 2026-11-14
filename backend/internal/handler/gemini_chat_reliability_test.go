@@ -24,14 +24,22 @@ func (upstream *geminiChatRegressionUpstream) Do(req *http.Request, _ string, _ 
 	return upstream.do(req)
 }
 
-func geminiRegressionRouter(t *testing.T, do func(*http.Request) (*http.Response, error)) *gin.Engine {
+func geminiRegressionRouter(t *testing.T, do func(*http.Request) (*http.Response, error), platforms ...string) *gin.Engine {
 	t.Helper()
+	platform := service.PlatformGemini
+	baseURL := "https://generativelanguage.googleapis.com"
+	if len(platforms) > 0 {
+		platform = platforms[0]
+		if platform == service.PlatformGrok {
+			baseURL = "https://api.x.ai/v1"
+		}
+	}
 	groupID := int64(17)
 	repo := &openAIWSFailoverAccountRepo{}
 	for i := int64(1); i <= 6; i++ {
-		repo.accounts = append(repo.accounts, service.Account{ID: i, Platform: service.PlatformGemini,
+		repo.accounts = append(repo.accounts, service.Account{ID: i, Platform: platform,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Concurrency: 1,
-			Credentials: map[string]any{"api_key": "test", "base_url": "https://generativelanguage.googleapis.com"}})
+			Credentials: map[string]any{"api_key": "test", "base_url": baseURL}})
 	}
 	cfg := &config.Config{}
 	cfg.RunMode = config.RunModeSimple
@@ -48,7 +56,7 @@ func geminiRegressionRouter(t *testing.T, do func(*http.Request) (*http.Response
 	}
 	h := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(cache), billing, &service.APIKeyService{}, nil, nil, cfg)
 	key := &service.APIKey{ID: 33, GroupID: &groupID, User: &service.User{ID: 1, Status: service.StatusActive},
-		Group: &service.Group{ID: groupID, Platform: service.PlatformGemini, Status: service.StatusActive}}
+		Group: &service.Group{ID: groupID, Platform: platform, Status: service.StatusActive}}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), key)
@@ -56,6 +64,7 @@ func geminiRegressionRouter(t *testing.T, do func(*http.Request) (*http.Response
 		c.Next()
 	})
 	router.POST("/v1/chat/completions", h.ChatCompletions)
+	router.POST("/v1/responses", h.Responses)
 	return router
 }
 

@@ -173,6 +173,10 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	}
 
 	switch account.Platform {
+	case PlatformGrok:
+		if statusCode == http.StatusUnauthorized || isGrokInvalidCredentialError(statusCode, responseBody) {
+			return APIKeyStatusActionPermanentDisable
+		}
 	case PlatformOpenAI:
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusPaymentRequired:

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -192,6 +193,9 @@ type AnthropicEventToResponsesState struct {
 	CurrentThinking            AnthropicContentBlock
 	PreserveThinkingSignatures bool
 
+	// Inline tool input is only used if no real argument delta arrives.
+	PendingToolInput string
+
 	// Closed output items are retained for response.completed.
 	Outputs []ResponsesOutput
 
@@ -349,6 +353,7 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentItemType = "function_call"
 		state.CurrentCallID = toResponsesCallID(evt.ContentBlock.ID)
 		state.CurrentName = evt.ContentBlock.Name
+		state.PendingToolInput = strings.TrimSpace(string(evt.ContentBlock.Input))
 
 		events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -399,6 +404,8 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.PartialJSON == "" {
 			return nil
 		}
+		// Deltas replace the inline seed rather than concatenating two JSON documents.
+		state.PendingToolInput = ""
 		state.CurrentArgs += evt.Delta.PartialJSON
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
 			OutputIndex: state.OutputIndex,
@@ -431,18 +438,7 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 		return events
 
 	case "function_call":
-		// The done payload must match the streamed deltas before the item resets.
-		events := []ResponsesStreamEvent{
-			makeResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
-				OutputIndex: state.OutputIndex,
-				ItemID:      state.CurrentItemID,
-				CallID:      state.CurrentCallID,
-				Name:        state.CurrentName,
-				Arguments:   state.CurrentArgs,
-			}),
-		}
-		events = append(events, closeCurrentResponsesItem(state)...)
-		return events
+		return closeCurrentResponsesItem(state)
 
 	case "message":
 		text := state.TextAccum
@@ -514,6 +510,7 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 		return nil
 	}
 
+	var events []ResponsesStreamEvent
 	item := ResponsesOutput{
 		Type:   state.CurrentItemType,
 		ID:     state.CurrentItemID,
@@ -528,8 +525,26 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 		item.Name = state.CurrentName
 		item.Arguments = state.CurrentArgs
 		if item.Arguments == "" {
-			item.Arguments = "{}"
+			item.Arguments = state.PendingToolInput
+			if item.Arguments == "" || item.Arguments == "null" {
+				item.Arguments = "{}"
+			}
+			// Replay inline/fallback arguments so deltas, done and completed agree.
+			events = append(events, makeResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
+				OutputIndex: state.OutputIndex,
+				ItemID:      state.CurrentItemID,
+				CallID:      state.CurrentCallID,
+				Name:        state.CurrentName,
+				Delta:       item.Arguments,
+			}))
 		}
+		events = append(events, makeResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
+			OutputIndex: state.OutputIndex,
+			ItemID:      state.CurrentItemID,
+			CallID:      state.CurrentCallID,
+			Name:        state.CurrentName,
+			Arguments:   item.Arguments,
+		}))
 	case "reasoning":
 		if (state.PreserveThinkingSignatures || claude.UsesAdaptiveThinking(state.Model)) && (state.CurrentThinking.Signature != "" || state.CurrentThinking.Data != "") {
 			state.CurrentThinking.Thinking = state.CurrentSummary
@@ -548,16 +563,17 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 	state.CurrentName = ""
 	state.CurrentContent = nil
 	state.CurrentArgs = ""
+	state.PendingToolInput = ""
 	state.CurrentSummary = ""
 	state.CurrentThinking = AnthropicContentBlock{}
 	state.TextAccum = ""
 	state.OutputIndex++
 	state.ContentIndex = 0
 
-	return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
+	return append(events, makeResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
 		OutputIndex: state.OutputIndex - 1, // Use the index before increment
 		Item:        &item,
-	})}
+	}))
 }
 
 func makeResponsesCreatedEvent(state *AnthropicEventToResponsesState) ResponsesStreamEvent {

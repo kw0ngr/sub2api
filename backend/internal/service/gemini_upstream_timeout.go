@@ -16,7 +16,7 @@ import (
 const (
 	geminiHeaderWaitTimeout = 60 * time.Second
 	geminiHeaderWaitBudget  = 90 * time.Second
-	geminiTimeoutBackoff    = 5 * time.Minute
+	geminiTimeoutBackoff    = 30 * time.Second
 	geminiHeaderBudgetKey   = "gemini_header_wait_started"
 )
 

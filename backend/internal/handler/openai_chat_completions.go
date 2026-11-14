@@ -49,6 +49,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
+		if abortCanceledGatewayRequest(c) {
+			return
+		}
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
@@ -218,12 +221,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if account.Platform == service.PlatformGemini && errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil {
-				c.Set(service.OpsClientCanceledKey, true)
-				if !c.Writer.Written() {
-					c.Status(499) // Local client-disconnect status, not an upstream HTTP response.
-				}
-				reqLog.Info("gemini.client_canceled")
+			if abortCanceledGatewayRequest(c) {
+				reqLog.Info("openai_chat_completions.client_canceled", zap.Int64("account_id", account.ID))
 				return
 			}
 			var missingSignature *service.GeminiToolSignatureMissingError

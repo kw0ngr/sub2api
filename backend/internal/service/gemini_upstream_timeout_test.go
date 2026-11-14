@@ -39,11 +39,46 @@ func TestGeminiHeaderTimeoutIsBoundedAndModelOnlyBackoff(t *testing.T) {
 	var failover *UpstreamFailoverError
 	require.ErrorAs(t, svc.handleOpenAIUpstreamTransportError(req.Context(), nil, account, err, false, "gemini-3.8-flash"), &failover)
 	require.Equal(t, http.StatusGatewayTimeout, failover.StatusCode)
+	require.Equal(t, 1, repo.modelRateLimitN)
 	require.Equal(t, "gemini-3.8-flash", repo.modelRateLimitKey)
-	require.WithinDuration(t, time.Now().Add(5*time.Minute), *repo.modelRateLimitAt, time.Second)
+	require.NotNil(t, repo.modelRateLimitAt)
+	require.WithinDuration(t, time.Now().Add(30*time.Second), *repo.modelRateLimitAt, time.Second)
+	require.Nil(t, repo.rateLimitedUntil, "a local header timeout must not rate-limit the whole key")
+	require.Zero(t, repo.clearRateCalls)
 	require.Zero(t, repo.setErrorCalls)
 	require.Zero(t, repo.setSchedulableN)
 	require.Nil(t, repo.tempUnschedUntil)
+}
+
+func TestGeminiHeaderTimeoutPreservesLaterModelQuotaReset(t *testing.T) {
+	for _, delay := range []time.Duration{2 * time.Minute, 15 * time.Minute} {
+		t.Run(delay.String(), func(t *testing.T) {
+			model := "gemini-3.8-flash"
+			resetAt := time.Now().Add(delay).Truncate(time.Second)
+			account := signatureTestAccount()
+			account.Extra = map[string]any{
+				modelRateLimitsKey: map[string]any{
+					model: map[string]any{"rate_limit_reset_at": resetAt.Format(time.RFC3339)},
+				},
+			}
+			repo := &grokQuotaAccountRepoStub{account: account}
+			svc := &OpenAIGatewayService{accountRepo: repo}
+			var failover *UpstreamFailoverError
+			require.ErrorAs(t, svc.handleOpenAIUpstreamTransportError(
+				context.Background(), nil, account, errGeminiHeaderTimeout, false, model,
+			), &failover)
+			require.Equal(t, http.StatusGatewayTimeout, failover.StatusCode)
+			require.Equal(t, 1, repo.modelRateLimitN)
+			require.Equal(t, model, repo.modelRateLimitKey)
+			require.NotNil(t, repo.modelRateLimitAt)
+			require.Equal(t, resetAt, *repo.modelRateLimitAt, "local backoff must preserve a later quota reset")
+			require.Nil(t, repo.rateLimitedUntil)
+			require.Zero(t, repo.clearRateCalls)
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, repo.setSchedulableN)
+			require.Nil(t, repo.tempUnschedUntil)
+		})
+	}
 }
 
 func TestGeminiHeaderDeadlineDoesNotCancelHealthyStream(t *testing.T) {

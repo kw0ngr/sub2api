@@ -1067,7 +1067,7 @@ func applyOpsClientCancellation(c *gin.Context, entry *service.OpsInsertErrorLog
 	}
 	entry.ErrorPhase, entry.ErrorType = "request", "client_canceled"
 	entry.ErrorOwner, entry.ErrorSource = "client", "client_request"
-	entry.ErrorMessage, entry.Severity = "Client canceled the request while waiting for Gemini", "P3"
+	entry.ErrorMessage, entry.Severity = "Client canceled the request", "P3"
 	entry.IsRetryable = false
 }
 
