@@ -112,6 +112,10 @@ func geminiHeaderLimits(c *gin.Context) (time.Duration, time.Duration) {
 			effort = gjson.GetBytes(body, "extra_body.google.thinking_config.thinking_level").String()
 		}
 		if effort == "high" || effort == "xhigh" {
+			// Large agent histories need more prefill/thinking time, not a lower effort.
+			if len(body) >= 256*1024 {
+				return 180 * time.Second, 210 * time.Second
+			}
 			// High-thinking tool calls can legitimately take over a minute before headers.
 			return 90 * time.Second, 120 * time.Second
 		}

@@ -154,3 +154,42 @@ func TestGeminiHighThinkingGetsLongerButBoundedHeaderWait(t *testing.T) {
 		require.Equal(t, 120*time.Second, budget)
 	}
 }
+
+func TestGeminiLargeHighThinkingHistoryGetsBoundedHeaderBudget(t *testing.T) {
+	for _, effort := range []string{"low", "high", "xhigh"} {
+		for _, size := range []int{256*1024 - 1, 256 * 1024, 729000} {
+			body := `{"reasoning_effort":"` + effort + `","padding":""}`
+			body = strings.Replace(body, `"padding":""`, `"padding":"`+strings.Repeat("x", size-len(body))+`"`, 1)
+			require.Len(t, body, size)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Set(OpsUpstreamRequestBodyKey, []byte(body))
+			wait, budget := geminiHeaderLimits(c)
+			switch {
+			case effort == "low":
+				require.Equal(t, 60*time.Second, wait)
+				require.Equal(t, 90*time.Second, budget)
+			case size < 256*1024:
+				require.Equal(t, 90*time.Second, wait)
+				require.Equal(t, 120*time.Second, budget)
+			default:
+				require.Equal(t, 180*time.Second, wait)
+				require.Equal(t, 210*time.Second, budget)
+			}
+		}
+	}
+}
+
+func TestGeminiLargeHistoryCannotRestartExpiredWaitBudget(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set(OpsUpstreamRequestBodyKey, []byte(`{"reasoning_effort":"high","padding":"`+strings.Repeat("x", 256*1024)+`"}`))
+	c.Set(geminiHeaderBudgetKey, time.Now().Add(-211*time.Second))
+	calls := 0
+	svc := &OpenAIGatewayService{httpUpstream: &geminiTimeoutUpstream{do: func(*http.Request) (*http.Response, error) {
+		calls++
+		return nil, errors.New("unexpected network request")
+	}}}
+	req := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
+	_, err := svc.doOpenAICompatibleUpstream(c, req, "", signatureTestAccount())
+	require.ErrorIs(t, err, errGeminiWaitBudget)
+	require.Zero(t, calls)
+}
