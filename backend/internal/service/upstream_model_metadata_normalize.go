@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 func configuredUpstreamModelTargets(account *Account) []string {
@@ -114,7 +116,7 @@ func jsonSnapshotReasoningLevels(raw json.RawMessage) []string {
 
 func normalizeSnapshotReasoningLevelsForModel(modelID string, values []string) []string {
 	levels := normalizeSnapshotReasoningLevels(values)
-	if canonicalUpstreamModelID(modelID) != "gpt-6-astra" && canonicalUpstreamModelID(modelID) != "gpt-6.1-sol" {
+	if canonicalUpstreamModelID(modelID) != "gpt-6-astra" && canonicalUpstreamModelID(modelID) != "gpt-6.1-sol" && !openai.IsGPT62ModelSpelling(modelID) {
 		return levels
 	}
 	out := levels[:0]

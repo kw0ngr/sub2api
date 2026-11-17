@@ -19,6 +19,8 @@ type Model struct {
 
 // DefaultModels OpenAI models list
 var DefaultModels = []Model{
+	{ID: "gpt-6.2-sol", Object: "model", Created: 1794931200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.2 Sol"},
+	{ID: "gpt-6.2-astra", Object: "model", Created: 1794931200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.2 Astra"},
 	{ID: "gpt-6-astra", Object: "model", Created: 1783555200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Astra"},
 	{ID: "gpt-6.1-terra", Object: "model", Created: 1791908780, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
@@ -110,7 +112,27 @@ func IsGPT61TerraModelSpelling(model string) bool {
 }
 
 func RequiresResponsesForToolCalls(model string) bool {
-	return IsGPT61SolModelSpelling(model) || IsGPT61TerraModelSpelling(model)
+	return IsGPT62ModelSpelling(model) || IsGPT61SolModelSpelling(model) || IsGPT61TerraModelSpelling(model)
+}
+
+func IsGPT62ModelSpelling(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndexByte(model, '/'); idx >= 0 {
+		model = model[idx+1:]
+	}
+	model = strings.ReplaceAll(model, "_", "-")
+	for _, base := range []string{"gpt-6.2-sol", "gpt-6.2-astra"} {
+		if model == base {
+			return true
+		}
+		if suffix, ok := strings.CutPrefix(model, base+"-"); ok {
+			switch suffix {
+			case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ValidateGPT61SolReasoningEffort keeps unsupported no-reasoning requests visible to callers.
@@ -133,6 +155,12 @@ func IsChatLatestModelSpelling(model string) bool {
 }
 
 func ValidateModelReasoningEffort(model, effort string) error {
+	if IsGPT62ModelSpelling(model) {
+		switch strings.ToLower(strings.TrimSpace(effort)) {
+		case "none", "minimal":
+			return fmt.Errorf("%s does not support reasoning effort %q; use low, medium, high, xhigh or max", model, effort)
+		}
+	}
 	if err := ValidateGPT61SolReasoningEffort(model, effort); err != nil {
 		return err
 	}

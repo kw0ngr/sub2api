@@ -288,6 +288,8 @@ func (s *BillingService) initFallbackPricing() {
 	s.fallbackPrices["gpt-6-astra"] = newOpenAIOfficialModelPricing(10, 1, 12.5, 50)
 	// GPT-6 Sol/Luna published 2026-09-22.
 	s.fallbackPrices["gpt-6.1-sol"] = newOpenAIOfficialModelPricing(2, 0.1, 2.5, 10)
+	s.fallbackPrices["gpt-6.2-sol"] = newOpenAIOfficialModelPricing(2, 0.1, 2.5, 10)
+	s.fallbackPrices["gpt-6.2-astra"] = newOpenAIOfficialModelPricing(8, 0.4, 10, 40)
 	s.fallbackPrices["gpt-6.1-terra"] = newOpenAIOfficialModelPricing(1, 0.05, 1.25, 5)
 	s.fallbackPrices["gpt-6-sol"] = newOpenAIOfficialModelPricing(2, 0.2, 2.5, 10)
 	s.fallbackPrices["gpt-6-luna"] = newOpenAIOfficialModelPricing(0.1, 0.01, 0.125, 0.5)
@@ -462,7 +464,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		strings.Contains(modelLower, "gpt-6") || strings.Contains(modelLower, "codex") {
 		normalized := normalizeCodexModel(modelLower)
 		switch normalized {
-		case "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
+		case "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
 			return s.fallbackPrices[normalized]
 		case "gpt-6-astra":
 			return s.fallbackPrices["gpt-6-astra"]
@@ -890,6 +892,7 @@ func (s *BillingService) shouldApplySessionLongContextPricing(tokens UsageTokens
 func isOpenAIGPT54Model(model string) bool {
 	normalized := normalizeCodexModel(strings.TrimSpace(strings.ToLower(model)))
 	return normalized == "gpt-5.4" ||
+		normalized == "gpt-6.2-sol" || normalized == "gpt-6.2-astra" ||
 		normalized == "gpt-6-astra" ||
 		normalized == "gpt-6.1-sol" ||
 		normalized == "gpt-6.1-terra" ||

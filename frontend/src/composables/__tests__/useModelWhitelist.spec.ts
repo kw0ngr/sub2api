@@ -7,6 +7,14 @@ vi.mock('@/api/admin/accounts', () => ({
 import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
+  it('GPT-6.2 两个模型均有独立目录和原名映射', () => {
+    const models = getModelsByPlatform('openai')
+    const presets = getPresetMappingsByPlatform('openai')
+    for (const model of ['gpt-6.2-sol', 'gpt-6.2-astra']) {
+      expect(models.filter(id => id === model)).toHaveLength(1)
+      expect(presets).toContainEqual(expect.objectContaining({ from: model, to: model }))
+    }
+  })
   it('Claude 新模型目录与预设使用原始 ID，不冒充旧模型', () => {
     const models = getModelsByPlatform('anthropic')
     const presets = getPresetMappingsByPlatform('anthropic')

@@ -9,6 +9,9 @@ import (
 )
 
 func NormalizeOpenAICompatRequestedModel(model string) string {
+	if openai.IsGPT62ModelSpelling(model) {
+		return normalizeKnownOpenAICodexModel(model)
+	}
 	if openai.IsGPT61TerraModelSpelling(model) {
 		return "gpt-6.1-terra"
 	}
@@ -75,7 +78,7 @@ func applyOpenAICompatModelNormalization(req *apicompat.AnthropicRequest) {
 // validateOpenAIModelReasoningCompatRequest runs before any compatibility conversion can
 // silently replace or discard an explicit no-reasoning request.
 func validateOpenAIModelReasoningCompatRequest(body []byte, upstreamModel string) error {
-	if !openai.IsGPT61SolModelSpelling(upstreamModel) && !openai.IsChatLatestModelSpelling(upstreamModel) {
+	if !openai.IsGPT62ModelSpelling(upstreamModel) && !openai.IsGPT61SolModelSpelling(upstreamModel) && !openai.IsChatLatestModelSpelling(upstreamModel) {
 		return nil
 	}
 	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {

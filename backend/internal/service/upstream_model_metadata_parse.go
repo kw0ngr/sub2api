@@ -84,9 +84,9 @@ func localOfficialUpstreamModelMetadata(modelID string) (UpstreamModelMetadata, 
 	levels := []string{"none", "low", "medium", "high", "xhigh", "max"}
 	defaultLevel := "medium"
 	switch canonical {
-	case "gpt-6-astra", "gpt-6.1-sol":
+	case "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6-astra", "gpt-6.1-sol":
 		levels = []string{"low", "medium", "high", "xhigh", "max"}
-		if canonical == "gpt-6.1-sol" {
+		if canonical == "gpt-6.1-sol" || canonical == "gpt-6.2-sol" {
 			defaultLevel = "low"
 		}
 	case "gpt-5.6-sol":
@@ -102,7 +102,7 @@ func localOfficialUpstreamModelMetadata(modelID string) (UpstreamModelMetadata, 
 
 func localOfficialCodexToolCapabilities(modelID string) map[string]json.RawMessage {
 	caps := map[string]json.RawMessage{"supports_search_tool": json.RawMessage("false"), "use_responses_lite": json.RawMessage("false")}
-	if modelID == "gpt-6-astra" {
+	if modelID == "gpt-6-astra" || modelID == "gpt-6.2-sol" || modelID == "gpt-6.2-astra" {
 		caps["supports_search_tool"] = json.RawMessage("true")
 		caps["apply_patch_tool_type"] = json.RawMessage(`"freeform"`)
 		caps["comp_hash"] = json.RawMessage(`"3000"`)

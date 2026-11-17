@@ -80,6 +80,8 @@ var (
 		SupportsPromptCaching:   true,
 	}
 	openAIOfficialStaticPricing = map[string]*LiteLLMModelPricing{
+		"gpt-6.2-sol":   newOpenAIOfficialLiteLLMPricing(2, 0.1, 2.5, 10),
+		"gpt-6.2-astra": newOpenAIOfficialLiteLLMPricing(8, 0.4, 10, 40),
 		"chat-latest": {
 			InputCostPerToken: 5e-6, CacheReadInputTokenCost: 0.5e-6, OutputCostPerToken: 30e-6,
 			LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true,

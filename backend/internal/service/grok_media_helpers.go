@@ -69,6 +69,17 @@ func collectOpenAIResponseImageOutputSizesFromJSONBytes(body []byte) []string {
 	return sizes
 }
 
+// Keep xAI's top-level code out of shared failover and account-health decisions.
+func grokUpstreamErrorCode(body []byte) string {
+	if code := strings.TrimSpace(extractUpstreamErrorCode(body)); code != "" {
+		return code
+	}
+	if code := gjson.GetBytes(body, "code"); code.Type == gjson.String || code.Type == gjson.Number {
+		return strings.TrimSpace(code.String())
+	}
+	return ""
+}
+
 func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, accountID int64, snapshot *xai.QuotaSnapshot) {
 	if s == nil || s.accountRepo == nil || accountID <= 0 || snapshot == nil {
 		return

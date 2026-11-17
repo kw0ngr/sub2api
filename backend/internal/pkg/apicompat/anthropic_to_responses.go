@@ -75,7 +75,7 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	if req.OutputConfig != nil && req.OutputConfig.Effort != "" {
 		effort = req.OutputConfig.Effort
 	}
-	if openai.IsGPT61TerraModelSpelling(req.Model) || (openai.IsGPT61SolModelSpelling(req.Model) && effort == "max") {
+	if openai.IsGPT62ModelSpelling(req.Model) || openai.IsGPT61TerraModelSpelling(req.Model) || (openai.IsGPT61SolModelSpelling(req.Model) && effort == "max") {
 		out.Reasoning = &ResponsesReasoning{Effort: effort, Summary: "auto"}
 	} else {
 		out.Reasoning = &ResponsesReasoning{Effort: mapAnthropicEffortToResponses(effort), Summary: "auto"}

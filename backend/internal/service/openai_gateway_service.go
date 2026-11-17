@@ -7865,6 +7865,8 @@ func normalizeOpenAIReasoningEffortForModel(raw string, model string) string {
 // openAIModelsSupportingMaxReasoning is the allowlist of *actual* upstream
 // model IDs that accept reasoning.effort="max". There is no bare "gpt-5.6".
 var openAIModelsSupportingMaxReasoning = map[string]struct{}{
+	"gpt-6.2-sol":   {},
+	"gpt-6.2-astra": {},
 	"gpt-6.1-terra": {},
 	"gpt-6-astra":   {},
 	"gpt-6.1-sol":   {},
