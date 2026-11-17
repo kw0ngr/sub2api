@@ -78,18 +78,22 @@ func writeOpenAICompactSSEFailure(c *gin.Context, statusCode int, errorBody []by
 	if message == "" {
 		message = "Upstream compact request failed with HTTP " + strconv.Itoa(statusCode)
 	}
-	writeOpenAICompactSSEFailureMessage(c, statusCode, "upstream_error", message)
+	writeOpenAISSEFailureMessage(c, statusCode, "upstream_error", message, nil)
 }
 
-func writeOpenAICompactSSEFailureMessage(c *gin.Context, statusCode int, errType, message string) {
+func writeOpenAISSEFailureMessage(c *gin.Context, statusCode int, errType, message string, upstreamEvent []byte) {
 	if c == nil {
 		return
 	}
 	SetOpsUpstreamError(c, statusCode, message, "")
-	payload, err := json.Marshal(map[string]any{
+	id := gjson.GetBytes(upstreamEvent, "response.id").String()
+	if id == "" {
+		id = "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+	event := map[string]any{
 		"type": "response.failed",
 		"response": map[string]any{
-			"id":     "resp_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			"id":     id,
 			"object": "response",
 			"status": "failed",
 			"output": []any{},
@@ -98,7 +102,11 @@ func writeOpenAICompactSSEFailureMessage(c *gin.Context, statusCode int, errType
 				"message": message,
 			},
 		},
-	})
+	}
+	if seq := gjson.GetBytes(upstreamEvent, "sequence_number"); seq.Type == gjson.Number {
+		event["sequence_number"] = seq.Int()
+	}
+	payload, err := json.Marshal(event)
 	if err != nil {
 		return
 	}

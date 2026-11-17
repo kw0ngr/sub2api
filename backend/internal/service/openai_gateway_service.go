@@ -2865,6 +2865,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, respBody); err != nil {
+				return nil, err
+			}
 
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -3385,6 +3388,9 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	requestBody []byte,
 ) error {
 	body := s.readUpstreamErrorBody(resp)
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, body); err != nil {
+		return err
+	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -3454,6 +3460,9 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 	requestBody []byte,
 ) error {
 	body := s.readUpstreamErrorBody(resp)
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, body); err != nil {
+		return err
+	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -4175,6 +4184,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if openAIResponseUsageIsPresent(dataBytes) {
 				validUsageSeen = true
 			}
+			if eventType == "response.failed" || eventType == "error" || eventType == "" {
+				if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, dataBytes); err != nil {
+					return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, err
+				}
+			}
 			if eventType == "error" && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
 				if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
@@ -4309,6 +4323,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		return nil, err
 	}
 
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, body); err != nil {
+		return nil, err
+	}
+
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
 	// stream=false was requested. Without this conversion the client would
@@ -4355,6 +4373,11 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	observeOpenAISSEBody(ensureUpstreamResponseModelObservation(c), bodyText)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
+	if terminalOK && (terminalType == "response.failed" || terminalType == "error") {
+		if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, terminalPayload); err != nil {
+			return nil, err
+		}
+	}
 	visibleOutputSeen := openAISSEHasVisibleOutputBeforeTerminal(bodyText)
 
 	usage := &OpenAIUsage{}
@@ -5088,6 +5111,12 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			eventType := strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
 			observer.ObserveOpenAI(dataBytes, eventType)
 			forceFlushFailedEvent := false
+			if eventType == "response.failed" || eventType == "error" || eventType == "" {
+				if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, dataBytes); err != nil {
+					streamFailoverErr = err
+					return
+				}
+			}
 			if eventType == "error" && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
 				if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
@@ -5514,6 +5543,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, err
 	}
 
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, body); err != nil {
+		return nil, err
+	}
+
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
 	// may return SSE even when stream=false was requested.
@@ -5590,6 +5623,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	observeOpenAISSEBody(ensureUpstreamResponseModelObservation(c), bodyText)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
+	if terminalOK && (terminalType == "response.failed" || terminalType == "error") {
+		if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, terminalPayload); err != nil {
+			return nil, err
+		}
+	}
 	visibleOutputSeen := openAISSEHasVisibleOutputBeforeTerminal(bodyText)
 
 	usage := &OpenAIUsage{}

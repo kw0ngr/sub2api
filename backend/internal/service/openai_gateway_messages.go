@@ -322,6 +322,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, respBody); err != nil {
+			return nil, err
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -463,7 +466,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
-	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai messages buffered", requestID)
+	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(c, account, resp, "openai messages buffered", requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +565,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
-	var streamFailoverErr *UpstreamFailoverError
+	var streamFailoverErr error
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -617,6 +620,12 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				zap.String("request_id", requestID),
 			)
 			return false
+		}
+		if event.Type == "response.failed" || event.Type == "error" {
+			if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, []byte(payload)); err != nil {
+				streamFailoverErr = err
+				return true
+			}
 		}
 		if strings.TrimSpace(event.Type) == "response.failed" {
 			payloadBytes := []byte(payload)

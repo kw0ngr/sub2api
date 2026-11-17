@@ -5135,6 +5135,8 @@ export default {
         glmZCodeStrongMimic: 'GLM ZCode 重度伪装',
         glmZCodeStrongMimicHint: '官方 GLM Anthropic 直连默认会做轻度 ZCode 头伪装；开启后额外加入 ZCode 版本、平台、系统等指纹头。',
         glmZCodeStrongMimicNote: '默认关闭，仅对 open.bigmodel.cn / api.z.ai 官方直连生效；自定义中转站不会改写成 ZCode。',
+        openaiCyberSafetyRedact: '隐藏 OpenAI 网络安全拦截原文',
+        openaiCyberSafetyRedactHint: '默认关闭。开启后，HTTP 文本接口将已确认的 cyber_policy 拦截替换为明确的拒绝错误，保留错误码与日志。即使开启了换 Key 重试，这类拒绝也不会重试。',
         openaiCyberSafetyRetry: 'OpenAI 网络安全标识换 Key 重试',
         openaiCyberSafetyRetryHint: '命中 OpenAI “possible cybersecurity risk / Trusted Access for Cyber” 响应时，不把该响应透传给客户端，改为换 OpenAI 账号重试。',
         openaiCyberSafetyRetryNote: '默认关闭；开启后单次请求最多换 Key 重试 3 次，仍失败则返回通用上游错误。',

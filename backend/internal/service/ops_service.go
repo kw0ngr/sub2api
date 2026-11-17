@@ -266,6 +266,9 @@ func (s *OpsService) prepareErrorLogInput(ctx context.Context, entry *OpsInsertE
 }
 
 func populateOpsProviderErrorCode(entry *OpsInsertErrorLogInput) {
+	if entry.ProviderErrorCode != nil {
+		return
+	}
 	var payload string
 	if entry.UpstreamErrorDetail != nil {
 		payload = *entry.UpstreamErrorDetail

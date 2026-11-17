@@ -87,6 +87,7 @@ type cachedGatewayForwardingSettings struct {
 	anthropicCacheTTL1hInjection bool
 	glmZCodeStrongMimic          bool
 	openAICyberSafetyRetry       bool
+	openAICyberSafetyRedact      bool
 	openAIGPT56SolDefaultMax     bool
 	expiresAt                    int64 // unix nano
 }
@@ -702,6 +703,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
 	updates[SettingKeyEnableGLMZCodeStrongMimic] = strconv.FormatBool(settings.EnableGLMZCodeStrongMimic)
 	updates[SettingKeyOpenAICyberSafetyRetry] = strconv.FormatBool(settings.OpenAICyberSafetyRetryEnabled)
+	updates[SettingKeyOpenAICyberSafetyRedact] = strconv.FormatBool(settings.OpenAICyberSafetyRedactEnabled)
 	updates[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] = strconv.FormatBool(settings.OpenAIGPT56SolDefaultMaxReasoning)
 
 	// Balance low notification
@@ -736,6 +738,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 			anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
 			glmZCodeStrongMimic:          settings.EnableGLMZCodeStrongMimic,
 			openAICyberSafetyRetry:       settings.OpenAICyberSafetyRetryEnabled,
+			openAICyberSafetyRedact:      settings.OpenAICyberSafetyRedactEnabled,
 			openAIGPT56SolDefaultMax:     settings.OpenAIGPT56SolDefaultMaxReasoning,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
@@ -868,6 +871,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			SettingKeyEnableAnthropicCacheTTL1hInjection,
 			SettingKeyEnableGLMZCodeStrongMimic,
 			SettingKeyOpenAICyberSafetyRetry,
+			SettingKeyOpenAICyberSafetyRedact,
 			SettingKeyOpenAIGPT56SolDefaultMaxReasoning,
 		})
 		if err != nil {
@@ -879,6 +883,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 				anthropicCacheTTL1hInjection: false,
 				glmZCodeStrongMimic:          false,
 				openAICyberSafetyRetry:       false,
+				openAICyberSafetyRedact:      false,
 				openAIGPT56SolDefaultMax:     false,
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
@@ -896,6 +901,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 		glmZCodeStrong := values[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 		cyberSafetyRetry := values[SettingKeyOpenAICyberSafetyRetry] == "true"
+		cyberSafetyRedact := values[SettingKeyOpenAICyberSafetyRedact] == "true"
 		gpt56SolMax := values[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:       fp,
@@ -904,6 +910,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			anthropicCacheTTL1hInjection: cacheTTL1h,
 			glmZCodeStrongMimic:          glmZCodeStrong,
 			openAICyberSafetyRetry:       cyberSafetyRetry,
+			openAICyberSafetyRedact:      cyberSafetyRedact,
 			openAIGPT56SolDefaultMax:     gpt56SolMax,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
@@ -942,6 +949,21 @@ func (s *SettingService) IsOpenAICyberSafetyRetryEnabled(ctx context.Context) bo
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.openAICyberSafetyRetry
+		}
+	}
+	return false
+}
+
+func (s *SettingService) IsOpenAICyberSafetyRedactEnabled(ctx context.Context) bool {
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.openAICyberSafetyRedact
+		}
+	}
+	_, _, _ = s.GetGatewayForwardingSettings(ctx)
+	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.openAICyberSafetyRedact
 		}
 	}
 	return false
@@ -1146,6 +1168,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRewriteMessageCacheControl:         "false",
 		SettingKeyEnableGLMZCodeStrongMimic:          "false",
 		SettingKeyOpenAICyberSafetyRetry:             "false",
+		SettingKeyOpenAICyberSafetyRedact:            "false",
 		SettingKeyOpenAIGPT56SolDefaultMaxReasoning:  "false",
 
 		// Channel monitor defaults
@@ -1443,6 +1466,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.RewriteMessageCacheControl = settings[SettingKeyRewriteMessageCacheControl] == "true"
 	result.EnableGLMZCodeStrongMimic = settings[SettingKeyEnableGLMZCodeStrongMimic] == "true"
 	result.OpenAICyberSafetyRetryEnabled = settings[SettingKeyOpenAICyberSafetyRetry] == "true"
+	result.OpenAICyberSafetyRedactEnabled = settings[SettingKeyOpenAICyberSafetyRedact] == "true"
 	result.OpenAIGPT56SolDefaultMaxReasoning = settings[SettingKeyOpenAIGPT56SolDefaultMaxReasoning] == "true"
 
 	// Web search emulation: quick enabled check from the JSON config

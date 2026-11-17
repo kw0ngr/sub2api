@@ -3037,6 +3037,11 @@
                 "
               />
               <SettingsToggleCard
+                v-model="form.openai_cyber_safety_redact_enabled"
+                :title="t('admin.settings.gatewayForwarding.openaiCyberSafetyRedact')"
+                :hint="t('admin.settings.gatewayForwarding.openaiCyberSafetyRedactHint')"
+              />
+              <SettingsToggleCard
                 v-model="form.openai_cyber_safety_retry_enabled"
                 :title="
                   t('admin.settings.gatewayForwarding.openaiCyberSafetyRetry')
@@ -5449,6 +5454,7 @@ const form = reactive<SettingsForm>({
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   enable_glm_zcode_strong_mimic: false,
+  openai_cyber_safety_redact_enabled: false,
   openai_cyber_safety_retry_enabled: false,
   openai_gpt56_sol_default_max_reasoning_enabled: false,
   // Balance & quota notification
@@ -6354,6 +6360,7 @@ async function saveSettings() {
         form.enable_anthropic_cache_ttl_1h_injection,
       rewrite_message_cache_control: form.rewrite_message_cache_control,
       enable_glm_zcode_strong_mimic: form.enable_glm_zcode_strong_mimic,
+      openai_cyber_safety_redact_enabled: form.openai_cyber_safety_redact_enabled,
       openai_cyber_safety_retry_enabled:
         form.openai_cyber_safety_retry_enabled,
       openai_gpt56_sol_default_max_reasoning_enabled:

@@ -4978,6 +4978,8 @@ export default {
         glmZCodeStrongMimic: 'GLM ZCode Strong Mimic',
         glmZCodeStrongMimicHint: 'Official GLM Anthropic direct requests always get a light ZCode header overlay; enabling this adds ZCode app version, platform, and OS fingerprint headers.',
         glmZCodeStrongMimicNote: 'Disabled by default. Applies only to official open.bigmodel.cn / api.z.ai direct base URLs; custom relays are not rewritten as ZCode.',
+        openaiCyberSafetyRedact: 'Hide OpenAI cyber-policy error details',
+        openaiCyberSafetyRedactHint: 'Off by default. In HTTP text endpoints, replace confirmed cyber_policy blocks with a clear denial and keep the error code and logs. These denials are not retried even if key switching is enabled.',
         openaiCyberSafetyRetry: 'OpenAI Cyber Safety Key Retry',
         openaiCyberSafetyRetryHint: 'When OpenAI returns a “possible cybersecurity risk / Trusted Access for Cyber” response, hide it from the client and retry with another OpenAI account.',
         openaiCyberSafetyRetryNote: 'Disabled by default. When enabled, one request switches keys at most 3 times; if all fail, a generic upstream error is returned.',

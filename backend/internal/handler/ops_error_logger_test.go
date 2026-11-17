@@ -12,6 +12,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOpsRedactedCyberDenialIsNotRecoveredOrRetryable(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set(service.OpsOpenAICyberRedactedKey, true)
+	c.Set(service.OpsUpstreamStatusCodeKey, http.StatusOK)
+	c.Set(opsAccountIDKey, int64(77))
+	entry := &service.OpsInsertErrorLogInput{
+		StatusCode:   http.StatusOK,
+		ErrorMessage: "Recovered upstream error",
+		IsRetryable:  true,
+	}
+
+	classifyOpsRedactedCyberDenial(c, entry)
+
+	require.Equal(t, http.StatusOK, entry.StatusCode)
+	require.Equal(t, http.StatusOK, *entry.UpstreamStatusCode)
+	require.Equal(t, int64(77), *entry.AccountID)
+	require.Equal(t, service.OpenAICyberPolicyCode, entry.ErrorType)
+	require.Equal(t, service.OpenAICyberPolicyCode, *entry.ProviderErrorCode)
+	require.Equal(t, service.OpenAICyberPolicyMessage, entry.ErrorMessage)
+	require.False(t, entry.IsRetryable)
+}
+
 func resetOpsErrorLoggerStateForTest(t *testing.T) {
 	t.Helper()
 

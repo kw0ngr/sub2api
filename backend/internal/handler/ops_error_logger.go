@@ -774,6 +774,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				RetryCount:  0,
 				CreatedAt:   time.Now(),
 			}
+			classifyOpsRedactedCyberDenial(c, entry)
 			applyOpsLatencyFieldsFromContext(c, entry)
 
 			if apiKey != nil {
@@ -801,15 +802,13 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			attachOpsRequestBodyToEntry(c, entry)
 
 			// Skip logging if a passthrough rule with skip_monitoring=true matched.
-			if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
-				if skip, _ := v.(bool); skip {
-					return
-				}
+			if c.GetBool(service.OpsSkipPassthroughKey) && !c.GetBool(service.OpsOpenAICyberRedactedKey) {
+				return
 			}
 
 			recordDebugTraceFromContext(c, status, parsedOpsError{
-				ErrorType: "upstream_error",
-				Message:   recoveredMsg,
+				ErrorType: entry.ErrorType,
+				Message:   entry.ErrorMessage,
 			}, nil)
 			enqueueOpsErrorLog(ops, entry)
 			return
@@ -819,14 +818,12 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		parsed := parseOpsErrorResponse(body)
 
 		// Skip logging if a passthrough rule with skip_monitoring=true matched.
-		if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
-			if skip, _ := v.(bool); skip {
-				return
-			}
+		if c.GetBool(service.OpsSkipPassthroughKey) && !c.GetBool(service.OpsOpenAICyberRedactedKey) {
+			return
 		}
 
 		// Skip logging if the error should be filtered based on settings
-		if shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
+		if !c.GetBool(service.OpsOpenAICyberRedactedKey) && shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
 			return
 		}
 
@@ -1006,9 +1003,35 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		entry.RequestHeadersJSON = extractOpsRetryRequestHeaders(c)
 		attachOpsRequestBodyToEntry(c, entry)
 
+		classifyOpsRedactedCyberDenial(c, entry)
 		recordDebugTraceFromContext(c, status, parsed, body)
 		enqueueOpsErrorLog(ops, entry)
 	}
+}
+
+func classifyOpsRedactedCyberDenial(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	if !c.GetBool(service.OpsOpenAICyberRedactedKey) {
+		return
+	}
+	code := service.OpenAICyberPolicyCode
+	message := service.OpenAICyberPolicyMessage
+	if accountID := c.GetInt64(opsAccountIDKey); accountID > 0 {
+		entry.AccountID = &accountID
+	}
+	if upstreamStatus := c.GetInt(service.OpsUpstreamStatusCodeKey); upstreamStatus > 0 {
+		entry.UpstreamStatusCode = &upstreamStatus
+	}
+	entry.ErrorType = code
+	entry.ProviderErrorCode = &code
+	entry.ErrorMessage = message
+	entry.UpstreamErrorMessage = &message
+	entry.UpstreamErrorDetail = nil
+	entry.ErrorPhase = "upstream"
+	entry.ErrorSource = "upstream_http"
+	entry.ErrorOwner = "provider"
+	entry.Severity = "P3"
+	entry.IsRetryable = false
+	entry.IsBusinessLimited = false
 }
 
 var opsRetryRequestHeaderAllowlist = []string{

@@ -266,6 +266,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, respBody); err != nil {
+			return nil, err
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -842,7 +845,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
-	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(resp, "openai chat_completions buffered", requestID)
+	finalResponse, usage, acc, err := s.readOpenAICompatBufferedTerminal(c, account, resp, "openai chat_completions buffered", requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -891,6 +894,8 @@ func isOpenAICompatResponsesTerminalEvent(eventType string) bool {
 }
 
 func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
+	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
@@ -969,6 +974,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	}()
 	defer close(done)
 
+	var policyErr error
 	processFrame := func(frame openAICompatSSEFrame) (*apicompat.ResponsesResponse, bool) {
 		if strings.TrimSpace(frame.Data) == "[DONE]" {
 			return nil, true
@@ -982,6 +988,13 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				zap.String("request_id", requestID),
 			)
 			return nil, false
+		}
+
+		if event.Type == "response.failed" || event.Type == "error" {
+			policyErr = s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, []byte(payload))
+			if policyErr != nil {
+				return nil, true
+			}
 		}
 
 		acc.ProcessEvent(&event)
@@ -1008,7 +1021,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 			if !ok {
 				if frame, ok := parser.Finish(); ok {
 					if finalResponse, done := processFrame(frame); done {
-						return finalResponse, usage, acc, nil
+						return finalResponse, usage, acc, policyErr
 					}
 				}
 				return nil, usage, acc, nil
@@ -1029,7 +1042,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				continue
 			}
 			if finalResponse, done := processFrame(frame); done {
-				return finalResponse, usage, acc, nil
+				return finalResponse, usage, acc, policyErr
 			}
 
 		case <-timeoutCh:
@@ -1088,7 +1101,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	var firstTokenMs *int
 	firstChunk := true
 	clientDisconnected := false
-	var streamFailoverErr *UpstreamFailoverError
+	var streamFailoverErr error
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -1147,6 +1160,12 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			}
 			if event.Response != nil && event.Response.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+			}
+		}
+		if event.Type == "response.failed" || event.Type == "error" {
+			if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, []byte(payload)); err != nil {
+				streamFailoverErr = err
+				return true
 			}
 		}
 		if strings.TrimSpace(event.Type) == "response.failed" {

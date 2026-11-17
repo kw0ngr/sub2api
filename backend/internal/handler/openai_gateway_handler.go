@@ -384,6 +384,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil && (result == nil || result.ImageCount <= 0) {
+			if c.GetBool(service.OpsOpenAICyberRedactedKey) {
+				return
+			}
 			if abortCanceledGatewayRequest(c) {
 				reqLog.Info("openai.client_canceled", zap.Int64("account_id", account.ID))
 				return
@@ -627,7 +630,7 @@ func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, sta
 	}
 
 	outcome := "failed"
-	if status >= 200 && status < 300 {
+	if status >= 200 && status < 300 && !c.GetBool(service.OpsOpenAICyberRedactedKey) {
 		outcome = "succeeded"
 	}
 	latencyMs := time.Since(startedAt).Milliseconds()
@@ -894,6 +897,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil && (result == nil || result.ImageCount <= 0) {
+			if c.GetBool(service.OpsOpenAICyberRedactedKey) {
+				return
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

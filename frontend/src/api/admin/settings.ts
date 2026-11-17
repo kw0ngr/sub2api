@@ -439,6 +439,7 @@ export interface SystemSettings {
   rewrite_message_cache_control: boolean;
   enable_glm_zcode_strong_mimic: boolean;
   openai_cyber_safety_retry_enabled: boolean;
+  openai_cyber_safety_redact_enabled: boolean;
   openai_gpt56_sol_default_max_reasoning_enabled: boolean;
   web_search_emulation_enabled?: boolean;
 
@@ -607,6 +608,7 @@ export interface UpdateSettingsRequest {
   rewrite_message_cache_control?: boolean;
   enable_glm_zcode_strong_mimic?: boolean;
   openai_cyber_safety_retry_enabled?: boolean;
+  openai_cyber_safety_redact_enabled?: boolean;
   openai_gpt56_sol_default_max_reasoning_enabled?: boolean;
   // Payment configuration
   payment_enabled?: boolean;

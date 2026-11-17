@@ -18,6 +18,9 @@ func (s *OpenAIGatewayService) handleChatCompletionsErrorResponseOrFailover(
 	resp *http.Response,
 	respBody []byte,
 ) (*OpenAIForwardResult, error) {
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, respBody); err != nil {
+		return nil, err
+	}
 	upstreamMsg := sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(respBody))
 	if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody, upstreamModel) {
 		upstreamDetail := ""

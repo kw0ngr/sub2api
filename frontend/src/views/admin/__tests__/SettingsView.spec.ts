@@ -3,6 +3,7 @@ import { defineComponent, h } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
 import SettingsView from "../SettingsView.vue";
+import SettingsToggleCard from "@/components/settings/SettingsToggleCard.vue";
 
 const {
   getSettings,
@@ -366,6 +367,7 @@ const baseSettingsResponse = {
   rewrite_message_cache_control: false,
   enable_glm_zcode_strong_mimic: false,
   openai_cyber_safety_retry_enabled: false,
+  openai_cyber_safety_redact_enabled: false,
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,
@@ -570,6 +572,24 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_source");
     expect(payload).not.toHaveProperty("payment_visible_method_alipay_enabled");
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
+  });
+
+  it("saves the cyber-policy display toggle without turning on retry", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    const card = wrapper.findAllComponents(SettingsToggleCard).find(
+      (node) => node.props("title") === "admin.settings.gatewayForwarding.openaiCyberSafetyRedact",
+    );
+    expect(card?.props("modelValue")).toBe(false);
+    await card?.get("input").setValue(true);
+    await wrapper.get("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      openai_cyber_safety_redact_enabled: true,
+      openai_cyber_safety_retry_enabled: false,
+    }));
   });
 
   it("updates provider enablement immediately and reloads providers", async () => {

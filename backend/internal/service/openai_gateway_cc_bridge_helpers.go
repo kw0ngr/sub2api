@@ -103,6 +103,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 
 func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	writeError compatErrorWriter,
 ) (*apicompat.ChatCompletionsResponse, OpenAIUsage, error) {
@@ -115,6 +116,10 @@ func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 			writeError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
 		}
 		return nil, OpenAIUsage{}, fmt.Errorf("read upstream body: %w", err)
+	}
+
+	if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, respBody); err != nil {
+		return nil, OpenAIUsage{}, err
 	}
 
 	var ccResp apicompat.ChatCompletionsResponse
@@ -140,6 +145,8 @@ type ccStreamScanState struct {
 }
 
 func (s *OpenAIGatewayService) scanCCStream(
+	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
@@ -165,6 +172,10 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if payload == "[DONE]" {
 			st.SawDone = true
 			break
+		}
+		if err := s.redactOpenAICyberPolicyResponse(c, account, resp.StatusCode, []byte(payload)); err != nil {
+			st.Err = err
+			return st
 		}
 		if u := extractCCStreamUsage(payload); u != nil {
 			st.Usage = *u

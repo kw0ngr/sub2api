@@ -221,6 +221,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
+			if c.GetBool(service.OpsOpenAICyberRedactedKey) {
+				return
+			}
 			if abortCanceledGatewayRequest(c) {
 				reqLog.Info("openai_chat_completions.client_canceled", zap.Int64("account_id", account.ID))
 				return
