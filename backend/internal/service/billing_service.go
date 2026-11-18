@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 )
@@ -377,18 +376,9 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return p
 	}
 	modelLower := strings.ToLower(model)
-	if modelID := lastSegment(normalizeModelNameForPricing(modelLower)); modelID == "gemini-4-argon" || modelID == "gemini-4-carbon" {
-		p := geminiArgonPricing(time.Now())
-		if modelID == "gemini-4-carbon" {
-			p = geminiCarbonPricing(time.Now())
-		}
-		return &ModelPricing{
-			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost, OutputPricePerToken: p.OutputCostPerToken,
-			InputPricePerTokenPriority: p.InputCostPerTokenPriority, CacheReadPricePerTokenPriority: p.CacheReadInputTokenCostPriority, OutputPricePerTokenPriority: p.OutputCostPerTokenPriority,
-		}
-	}
-	if lastSegment(normalizeModelNameForPricing(modelLower)) == "gemini-4-hydrogen" {
-		p := currentProviderStaticPricing["gemini-4-hydrogen"]
+	switch modelID := lastSegment(normalizeModelNameForPricing(modelLower)); modelID {
+	case "gemini-4-neon", "gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen":
+		p := currentProviderPricing(modelID)
 		return &ModelPricing{
 			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost, OutputPricePerToken: p.OutputCostPerToken,
 			InputPricePerTokenPriority: p.InputCostPerTokenPriority, CacheReadPricePerTokenPriority: p.CacheReadInputTokenCostPriority, OutputPricePerTokenPriority: p.OutputCostPerTokenPriority,

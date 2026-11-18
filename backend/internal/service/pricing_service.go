@@ -28,6 +28,11 @@ var (
 		LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
 	}
 	currentProviderStaticPricing = map[string]*LiteLLMModelPricing{
+		"gemini-4-neon": {
+			InputCostPerToken: 3e-6, CacheReadInputTokenCost: .15e-6, OutputCostPerToken: 15e-6,
+			InputCostPerTokenPriority: 5.4e-6, CacheReadInputTokenCostPriority: .27e-6, OutputCostPerTokenPriority: 27e-6,
+			LiteLLMProvider: "gemini", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
+		},
 		"gemini-4-hydrogen": {
 			InputCostPerToken: 1.5e-6, CacheReadInputTokenCost: .075e-6, OutputCostPerToken: 7.5e-6,
 			InputCostPerTokenPriority: 7.5e-6, CacheReadInputTokenCostPriority: .375e-6, OutputCostPerTokenPriority: 37.5e-6,
@@ -836,7 +841,7 @@ func normalizeModelNameForPricing(model string) string {
 }
 
 func normalizeGeminiThinkingTierAlias(model string) string {
-	for _, base := range []string{"gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+	for _, base := range []string{"gemini-4-neon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
 		for _, tier := range []string{"-xhigh", "-high", "-low", "-medium", "-tiered"} {
 			if model == base+tier {
 				return base

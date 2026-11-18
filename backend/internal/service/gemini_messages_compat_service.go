@@ -3468,10 +3468,11 @@ func convertClaudeGenerationConfig(req map[string]any, model string) map[string]
 	if topP, ok := req["top_p"].(float64); ok {
 		out["topP"] = topP
 	}
-	switch lastSegment(strings.ToLower(model)) {
-	case "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+	modelID := lastSegment(strings.ToLower(model))
+	switch modelID {
+	case "gemini-4-neon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
 		// Preserve effort; Flash deprecates sampling, while Argon still accepts it.
-		if strings.HasPrefix(lastSegment(strings.ToLower(model)), "gemini-3.") {
+		if strings.HasPrefix(modelID, "gemini-3.") {
 			delete(out, "temperature")
 			delete(out, "topP")
 		}
@@ -3481,7 +3482,7 @@ func convertClaudeGenerationConfig(req map[string]any, model string) map[string]
 		switch effort {
 		case "max", "xhigh", "x-high", "ultra":
 			effort = "high"
-			if lastSegment(strings.ToLower(model)) == "gemini-4-hydrogen" {
+			if modelID == "gemini-4-hydrogen" || modelID == "gemini-4-neon" {
 				effort = "xhigh"
 			}
 		case "low", "medium", "high":

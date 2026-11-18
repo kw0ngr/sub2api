@@ -23,18 +23,19 @@ func TestGeminiResponsesProtocolRoutingAndEffort(t *testing.T) {
 	for _, platform := range []string{PlatformAnthropic, PlatformGLM, PlatformAntigravity} {
 		require.False(t, IsOpenAIResponsesCompatiblePlatform(platform))
 	}
-	for _, tc := range []struct{ model, want string }{{"gemini-4-argon", "high"}, {"gemini-4-carbon", "high"}, {"gemini-4-hydrogen", "xhigh"}} {
+	for _, tc := range []struct{ model, want string }{{"gemini-4-argon", "high"}, {"gemini-4-carbon", "high"}, {"gemini-4-hydrogen", "xhigh"}, {"gemini-4-neon", "xhigh"}} {
 		gin.SetMode(gin.TestMode)
 		body := []byte(fmt.Sprintf(`{"model":"%s","input":"hi","reasoning":{"effort":"max"}}`, tc.model))
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
-		upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl_gemini","model":"gemini-4-argon","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))}}
+		upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl_gemini","model":"` + tc.model + `","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))}}
 		svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 		account := &Account{ID: 1, Platform: PlatformGemini, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{"api_key": "test-key"}}
 		result, err := svc.Forward(context.Background(), c, account, body)
 		require.NoError(t, err)
 		require.Equal(t, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", upstream.lastReq.URL.String())
+		require.Equal(t, tc.model, gjson.GetBytes(upstream.lastBody, "model").String())
 		require.Equal(t, tc.want, gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
 		require.NotNil(t, result.ReasoningEffort)
 		require.Equal(t, tc.want, *result.ReasoningEffort)
@@ -43,7 +44,7 @@ func TestGeminiResponsesProtocolRoutingAndEffort(t *testing.T) {
 }
 
 func TestGeminiNewModelsChatEffortUsesMappedModel(t *testing.T) {
-	for _, tc := range []struct{ model, want string }{{"gemini-4-carbon", "high"}, {"gemini-4-hydrogen", "xhigh"}} {
+	for _, tc := range []struct{ model, want string }{{"gemini-4-carbon", "high"}, {"gemini-4-hydrogen", "xhigh"}, {"gemini-4-neon", "xhigh"}} {
 		body := []byte(`{"model":"client-model","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"max","stream":false}`)
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)

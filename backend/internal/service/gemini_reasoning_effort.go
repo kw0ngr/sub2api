@@ -10,7 +10,7 @@ import (
 func normalizeGeminiOpenAIReasoningEffort(body []byte, model string) ([]byte, bool) {
 	modelID := lastSegment(strings.ToLower(strings.TrimSpace(model)))
 	switch modelID {
-	case "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+	case "gemini-4-neon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
 	default:
 		return body, false
 	}
@@ -38,7 +38,7 @@ func normalizeGeminiOpenAIReasoningEffort(body []byte, model string) ([]byte, bo
 	switch effort {
 	case "max", "xhigh", "x-high", "ultra":
 		effort = "high"
-		if modelID == "gemini-4-hydrogen" {
+		if modelID == "gemini-4-hydrogen" || modelID == "gemini-4-neon" {
 			effort = "xhigh"
 		}
 	}
