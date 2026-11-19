@@ -694,9 +694,6 @@ func FilterThinkingBlocksForRetry(body []byte) []byte {
 }
 
 func FilterThinkingBlocksForRetryModel(body []byte, mappedModel string) []byte {
-	if claude.UsesAdaptiveThinking(mappedModel) {
-		return body
-	}
 	if !ShouldApplyRetryFilters(mappedModel) {
 		return body
 	}

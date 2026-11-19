@@ -1,6 +1,10 @@
 package service
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+)
 
 type ThinkingProtocol int
 
@@ -34,7 +38,8 @@ func ResolveThinkingProtocol(modelID string) ThinkingProtocol {
 	case strings.HasPrefix(id, "claude-"),
 		strings.HasPrefix(id, "opus-"),
 		strings.HasPrefix(id, "sonnet-"),
-		strings.HasPrefix(id, "haiku-"):
+		strings.HasPrefix(id, "haiku-"),
+		claude.UsesAdaptiveThinking(modelID):
 		return ThinkingProtocolAnthropicStrict
 	default:
 		return ThinkingProtocolUnknown

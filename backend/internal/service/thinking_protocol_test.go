@@ -16,6 +16,8 @@ func TestResolveThinkingProtocol(t *testing.T) {
 	}{
 		{"claude-sonnet-4-6", ThinkingProtocolAnthropicStrict},
 		{"anthropic/claude-sonnet-4-6", ThinkingProtocolAnthropicStrict},
+		{"claude-opus-5-5", ThinkingProtocolAnthropicStrict},
+		{"global.anthropic.claude-opus-5-5", ThinkingProtocolAnthropicStrict},
 		{"opus-4-8", ThinkingProtocolAnthropicStrict},
 		{"deepseek-v4-pro", ThinkingProtocolPassbackRequired},
 		{"openrouter/deepseek-v4-pro", ThinkingProtocolPassbackRequired},
@@ -37,6 +39,15 @@ func TestThinkingFiltersRespectProtocol(t *testing.T) {
 		require.Equal(t, body, FilterThinkingBlocksForModel(body, model), model)
 		require.Equal(t, body, FilterThinkingBlocksForRetryModel(body, model), model)
 		require.Equal(t, body, FilterSignatureSensitiveBlocksForRetryModel(body, model), model)
+	}
+
+	adaptive := []byte(`{"thinking":{"type":"adaptive"},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"hidden","signature":"upstream-signature"}]}]}`)
+	stripped := `{"messages":[{"role":"assistant","content":[{"type":"text","text":"hidden"}]}]}`
+	for _, model := range []string{"claude-opus-5-5", "global.anthropic.claude-opus-5-5"} {
+		require.True(t, ShouldRectifyThinkingSignatureError(model), model)
+		require.Equal(t, adaptive, FilterThinkingBlocksForModel(adaptive, model), model)
+		require.JSONEq(t, stripped, string(FilterThinkingBlocksForRetryModel(adaptive, model)), model)
+		require.JSONEq(t, stripped, string(FilterSignatureSensitiveBlocksForRetryModel(adaptive, model)), model)
 	}
 
 	require.NotEqual(t, body, FilterThinkingBlocksForModel(body, "claude-sonnet-4-6"))
