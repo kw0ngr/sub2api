@@ -228,13 +228,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				reqLog.Info("openai_chat_completions.client_canceled", zap.Int64("account_id", account.ID))
 				return
 			}
-			var missingSignature *service.GeminiToolSignatureMissingError
-			if errors.As(err, &missingSignature) {
-				c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
-					"type": "invalid_request_error", "code": "gemini_tool_signature_unavailable", "message": missingSignature.Error(),
-				}})
-				return
-			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				cyberSafetyRetry := openAIFailoverIsCyberSafetyRetry(failoverErr)

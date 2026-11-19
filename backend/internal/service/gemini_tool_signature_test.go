@@ -20,22 +20,17 @@ import (
 
 type geminiSignatureCacheStub struct {
 	GatewayCache
-	values       map[string]map[string]string
-	err          error
-	ttl          time.Duration
-	routeTTL     time.Duration
-	routeAccount int64
-}
-
-func (cache *geminiSignatureCacheStub) SetSessionAccountID(_ context.Context, _ int64, _ string, accountID int64, ttl time.Duration) error {
-	cache.routeTTL, cache.routeAccount = ttl, accountID
-	return nil
+	values map[string]map[string]string
+	err    error
+	ttl    time.Duration
 }
 
 func (cache *geminiSignatureCacheStub) GetGeminiToolSignatures(_ context.Context, scope string, keys []string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, key := range keys {
-		out[key] = cache.values[scope][key]
+		if signature, ok := cache.values[scope][key]; ok {
+			out[key] = signature
+		}
 	}
 	return out, cache.err
 }
@@ -122,13 +117,30 @@ func TestGeminiToolSignatureDevaWithoutSessionHeader(t *testing.T) {
 	c := signatureTestContext(33, 17)
 	c.Request.Header.Del("session_id")
 	svc.restoreGeminiToolSignatures(context.Background(), c, account, []byte(signatureTestInput))
-	svc.newGeminiSignatureCollector(context.Background(), c, account).observe([]byte(signatureTestResponse))
+	svc.newGeminiSignatureCollector(c, account).observe([]byte(signatureTestResponse))
 	next := signatureTestContext(33, 17)
 	next.Request.Header.Del("session_id")
 	out := svc.restoreGeminiToolSignatures(context.Background(), next, account, []byte(signatureTestFollow))
 	require.Equal(t, "genuine-signature", gjson.GetBytes(out, "messages.1.tool_calls.0.extra_content.google.thought_signature").String())
+	changedTools := strings.Replace(signatureTestFollow, `"messages":`, `"tools":[{"type":"function","name":"lookup"}],"messages":`, 1)
+	require.Contains(t, string(svc.restoreGeminiToolSignatures(context.Background(), next, account, []byte(changedTools))), "genuine-signature")
 	other := []byte(strings.Replace(signatureTestFollow, "lookup value", "different conversation", 1))
 	require.Equal(t, other, svc.restoreGeminiToolSignatures(context.Background(), next, account, other))
+}
+
+func TestGeminiSignatureMigratesLegacyCacheOnCurrentAccount(t *testing.T) {
+	cache := &geminiSignatureCacheStub{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := signatureTestAccount()
+	legacy := geminiSignatureDigest("33", "17", fmt.Sprint(account.ID), account.GetCredential("api_key"), "", "gemini-3.8-flash", "same-session")
+	key := geminiToolCallKey("call_1", "lookup", `{"a":1,"large":1234567890123456789}`)
+	require.NoError(t, cache.PutGeminiToolSignatures(context.Background(), legacy, map[string]string{key: "genuine-signature"}, geminiSignatureTTL))
+	input := []byte(signatureTestFollow)
+	out := svc.restoreGeminiToolSignatures(context.Background(), signatureTestContext(33, 17), account, input)
+	require.Contains(t, string(out), "genuine-signature")
+	account.ID++
+	account.Credentials["api_key"] = "other-key"
+	require.Equal(t, out, svc.restoreGeminiToolSignatures(context.Background(), signatureTestContext(33, 17), account, input))
 }
 
 func TestGeminiToolSignatureIsolationAndCacheMiss(t *testing.T) {
@@ -137,8 +149,8 @@ func TestGeminiToolSignatureIsolationAndCacheMiss(t *testing.T) {
 	account := signatureTestAccount()
 	c := signatureTestContext(33, 17)
 	svc.restoreGeminiToolSignatures(context.Background(), c, account, []byte(signatureTestInput))
-	svc.newGeminiSignatureCollector(context.Background(), c, account).observe([]byte(signatureTestResponse))
-	for _, kind := range []string{"tenant", "group", "account", "credential", "model", "session", "id", "name", "arguments", "other_platform", "no_auth"} {
+	svc.newGeminiSignatureCollector(c, account).observe([]byte(signatureTestResponse))
+	for _, kind := range []string{"tenant", "group", "model", "session", "id", "name", "arguments", "other_platform", "no_auth"} {
 		t.Run(kind, func(t *testing.T) {
 			input := []byte(signatureTestFollow)
 			c := signatureTestContext(33, 17)
@@ -148,10 +160,6 @@ func TestGeminiToolSignatureIsolationAndCacheMiss(t *testing.T) {
 				c = signatureTestContext(34, 17)
 			case "group":
 				c = signatureTestContext(33, 18)
-			case "account":
-				a.ID++
-			case "credential":
-				a.Credentials["api_key"] = "rotated"
 			case "model":
 				input = []byte(strings.ReplaceAll(string(input), "gemini-3.8-flash", "gemini-4-argon"))
 			case "session":
@@ -182,7 +190,7 @@ func TestGeminiToolSignaturesNeverReplaceOrLearnClientSignatures(t *testing.T) {
 	input := []byte(strings.Replace(signatureTestFollow, `"other":{"keep":true}`, `"google":{"thought_signature":"client-original"},"other":{"keep":true}`, 1))
 	require.Equal(t, input, svc.restoreGeminiToolSignatures(context.Background(), c, account, input))
 	require.Empty(t, cache.values)
-	svc.newGeminiSignatureCollector(context.Background(), c, account).observe([]byte(signatureTestResponse))
+	svc.newGeminiSignatureCollector(c, account).observe([]byte(signatureTestResponse))
 	require.Equal(t, input, svc.restoreGeminiToolSignatures(context.Background(), c, account, input))
 }
 
@@ -208,39 +216,37 @@ func TestGeminiToolSignatureIncompleteOrOversizedNotCached(t *testing.T) {
 	}
 }
 
-func TestGeminiSignatureRetentionAndRefreshAcrossDays(t *testing.T) {
+func TestGeminiSignatureRefreshAcrossAccounts(t *testing.T) {
 	require.Equal(t, 14*24*time.Hour, geminiSignatureTTL)
 	cache := &geminiSignatureCacheStub{}
 	svc := &OpenAIGatewayService{cache: cache}
 	account := signatureTestAccount()
 	c := signatureTestContext(33, 17)
-	svc.rememberGeminiSignatureRoute(c, account, []byte(signatureTestInput))
 	svc.restoreGeminiToolSignatures(context.Background(), c, account, []byte(signatureTestInput))
-	svc.newGeminiSignatureCollector(context.Background(), c, account).observe([]byte(signatureTestResponse))
-	require.Equal(t, geminiSignatureTTL, cache.routeTTL)
-	require.Equal(t, account.ID, cache.routeAccount)
+	svc.newGeminiSignatureCollector(c, account).observe([]byte(signatureTestResponse))
 	cache.ttl = 0
-	cache.routeTTL = 0
-	out := svc.restoreGeminiToolSignatures(context.Background(), c, account, []byte(signatureTestFollow))
+	other := signatureTestAccount()
+	other.ID++
+	other.Credentials["api_key"] = "another-project-key"
+	out := svc.restoreGeminiToolSignatures(context.Background(), signatureTestContext(33, 17), other, []byte(signatureTestFollow))
 	require.Contains(t, string(out), "genuine-signature")
-	require.Equal(t, 14*24*time.Hour, cache.ttl, "active conversations refresh genuine retained signatures")
-	require.Equal(t, geminiSignatureTTL, cache.routeTTL, "routing and signature retention must not expire independently")
+	require.Equal(t, 14*24*time.Hour, cache.ttl, "活跃会话续期缓存中的真实签名")
 }
 
-func TestGeminiSignaturePreflightOnlyChecksActiveTurn(t *testing.T) {
-	account := signatureTestAccount()
-	target := "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-	var missing *GeminiToolSignatureMissingError
-	require.ErrorAs(t, validateGeminiToolSignatures(account, target, []byte(signatureTestFollow)), &missing)
-	// Old unsigned history is not itself an error when a new user turn has begun.
-	history := strings.TrimSuffix(signatureTestFollow, "]}") + `,{"role":"user","content":"New task"}]}`
-	require.NoError(t, validateGeminiToolSignatures(account, target, []byte(history)))
+func TestGeminiSignatureFallbackOnlyChecksActiveTurn(t *testing.T) {
+	const signaturePath = "messages.1.tool_calls.0.extra_content.google.thought_signature"
+	out := normalizeGeminiOpenAIChatRequest([]byte(signatureTestFollow))
+	require.Equal(t, "skip_thought_signature_validator", gjson.GetBytes(out, signaturePath).String())
+	require.True(t, gjson.GetBytes(out, "messages.1.tool_calls.0.extra_content.other.keep").Bool())
+	// 新的用户回合开始之后，不给老调用或并行调用的后续项补占位签名。
+	old := strings.TrimSuffix(signatureTestFollow, "]}") + `,{"role":"user","content":"New task"}]}`
+	require.Equal(t, []byte(old), normalizeGeminiOpenAIChatRequest([]byte(old)))
 	signed := strings.Replace(signatureTestFollow, `"other":{"keep":true}`, `"google":{"thought_signature":"valid"}`, 1)
-	require.NoError(t, validateGeminiToolSignatures(account, target, []byte(signed)))
-	require.NoError(t, validateGeminiToolSignatures(account, "https://relay.example/v1", []byte(signatureTestFollow)))
-	require.NoError(t, validateGeminiToolSignatures(account, target, []byte(strings.ReplaceAll(signatureTestFollow, "gemini-3.8-flash", "gemini-2.5-flash"))))
+	require.Equal(t, []byte(signed), normalizeGeminiOpenAIChatRequest([]byte(signed)))
+	legacy := strings.ReplaceAll(signatureTestFollow, "gemini-3.8-flash", "gemini-2.5-flash")
+	require.Equal(t, []byte(legacy), normalizeGeminiOpenAIChatRequest([]byte(legacy)))
 	parallel := `{"model":"gemini-3.8-flash","messages":[{"role":"user","content":"hi"},{"role":"assistant","tool_calls":[{"type":"function","extra_content":{"google":{"thought_signature":"first-call-signature"}}},{"type":"function"}]},{"role":"tool","content":"OK"}]}`
-	require.NoError(t, validateGeminiToolSignatures(account, target, []byte(parallel)))
+	require.Equal(t, []byte(parallel), normalizeGeminiOpenAIChatRequest([]byte(parallel)))
 }
 
 func TestGeminiSignatureLookupPrioritizesNewestCallsInLongHistory(t *testing.T) {
@@ -249,7 +255,7 @@ func TestGeminiSignatureLookupPrioritizesNewestCallsInLongHistory(t *testing.T) 
 	account := signatureTestAccount()
 	c := signatureTestContext(33, 17)
 	svc.restoreGeminiToolSignatures(context.Background(), c, account, []byte(signatureTestInput))
-	svc.newGeminiSignatureCollector(context.Background(), c, account).observe([]byte(signatureTestResponse))
+	svc.newGeminiSignatureCollector(c, account).observe([]byte(signatureTestResponse))
 	messages := []any{map[string]any{"role": "user", "content": "lookup value"}}
 	for i := 0; i < geminiSignatureMaxCalls+5; i++ {
 		messages = append(messages, map[string]any{"role": "assistant", "tool_calls": []any{

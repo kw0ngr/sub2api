@@ -130,6 +130,8 @@ func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 		return nil, OpenAIUsage{}, fmt.Errorf("parse chat completions response: %w", err)
 	}
 
+	s.newGeminiSignatureCollector(c, account).observe(respBody)
+
 	usage := OpenAIUsage{}
 	if parsed, ok := extractOpenAIUsageFromJSONBytes(respBody); ok {
 		usage = parsed
@@ -159,6 +161,11 @@ func (s *OpenAIGatewayService) scanCCStream(
 		return st
 	}
 
+	geminiSignatures := s.newGeminiSignatureCollector(c, account)
+	var geminiToolIndices geminiStreamToolIndices
+	if account != nil && account.Platform == PlatformGemini {
+		geminiToolIndices = make(geminiStreamToolIndices)
+	}
 	scanner := s.newUpstreamSSEScanner(resp.Body)
 	for scanner.Scan() {
 		payload, ok := extractOpenAISSEDataLine(scanner.Text())
@@ -181,14 +188,16 @@ func (s *OpenAIGatewayService) scanCCStream(
 			st.Usage = *u
 		}
 
+		data := geminiToolIndices.normalize([]byte(payload))
 		var chunk apicompat.ChatCompletionsChunk
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+		if err := json.Unmarshal(data, &chunk); err != nil {
 			logger.L().Warn(logPrefix+": failed to parse chat stream chunk",
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
 			continue
 		}
+		geminiSignatures.observe(data)
 		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms

@@ -45,3 +45,54 @@ func normalizeGeminiOpenAIFinishReasons(account *Account, body []byte, toolChoic
 	}
 	return normalized
 }
+
+type geminiStreamToolIndices map[int64]*geminiChoiceToolIndices
+
+type geminiChoiceToolIndices struct {
+	byID map[string]int64
+	next int64
+}
+
+func (indices geminiStreamToolIndices) normalize(body []byte) []byte {
+	if indices == nil {
+		return body
+	}
+	// Gemini 会跨 SSE 帧发送并行调用，每帧的数组下标都是 0，必须按调用 ID 分配 index。
+	for i, choice := range gjson.GetBytes(body, "choices").Array() {
+		choiceIndex := int64(i)
+		if index := choice.Get("index"); index.Exists() {
+			choiceIndex = index.Int()
+		}
+		for j, tool := range choice.Get("delta.tool_calls").Array() {
+			id := tool.Get("id").String()
+			state := indices[choiceIndex]
+			if state == nil {
+				state = &geminiChoiceToolIndices{byID: make(map[string]int64)}
+				indices[choiceIndex] = state
+			}
+			index := tool.Get("index")
+			if index.Exists() {
+				if index.Int() >= state.next {
+					state.next = index.Int() + 1
+				}
+				if id != "" {
+					state.byID[id] = index.Int()
+				}
+				continue
+			}
+			if id == "" {
+				continue
+			}
+			slot, known := state.byID[id]
+			if !known {
+				slot = state.next
+				state.byID[id] = slot
+				state.next++
+			}
+			if next, err := sjson.SetBytes(body, fmt.Sprintf("choices.%d.delta.tool_calls.%d.index", i, j), slot); err == nil {
+				body = next
+			}
+		}
+	}
+	return body
+}

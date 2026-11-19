@@ -4882,7 +4882,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	if account.Platform == PlatformGemini && resp.StatusCode == http.StatusBadRequest && strings.Contains(upstreamMsg, "missing a thought_signature") {
 		mapped.StatusCode = http.StatusBadRequest
 		mapped.ErrorType = "invalid_request_error"
-		mapped.Message = "Gemini tool history is missing thought_signature. The client must preserve tool_calls[].extra_content.google.thought_signature from the previous response."
+		mapped.Message = "Gemini rejected the tool history because tool_calls[].extra_content.google.thought_signature was missing. Start a new user turn or conversation."
 	}
 	MarkResponseCommitted(c)
 	writeError(c, mapped.StatusCode, mapped.ErrorType, mapped.Message)
@@ -4896,7 +4896,7 @@ type openaiStreamingResult struct {
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
-	geminiSignatures := s.newGeminiSignatureCollector(ctx, c, account)
+	geminiSignatures := s.newGeminiSignatureCollector(c, account)
 	observer := ensureUpstreamResponseModelObservation(c)
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -4985,8 +4985,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
 	var geminiToolChoices map[int64]bool
+	var geminiToolIndices geminiStreamToolIndices
 	if account != nil && account.Platform == PlatformGemini {
 		geminiToolChoices = make(map[int64]bool)
+		geminiToolIndices = make(geminiStreamToolIndices)
 	}
 	sendErrorEvent := func(reason string) {
 		if errorEventSent || clientDisconnected {
@@ -5100,7 +5102,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if openAIResponseUsageIsPresent(dataBytes) {
 				validUsageSeen = true
 			}
-			if normalizedData := normalizeGeminiOpenAIFinishReasons(account, dataBytes, geminiToolChoices); !bytes.Equal(normalizedData, dataBytes) {
+			normalizedData := geminiToolIndices.normalize(dataBytes)
+			normalizedData = normalizeGeminiOpenAIFinishReasons(account, normalizedData, geminiToolChoices)
+			if !bytes.Equal(normalizedData, dataBytes) {
 				dataBytes = normalizedData
 				data = string(normalizedData)
 				line = "data: " + data
@@ -5584,7 +5588,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
 	usage := &usageValue
-	s.newGeminiSignatureCollector(ctx, c, account).observe(body)
+	s.newGeminiSignatureCollector(c, account).observe(body)
 
 	// Replace model in response if needed
 	if originalModel != mappedModel {

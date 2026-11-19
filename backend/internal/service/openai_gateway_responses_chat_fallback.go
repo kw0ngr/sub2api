@@ -181,6 +181,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		chatBody = normalizedBody
 	}
 	if account.Platform == PlatformGemini {
+		c.Set(geminiSignatureSeedKey, explicitOpenAISessionID(c, body))
 		if normalizedBody, normalized := normalizeGeminiOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 			chatBody = normalizedBody
 		}

@@ -57,7 +57,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
-	s.rememberGeminiSignatureRoute(c, account, body)
 
 	// 1. Parse Chat Completions request
 	var chatReq apicompat.ChatCompletionsRequest
@@ -660,7 +659,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 	token string,
 ) (*http.Request, error) {
 	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
-	body = s.restoreGeminiToolSignatures(ctx, c, account, body)
 	baseURL := account.GetOpenAIBaseURL()
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = DefaultAPIKeyBaseURL(account.Platform)
@@ -670,10 +668,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 		return nil, err
 	}
 	targetURL := buildOpenAICompatibleChatCompletionsURL(account.Platform, validatedURL)
-	if c != nil && c.Request != nil && strings.HasSuffix(c.Request.URL.Path, "/chat/completions") {
-		if err := validateGeminiToolSignatures(account, targetURL, body); err != nil {
-			return nil, err
-		}
+	body = s.restoreGeminiToolSignatures(ctx, c, account, body)
+	if isGeminiOpenAIChatTarget(account, targetURL) {
+		body = normalizeGeminiOpenAIChatRequest(body)
 	}
 	body, err = normalizeStrictChatDeveloperRoles(account, targetURL, body)
 	if err != nil {

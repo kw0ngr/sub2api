@@ -68,19 +68,23 @@ func geminiRegressionRouter(t *testing.T, do func(*http.Request) (*http.Response
 	return router
 }
 
-func TestGeminiExpiredToolHistoryReturns400WithoutNetworkOrFailover(t *testing.T) {
+func TestGeminiExpiredToolHistoryUsesFallbackAndForwards(t *testing.T) {
 	calls := 0
 	router := geminiRegressionRouter(t, func(req *http.Request) (*http.Response, error) {
 		calls++
-		return nil, context.Canceled
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), `"thought_signature":"skip_thought_signature_validator"`)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1}}`))}, nil
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gemini-3.8-flash","messages":[{"role":"user","content":"hi"},{"role":"assistant","tool_calls":[{"id":"call_old","type":"function","function":{"name":"lookup","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_old","content":"OK"}]}`))
 	router.ServeHTTP(rec, req)
-	require.Equal(t, 400, rec.Code)
-	require.Contains(t, rec.Body.String(), "gemini_tool_signature_unavailable")
-	require.Zero(t, calls)
+	require.Equal(t, 200, rec.Code)
+	require.Contains(t, rec.Body.String(), "OK")
+	require.Equal(t, 1, calls)
 }
 
 func TestGeminiCanceledClientIsNotReportedAs502(t *testing.T) {

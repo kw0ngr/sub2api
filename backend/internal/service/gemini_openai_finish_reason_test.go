@@ -170,9 +170,13 @@ func TestGeminiOpenAIRequestKeepsOriginalToolSignatures(t *testing.T) {
 			_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, []byte(body), "", "")
 			require.Error(t, err)
 			require.NotNil(t, upstream.lastReq)
-			require.Equal(t, signature, gjson.GetBytes(upstream.lastBody, "messages.0.tool_calls.0.extra_content.google.thought_signature").String())
-			require.True(t, gjson.GetBytes(upstream.lastBody, "messages.0.tool_calls.0.extra_content.provider_extension.keep").Bool())
-			require.Equal(t, "call_1", gjson.GetBytes(upstream.lastBody, "messages.1.tool_call_id").String())
+			expected := signature
+			if expected == "" {
+				expected = "skip_thought_signature_validator"
+			}
+			require.Equal(t, expected, gjson.GetBytes(upstream.lastBody, "messages.1.tool_calls.0.extra_content.google.thought_signature").String())
+			require.True(t, gjson.GetBytes(upstream.lastBody, "messages.1.tool_calls.0.extra_content.provider_extension.keep").Bool())
+			require.Equal(t, "call_1", gjson.GetBytes(upstream.lastBody, "messages.2.tool_call_id").String())
 		})
 	}
 }
