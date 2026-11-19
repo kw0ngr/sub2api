@@ -5040,8 +5040,11 @@
           <JailbreakPolicySettings />
         </div>
 
-        <!-- Save Button -->
-        <div v-show="activeTab !== 'backup'" class="flex justify-end">
+        <!-- Independent panels manage their own saving. -->
+        <div
+          v-show="activeTab !== 'backup' && activeTab !== 'jailbreak'"
+          class="settings-save-dock sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 ml-auto flex w-fit items-center rounded-full border border-white/80 bg-white/90 p-1.5 shadow-lg backdrop-blur-xl dark:border-dark-700 dark:bg-dark-900/90"
+        >
           <button
             type="submit"
             :disabled="saving || loadFailed"

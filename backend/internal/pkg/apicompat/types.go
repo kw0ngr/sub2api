@@ -682,6 +682,43 @@ type ChatTokenDetails struct {
 	ReasoningTokens          int `json:"reasoning_tokens,omitempty"`
 	AcceptedPredictionTokens int `json:"accepted_prediction_tokens,omitempty"`
 	RejectedPredictionTokens int `json:"rejected_prediction_tokens,omitempty"`
+	cacheWriteTokensPresent  bool
+}
+
+func (d *ChatTokenDetails) UnmarshalJSON(data []byte) error {
+	type plain ChatTokenDetails
+	var decoded struct {
+		plain
+		CacheWriteTokens *int `json:"cache_write_tokens"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*d = ChatTokenDetails(decoded.plain)
+	if decoded.CacheWriteTokens != nil {
+		d.CacheWriteTokens = *decoded.CacheWriteTokens
+		d.cacheWriteTokensPresent = true
+	}
+	return nil
+}
+
+func (d ChatTokenDetails) MarshalJSON() ([]byte, error) {
+	type plain ChatTokenDetails
+	var cacheWriteTokens *int
+	if d.cacheWriteTokensPresent || d.CacheWriteTokens != 0 {
+		cacheWriteTokens = &d.CacheWriteTokens
+	}
+	return json.Marshal(struct {
+		plain
+		CacheWriteTokens *int `json:"cache_write_tokens,omitempty"`
+	}{plain(d), cacheWriteTokens})
+}
+
+func (d *ChatTokenDetails) cacheCreationInputTokens() int {
+	if d.cacheWriteTokensPresent || d.CacheWriteTokens != 0 {
+		return max(d.CacheWriteTokens, 0)
+	}
+	return max(d.CacheCreationTokens, 0)
 }
 
 // ChatCompletionsChunk is a single streaming chunk from POST /v1/chat/completions.

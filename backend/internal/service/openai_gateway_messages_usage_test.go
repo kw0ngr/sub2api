@@ -64,3 +64,23 @@ func TestHandleAnthropicBufferedStreamingResponse_TopLevelTerminalUsage(t *testi
 	require.Equal(t, 4, result.Usage.CacheReadInputTokens)
 	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":4`)
 }
+
+func TestHandleAnthropicStreamingResponse_NestedUsageWinsOverTopLevel(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_cache\",\"model\":\"gpt-5.4\"}}\n\n" +
+				`data: {"type":"response.completed","usage":{"input_tokens":20,"output_tokens":4},"response":{"id":"resp_cache","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":1,"input_tokens_details":{"cached_tokens":2}}}}` + "\n\n",
+		)),
+	}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	result, err := svc.handleAnthropicStreamingResponse(resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, "claude-sonnet-4", "gpt-5.4", "gpt-5.4", time.Now())
+	require.NoError(t, err)
+	require.Equal(t, OpenAIUsage{InputTokens: 10, OutputTokens: 2, CacheReadInputTokens: 2, CacheCreationInputTokens: 1}, result.Usage)
+	require.Contains(t, rec.Body.String(), `"cache_creation_input_tokens":1`)
+	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":2`)
+}

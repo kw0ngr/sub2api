@@ -574,6 +574,26 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
   });
 
+  it("shows the global save dock only for tabs that use the global form", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    const dock = wrapper.get(".settings-save-dock");
+    expect(dock.classes()).toContain("sticky");
+    expect((dock.element as HTMLElement).style.display).not.toBe("none");
+    for (const tab of ["backup", "jailbreak"]) {
+      const button = wrapper.findAll("button").find(
+        (node) => node.text() === `admin.settings.tabs.${tab}`,
+      );
+      expect(button).toBeDefined();
+      await button?.trigger("click");
+      expect((dock.element as HTMLElement).style.display).toBe("none");
+    }
+    await openSecurityTab(wrapper);
+    expect((dock.element as HTMLElement).style.display).not.toBe("none");
+    expect(updateSettings).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("saves the cyber-policy display toggle without turning on retry", async () => {
     const wrapper = mountView();
     await flushPromises();

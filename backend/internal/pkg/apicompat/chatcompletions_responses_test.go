@@ -74,6 +74,31 @@ func TestResponsesUsageNestedCacheWritePresenceOverridesTopLevelAlias(t *testing
 	}
 }
 
+func TestChatUsageCacheWriteZeroSurvivesRoundTrip(t *testing.T) {
+	for _, tt := range []struct {
+		details string
+		want    int
+	}{
+		{`"cache_creation_tokens":4`, 4},
+		{`"cache_creation_tokens":4,"cache_write_tokens":0`, 0},
+		{`"cache_creation_tokens":4,"cache_write_tokens":7`, 7},
+	} {
+		var usage ChatUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"prompt_tokens":20,"prompt_tokens_details":{`+tt.details+`}}`), &usage))
+		encoded, err := json.Marshal(usage)
+		require.NoError(t, err)
+		var roundTrip ChatUsage
+		require.NoError(t, json.Unmarshal(encoded, &roundTrip))
+		converted := ChatUsageToResponsesUsage(&roundTrip)
+		require.Equal(t, tt.want, converted.CacheCreationInputTokens, tt.details)
+		encoded, err = json.Marshal(converted)
+		require.NoError(t, err)
+		var responsesUsage ResponsesUsage
+		require.NoError(t, json.Unmarshal(encoded, &responsesUsage))
+		require.Equal(t, tt.want, responsesUsage.CacheCreationInputTokens, tt.details)
+	}
+}
+
 func TestChatCompletionsToResponses_SystemMessage(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",

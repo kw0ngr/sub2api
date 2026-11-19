@@ -173,13 +173,36 @@ func expectedOpenAICost(t *testing.T, svc *OpenAIGatewayService, model string, u
 	t.Helper()
 
 	cost, err := svc.billingService.CalculateCost(model, UsageTokens{
-		InputTokens:         max(usage.InputTokens-usage.CacheReadInputTokens, 0),
+		InputTokens:         max(usage.InputTokens-usage.CacheReadInputTokens-usage.CacheCreationInputTokens, 0),
 		OutputTokens:        usage.OutputTokens,
 		CacheCreationTokens: usage.CacheCreationInputTokens,
 		CacheReadTokens:     usage.CacheReadInputTokens,
 	}, multiplier)
 	require.NoError(t, err)
 	return cost
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ChatCacheWritesNotChargedAsFreshInput(t *testing.T) {
+	for _, tt := range []struct {
+		write string
+		want  int
+	}{{``, 4}, {`,"cache_write_tokens":0`, 0}, {`,"cache_write_tokens":7`, 7}} {
+		usage, ok := extractOpenAIUsageFromJSONBytes([]byte(`{"usage":{"prompt_tokens":20,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":5,"cache_creation_tokens":4` + tt.write + `}}}`))
+		require.True(t, ok)
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+		svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, nil, nil, nil)
+		require.NoError(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result:  &OpenAIForwardResult{RequestID: "cache_write_usage", Model: "gpt-5.1", Usage: usage},
+			APIKey:  &APIKey{ID: 1000, Group: &Group{RateMultiplier: 1}},
+			User:    &User{ID: 2000},
+			Account: &Account{ID: 3000, Type: AccountTypeAPIKey},
+		}))
+		require.NotNil(t, usageRepo.lastLog)
+		require.Equal(t, tt.want, usageRepo.lastLog.CacheCreationTokens)
+		require.Equal(t, 5, usageRepo.lastLog.CacheReadTokens)
+		require.Equal(t, 15-tt.want, usageRepo.lastLog.InputTokens)
+	}
 }
 
 func max(a, b int) int {

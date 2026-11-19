@@ -5501,10 +5501,15 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 			promptTokens := usagePath + ".prompt_tokens"
 			completionTokens := usagePath + ".completion_tokens"
 			if gjson.GetBytes(body, promptTokens).Exists() || gjson.GetBytes(body, completionTokens).Exists() {
+				cacheWrite := usage.Get("prompt_tokens_details.cache_write_tokens")
+				if !cacheWrite.Exists() || cacheWrite.Type == gjson.Null {
+					cacheWrite = usage.Get("prompt_tokens_details.cache_creation_tokens")
+				}
 				return OpenAIUsage{
-					InputTokens:          int(gjson.GetBytes(body, promptTokens).Int()),
-					OutputTokens:         int(gjson.GetBytes(body, completionTokens).Int()),
-					CacheReadInputTokens: openAIChatCacheReadTokens(usage),
+					InputTokens:              int(gjson.GetBytes(body, promptTokens).Int()),
+					OutputTokens:             int(gjson.GetBytes(body, completionTokens).Int()),
+					CacheReadInputTokens:     openAIChatCacheReadTokens(usage),
+					CacheCreationInputTokens: max(int(cacheWrite.Int()), 0),
 				}, true
 			}
 			values := gjson.GetManyBytes(
@@ -6361,12 +6366,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	account := input.Account
 	subscription := input.Subscription
 
-	// 计算实际的新输入token（减去缓存读取的token）
-	// 因为 input_tokens 包含了 cache_read_tokens，而缓存读取的token不应按输入价格计费
-	actualInputTokens := result.Usage.InputTokens - result.Usage.CacheReadInputTokens
-	if actualInputTokens < 0 {
-		actualInputTokens = 0
-	}
+	// 输入总量包含缓存读写，缓存部分单独计费。
+	actualInputTokens := max(result.Usage.InputTokens-result.Usage.CacheReadInputTokens-result.Usage.CacheCreationInputTokens, 0)
 
 	// Calculate cost
 	tokens := UsageTokens{

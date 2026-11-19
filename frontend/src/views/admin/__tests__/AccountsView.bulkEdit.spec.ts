@@ -68,7 +68,7 @@ vi.mock('vue-i18n', async () => {
 })
 
 const DataTableStub = {
-  props: ['columns', 'data'],
+  props: ['columns', 'data', 'loading'],
   template: '<div data-test="data-table"></div>'
 }
 
@@ -81,6 +81,48 @@ const AccountBulkActionsBarStub = {
 const BulkEditAccountModalStub = {
   props: ['show', 'target'],
   template: '<div data-test="bulk-edit-modal" :data-show="String(show)" :data-target-mode="target?.mode ?? \'\'"></div>'
+}
+
+function mountView() {
+  return mount(AccountsView, {
+    global: {
+      stubs: {
+        AppLayout: { template: '<div><slot /></div>' },
+        TablePageLayout: {
+          template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+        },
+        DataTable: DataTableStub,
+        Pagination: true,
+        ConfirmDialog: true,
+        AccountTableActions: {
+          emits: ['refresh'],
+          template: '<div><button data-test="refresh" @click="$emit(\'refresh\')" /><slot name="before" /><slot name="beforeCreate" /><slot name="after" /></div>'
+        },
+        AccountTableFilters: { template: '<div></div>' },
+        AccountBulkActionsBar: AccountBulkActionsBarStub,
+        AccountActionMenu: true,
+        ImportDataModal: true,
+        ReAuthAccountModal: true,
+        AccountTestModal: true,
+        AccountStatsModal: true,
+        ScheduledTestsPanel: true,
+        SyncFromCrsModal: true,
+        TempUnschedStatusModal: true,
+        ErrorPassthroughRulesModal: true,
+        TLSFingerprintProfilesModal: true,
+        CreateAccountModal: true,
+        EditAccountModal: true,
+        BulkEditAccountModal: BulkEditAccountModalStub,
+        PlatformTypeBadge: true,
+        AccountCapacityCell: true,
+        AccountStatusIndicator: true,
+        AccountTodayStatsCell: true,
+        AccountGroupsCell: true,
+        AccountUsageCell: true,
+        Icon: true
+      }
+    }
+  })
 }
 
 describe('admin AccountsView bulk edit scope', () => {
@@ -118,43 +160,33 @@ describe('admin AccountsView bulk edit scope', () => {
     })
   })
 
+  it('keeps previous rows visible but non-interactive until refresh completes', async () => {
+    const first = { items: [{ id: 1842, name: 'Gemini', platform: 'gemini', type: 'apikey' }], total: 1, page: 1, page_size: 20, pages: 1 }
+    const refreshed = { ...first, items: [{ ...first.items[0], name: 'Gemini refreshed' }] }
+    let finish!: (data: typeof first) => void
+    listAccounts.mockResolvedValueOnce(first).mockReturnValueOnce(new Promise<typeof first>((resolve) => { finish = resolve }))
+    const wrapper = mountView()
+    const table = wrapper.findComponent(DataTableStub)
+    const container = () => wrapper.get('[aria-busy]')
+    try {
+      await flushPromises()
+      expect(table.props('data')).toEqual(first.items)
+      await wrapper.get('[data-test="refresh"]').trigger('click')
+      expect(table.props('data')).toEqual(first.items)
+      expect(table.props('loading')).toBe(false)
+      expect(container().attributes('aria-busy')).toBe('true')
+      expect(container().attributes('inert')).toBeDefined()
+      finish(refreshed)
+      await flushPromises()
+      expect(table.props('data')).toEqual(refreshed.items)
+      expect(container().attributes('inert')).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="before" /><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountView()
 
     await flushPromises()
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
@@ -169,42 +201,7 @@ describe('admin AccountsView bulk edit scope', () => {
     vi.useFakeTimers()
     const confirmSpy = vi.spyOn(window, 'confirm')
 
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="before" /><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountView()
 
     await flushPromises()
     const button = wrapper.findAll('button').find((item) => item.text() === 'admin.accounts.apiKeyHealthCheckAll')

@@ -978,10 +978,10 @@ func ChatUsageToResponsesUsage(usage *ChatUsage) *ResponsesUsage {
 			CacheCreationTokens: usage.PromptTokensDetails.CacheCreationTokens,
 			CacheWriteTokens:    usage.PromptTokensDetails.CacheWriteTokens,
 		}
-		if usage.PromptTokensDetails.CacheWriteTokens > 0 {
-			out.CacheCreationInputTokens = usage.PromptTokensDetails.CacheWriteTokens
-		} else {
-			out.CacheCreationInputTokens = usage.PromptTokensDetails.CacheCreationTokens
+		out.CacheCreationInputTokens = usage.PromptTokensDetails.cacheCreationInputTokens()
+		if out.CacheCreationInputTokens == 0 {
+			out.InputTokensDetails.CacheWriteTokens = 0
+			out.InputTokensDetails.CacheCreationTokens = 0
 		}
 	}
 	return out

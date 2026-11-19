@@ -59,6 +59,43 @@ describe('AccountUsageCell', () => {
     getUsage.mockReset()
   })
 
+  it('keeps the Gemini quota bar visible during manual refresh', async () => {
+    const usage = (utilization: number) => ({
+      gemini_shared_daily: { utilization, resets_at: '2026-12-01T12:00:00Z' }
+    })
+    let finish!: (result: ReturnType<typeof usage>) => void
+    getUsage.mockResolvedValueOnce(usage(20))
+    getUsage.mockReturnValueOnce(new Promise<ReturnType<typeof usage>>((resolve) => { finish = resolve }))
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 7101, platform: 'gemini', type: 'apikey' }),
+        manualRefreshToken: 0
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['utilization'],
+            template: '<div data-test="quota-bar">{{ utilization }}</div>'
+          }
+        }
+      }
+    })
+    try {
+      await flushPromises()
+      expect(wrapper.get('[data-test="quota-bar"]').text()).toBe('20')
+      await wrapper.setProps({ manualRefreshToken: 1 })
+      await flushPromises()
+      expect(wrapper.attributes('aria-busy')).toBe('true')
+      expect(wrapper.get('[data-test="quota-bar"]').text()).toBe('20')
+      finish(usage(35))
+      await flushPromises()
+      expect(wrapper.attributes('aria-busy')).toBe('false')
+      expect(wrapper.get('[data-test="quota-bar"]').text()).toBe('35')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
     getUsage.mockResolvedValue({
       antigravity_quota: {
