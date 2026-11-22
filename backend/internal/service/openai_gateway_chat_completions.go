@@ -684,6 +684,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAICompatibleChatCompletio
 	if c != nil && c.Request != nil {
 		copyOptionalOpenAICompatibleRequestHeaders(req.Header, c.Request.Header)
 	}
+	if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
+		req.Header.Set("User-Agent", customUA)
+	}
 	req.Header.Del("authorization")
 	req.Header.Del("x-api-key")
 	req.Header.Del("x-goog-api-key")

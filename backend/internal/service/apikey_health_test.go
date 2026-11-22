@@ -377,3 +377,58 @@ func TestAnthropicAPIKeyMonthlyLimitPausesUntilPublishedReset(t *testing.T) {
 	require.Equal(t, expected, *runtimeRepo.lastTempUntil)
 	require.Zero(t, runtimeRepo.setErrorCalls)
 }
+
+func TestAccountGetOpenAIUserAgent_SupportsDeepSeekAndNilSafety(t *testing.T) {
+	var nilAccount *Account
+	require.Empty(t, nilAccount.GetOpenAIUserAgent())
+
+	deepSeekAccount := &Account{
+		Platform: PlatformDeepSeek,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"user_agent": "opencode/1.0",
+		},
+	}
+	require.Equal(t, "opencode/1.0", deepSeekAccount.GetOpenAIUserAgent())
+
+	anthropicAccount := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"user_agent": "custom-ua/1.0",
+		},
+	}
+	require.Empty(t, anthropicAccount.GetOpenAIUserAgent())
+}
+
+func TestCheckDeepSeekAPIKey_UsesCustomUserAgentInProbe(t *testing.T) {
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{
+		newJSONResponse(http.StatusNotFound, `{"error":{"message":"not found"}}`),
+		newJSONResponse(http.StatusOK, `{"choices":[{"message":{"content":"OK"}}]}`),
+	}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          42,
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":    "sk-ds-test",
+			"base_url":   "https://codexfree.xiaotuxp.com/v1",
+			"user_agent": "opencode/1.0",
+			"model_mapping": map[string]any{
+				"deepseek-flash": "deepseek-v4.1-flash",
+			},
+		},
+	}
+
+	health, err := svc.CheckAPIKeyValidity(context.Background(), account)
+
+	require.NoError(t, err)
+	require.True(t, health.Valid)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "https://codexfree.xiaotuxp.com/v1/user/balance", upstream.requests[0].URL.String())
+	require.Equal(t, "opencode/1.0", upstream.requests[0].Header.Get("User-Agent"))
+	require.Equal(t, "https://codexfree.xiaotuxp.com/v1/chat/completions", upstream.requests[1].URL.String())
+	require.Equal(t, "opencode/1.0", upstream.requests[1].Header.Get("User-Agent"))
+}

@@ -971,6 +971,9 @@ func (s *AccountTestService) doAPIKeyProbe(ctx context.Context, account *Account
 			req.Header.Set(key, value)
 		}
 	}
+	if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
+		req.Header.Set("User-Agent", customUA)
+	}
 	if account.IsGrok() {
 		applyGrokCLIRequestHeaders(req.Header, account, gjson.GetBytes(body, "model").String())
 	}

@@ -1204,7 +1204,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 }
 
 func (a *Account) GetOpenAIUserAgent() string {
-	if !a.IsOpenAI() {
+	if a == nil || !IsOpenAIChatCompletionsCompatiblePlatform(a.Platform) {
 		return ""
 	}
 	return a.GetCredential("user_agent")

@@ -761,3 +761,41 @@ func TestForwardAsChatCompletions_ThirdPartyExtractsNestedReasoningEffort(t *tes
 	require.NotNil(t, result.ServiceTier)
 	require.Equal(t, "flex", *result.ServiceTier)
 }
+
+func TestForwardAsChatCompletions_DeepSeekOverridesUserAgent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"hello"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "Go-http-client/2.0")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_deepseek_ua"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"chatcmpl_1","model":"deepseek-v4.1-flash","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop","index":0}],"usage":{"prompt_tokens":4,"completion_tokens":2}}`)),
+	}}
+
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:          4,
+		Name:        "deepseek-custom-ua",
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":    "sk-ds-test",
+			"base_url":   "https://codexfree.xiaotuxp.com/v1",
+			"user_agent": "opencode/1.0",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://codexfree.xiaotuxp.com/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "opencode/1.0", upstream.lastReq.Header.Get("User-Agent"))
+}
