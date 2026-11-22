@@ -507,6 +507,9 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 						return nil, fmt.Errorf("read upstream soft-refusal body: %w", readErr)
 					}
 					resp.Body = io.NopCloser(bytes.NewReader(softBody))
+					if fo := s.failoverOpenAICompatibleFakeRateLimit(ctx, c, account, resp, softBody, upstreamModel); fo != nil {
+						return nil, fo
+					}
 
 					policy := LoadJailbreakPolicy(ctx)
 					replyText, softDet := DetectOpenAIChatCompletionSoftRefusal(policy, softBody)
@@ -601,6 +604,11 @@ func (s *OpenAIGatewayService) forwardOpenAICompatibleChatCompletions(
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if fo, peekErr := s.peekAndFailoverOpenAICompatibleFakeRateLimit(ctx, c, account, resp, upstreamModel); peekErr != nil {
+		return nil, peekErr
+	} else if fo != nil {
+		return nil, fo
+	}
 
 	clientStream := chatReq != nil && chatReq.Stream
 	var usage *OpenAIUsage

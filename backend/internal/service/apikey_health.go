@@ -122,6 +122,9 @@ func ClassifyAPIKeyStatusAction(account *Account, statusCode int, responseBody [
 	if account == nil || account.Type != AccountTypeAPIKey {
 		return APIKeyStatusActionIgnore
 	}
+	if isOpenAICompatibleFakeRateLimitBody(responseBody) {
+		return APIKeyStatusActionTemporaryCooldown
+	}
 	if statusCode == http.StatusOK {
 		return APIKeyStatusActionValid
 	}

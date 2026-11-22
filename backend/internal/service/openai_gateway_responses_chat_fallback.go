@@ -242,6 +242,12 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		return s.handleErrorResponse(ctx, resp, c, account, chatBody, billingModel)
 	}
 
+	if fo, peekErr := s.peekAndFailoverOpenAICompatibleFakeRateLimit(ctx, c, account, resp, upstreamModel); peekErr != nil {
+		return nil, peekErr
+	} else if fo != nil {
+		return nil, fo
+	}
+
 	if clientStream {
 		return s.streamChatCompletionsAsResponses(c, account, resp, originalModel, customTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}

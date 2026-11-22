@@ -128,6 +128,12 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		return s.handleAnthropicErrorResponse(resp, c, account, billingModel)
 	}
 
+	if fo, peekErr := s.peekAndFailoverOpenAICompatibleFakeRateLimit(ctx, c, account, resp, upstreamModel); peekErr != nil {
+		return nil, peekErr
+	} else if fo != nil {
+		return nil, fo
+	}
+
 	if clientStream {
 		return s.streamChatCompletionsAsAnthropic(c, account, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}

@@ -308,6 +308,29 @@ func TestRateLimitService_HandleUpstreamError_GeminiModelQuota429UsesModelRateLi
 	require.WithinDuration(t, before.Add(20*time.Second), repo.modelRateLimitResets[0], after.Sub(before)+time.Second)
 }
 
+func TestRateLimitService_HandleUpstreamError_DeepSeekFakeSuccess200UsesTemporaryCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       4578,
+		Platform: PlatformDeepSeek,
+		Type:     AccountTypeAPIKey,
+	}
+	body := []byte(`{"id":"chatcmpl-freeipblk000000000000000","object":"chat.completion","choices":[{"message":{"content":"当前网络的请求存在异常，已被临时限制访问，请稍后再试。"}}]}`)
+
+	before := time.Now()
+	shouldDisable := service.HandleUpstreamError(context.Background(), account, http.StatusOK, http.Header{}, body)
+	after := time.Now()
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.Equal(t, 0, repo.overloadedCalls)
+	require.Equal(t, 0, repo.tempCalls)
+	require.NotNil(t, repo.lastRateLimitResetAt)
+	require.WithinDuration(t, before.Add(apiKey429Cooldown), *repo.lastRateLimitResetAt, after.Sub(before)+time.Second)
+}
+
 func TestRateLimitService_HandleUpstreamError_APIKey429UsesTemporaryCooldown(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
 	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)

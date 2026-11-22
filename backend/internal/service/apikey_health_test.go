@@ -47,6 +47,8 @@ func TestClassifyAPIKeyStatusAction(t *testing.T) {
 	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(gemini, http.StatusBadRequest, []byte(`{"error":{"message":"API key not valid. Please pass a valid API key.","status":"API_KEY_INVALID"}}`)))
 	require.Equal(t, APIKeyStatusActionPermanentDisable, ClassifyAPIKeyStatusAction(openRouter, http.StatusUnauthorized, []byte(`{"error":{"message":"invalid token"}}`)))
 	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(deepSeek, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limited"}}`)))
+	require.Equal(t, APIKeyStatusActionTemporaryCooldown, ClassifyAPIKeyStatusAction(deepSeek, http.StatusOK, []byte(`{"id":"chatcmpl-freeipblk000000000000000","choices":[{"message":{"content":"当前网络的请求存在异常，已被临时限制访问，请稍后再试。"}}]}`)))
+	require.Equal(t, APIKeyStatusActionValid, ClassifyAPIKeyStatusAction(deepSeek, http.StatusOK, []byte(`{"id":"chatcmpl_1","choices":[{"message":{"content":"ok"}}]}`)))
 }
 
 func TestClassifyAPIKeyStatusAction_ParameterValidationIgnored(t *testing.T) {

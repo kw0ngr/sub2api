@@ -991,6 +991,9 @@ func (s *RateLimitService) handleAPIKeyPermanentDisable(ctx context.Context, acc
 }
 
 func (s *RateLimitService) handleAPIKeyTemporaryCooldown(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) {
+	if isOpenAICompatibleFakeRateLimitBody(responseBody) {
+		statusCode = http.StatusTooManyRequests
+	}
 	switch statusCode {
 	case http.StatusTooManyRequests:
 		if account.Platform == PlatformOpenAI {
