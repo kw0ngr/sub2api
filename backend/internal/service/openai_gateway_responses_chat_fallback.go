@@ -156,8 +156,10 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		writeOpenAIResponsesFallbackError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, body, upstreamModel, billingModel, originalModel)
 	chatReq.Model = upstreamModel
+	if effort := explicitResponsesReasoningEffort(body); effort != "" {
+		chatReq.ReasoningEffort = effort
+	}
 	chatReq.Stream = clientStream
 	if clientStream {
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
@@ -185,7 +187,6 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		if normalizedBody, normalized := normalizeGeminiOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 			chatBody = normalizedBody
 		}
-		reasoningEffort = extractEffectiveOpenAIReasoningEffortFromBody(account, chatBody, upstreamModel, billingModel, originalModel)
 	}
 	chatBody, err = s.applyOpenAIFastPolicyToBody(ctx, account, upstreamModel, chatBody)
 	if err != nil {
@@ -198,6 +199,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if serviceTier == nil {
 		serviceTier = extractOpenAIServiceTierFromBody(chatBody)
 	}
+	reasoningEffort := extractEffectiveOpenAIReasoningEffortFromBody(account, chatBody, upstreamModel, billingModel, originalModel)
 
 	logger.L().Debug("openai responses: forwarding via chat completions bridge",
 		zap.Int64("account_id", account.ID),

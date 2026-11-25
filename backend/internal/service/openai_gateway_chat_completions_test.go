@@ -187,7 +187,8 @@ func TestForwardAsChatCompletions_GLMOpenAINormalizesRequest(t *testing.T) {
 	require.Nil(t, result)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", upstream.lastReq.URL.String())
-	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages.0.model_id").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages.1.model_id").Exists())
 }

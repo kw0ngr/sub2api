@@ -3251,6 +3251,21 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 			"parts": parts,
 		})
 	}
+	// Gemini rejects non-tool parts trailing the final tool-result turn.
+	if n := len(out); n > 0 {
+		last := out[n-1].(map[string]any)
+		parts := last["parts"].([]any)
+		for i := len(parts) - 1; i >= 0; i-- {
+			if _, ok := parts[i].(map[string]any)["functionResponse"]; !ok {
+				continue
+			}
+			if i+1 < len(parts) {
+				last["parts"] = parts[:i+1]
+				out = append(out, map[string]any{"role": "user", "parts": parts[i+1:]})
+			}
+			break
+		}
+	}
 	return out, nil
 }
 

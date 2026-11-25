@@ -17,6 +17,7 @@ import (
 const upstreamModelsBodyLimit int64 = 8 << 20
 
 var builtinGLMModelIDs = []string{
+	"glm-5.4",
 	"glm-5.3",
 	"glm-5.2",
 	"glm-5-turbo",

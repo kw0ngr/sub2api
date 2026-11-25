@@ -114,7 +114,7 @@ const antigravityModels = [
 
 // 智谱 GLM
 const glmModels = [
-  'glm-5.3', 'glm-5.2', 'glm-5-turbo', 'glm-5',
+  'glm-5.4', 'glm-5.3', 'glm-5.2', 'glm-5-turbo', 'glm-5',
   'glm-4.7', 'glm-4.7-flashx', 'glm-4.6', 'glm-4.5',
   'glm-4', 'glm-4v', 'glm-4-plus', 'glm-4-0520',
   'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4-flash',

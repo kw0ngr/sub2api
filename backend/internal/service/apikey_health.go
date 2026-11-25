@@ -872,7 +872,7 @@ func (s *AccountTestService) checkGLMAnthropicMessagesProbe(ctx context.Context,
 			{"role": "user", "content": "hi"},
 		},
 	}
-	if isGLM53Model(model) {
+	if isGLMAnthropicThreeTierModel(model) {
 		payload["thinking"] = map[string]string{"type": "enabled"}
 		payload["output_config"] = map[string]string{"effort": "low"}
 	}
@@ -899,7 +899,7 @@ func glmAPIKeyProbeModel(account *Account) string {
 	if len(mapping) == 0 {
 		return "glm-5.2"
 	}
-	for _, candidate := range []string{"glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1", "glm-5"} {
+	for _, candidate := range []string{"glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-5.4"} {
 		if account.IsModelSupported(candidate) {
 			return account.GetMappedModel(candidate)
 		}

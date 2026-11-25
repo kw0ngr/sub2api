@@ -446,6 +446,7 @@ func TestFetchUpstreamSupportedModelsGLMAnthropicFallbackBuiltIns(t *testing.T) 
 	models, err := svc.FetchUpstreamSupportedModels(context.Background(), account)
 
 	require.NoError(t, err)
+	require.Contains(t, models, "glm-5.4")
 	require.Contains(t, models, "glm-5.2")
 	require.Contains(t, models, "glm-5-turbo")
 	require.NotNil(t, upstream.lastReq)

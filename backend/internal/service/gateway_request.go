@@ -1172,37 +1172,53 @@ func RectifyThinkingBudget(body []byte) ([]byte, bool) {
 }
 
 func NormalizeGLMOpenAIReasoningEffort(body []byte, mappedModel string) ([]byte, bool) {
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mappedModel)), "glm-") {
+	if !strings.HasPrefix(strings.ToLower(lastSegment(strings.TrimSpace(mappedModel))), "glm-") {
 		return body, false
 	}
 
-	path := "reasoning.effort"
-	raw := strings.TrimSpace(gjson.GetBytes(body, path).String())
+	raw := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
 	if raw == "" {
-		path = "reasoning_effort"
-		raw = strings.TrimSpace(gjson.GetBytes(body, path).String())
+		raw = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
 	}
 	if raw == "" {
 		return body, false
 	}
 
 	mapped := normalizeGLMOpenAIReasoningEffortForModel(raw, mappedModel)
-	if mapped == "" || mapped == raw {
+	if mapped == "" {
 		return body, false
 	}
-	out, err := sjson.SetBytes(body, path, mapped)
-	if err != nil {
-		return body, false
+	out := body
+	if gjson.GetBytes(out, "reasoning_effort").String() != mapped {
+		var err error
+		out, err = sjson.SetBytes(out, "reasoning_effort", mapped)
+		if err != nil {
+			return body, false
+		}
 	}
-	return out, true
+	if gjson.GetBytes(out, "reasoning").IsObject() {
+		var err error
+		out, err = sjson.DeleteBytes(out, "reasoning")
+		if err != nil {
+			return body, false
+		}
+	}
+	return out, !bytes.Equal(out, body)
 }
 
 func normalizeGLMOpenAIReasoningEffortForModel(raw string, model string) string {
-	mapped := normalizeGLMOpenAIReasoningEffort(raw)
-	if (isGLM53Model(model) || strings.EqualFold(strings.TrimSpace(model), "glm-5.3-flash")) && mapped == "high" && normalizeEffortToken(raw) == "low" {
-		return "low"
+	switch strings.ToLower(lastSegment(strings.TrimSpace(model))) {
+	case "glm-5.3", "glm-5.3-flash", "glm-5.3-flashx":
+		switch normalizeEffortToken(raw) {
+		case "none", "minimal", "low":
+			return "low"
+		}
+	case "glm-5.4":
+		if normalizeEffortToken(raw) == "low" {
+			return "low"
+		}
 	}
-	return mapped
+	return normalizeGLMOpenAIReasoningEffort(raw)
 }
 
 func normalizeEffortToken(raw string) string {
@@ -1226,19 +1242,32 @@ func normalizeGLMOpenAIReasoningEffort(raw string) string {
 	}
 }
 
-func NormalizeGLM53AnthropicThinking(body []byte, mappedModel string) ([]byte, bool) {
-	if !isGLM53Model(mappedModel) {
+func isGLMAnthropicThreeTierModel(model string) bool {
+	return isGLM53Model(model) || strings.EqualFold(strings.TrimSpace(model), "glm-5.4")
+}
+
+func NormalizeGLMAnthropicThinking(body []byte, mappedModel string) ([]byte, bool) {
+	if !isGLMAnthropicThreeTierModel(mappedModel) {
 		return body, false
 	}
 
+	thinkingType := gjson.GetBytes(body, "thinking.type").String()
+	if !isGLM53Model(mappedModel) && normalizeEffortToken(thinkingType) == "disabled" {
+		return body, false
+	}
 	raw := gjson.GetBytes(body, "output_config.effort").String()
 	if strings.TrimSpace(raw) == "" {
-		raw = gjson.GetBytes(body, "thinking.type").String()
+		raw = thinkingType
 	}
 
 	effort := ""
 	switch normalizeEffortToken(raw) {
-	case "disabled", "off", "none", "minimal", "low":
+	case "disabled", "off", "none", "minimal":
+		if !isGLM53Model(mappedModel) {
+			return body, false
+		}
+		effort = "low"
+	case "low":
 		effort = "low"
 	case "enabled", "adaptive", "medium", "high":
 		effort = "high"

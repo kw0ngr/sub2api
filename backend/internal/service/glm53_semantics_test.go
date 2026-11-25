@@ -31,8 +31,13 @@ func TestNormalizeGLMOpenAIReasoningEffort(t *testing.T) {
 		{name: "flat ultracode maps to max", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning_effort":"ultracode","messages":[]}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "max"},
 		{name: "flat medium maps to high", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning_effort":"medium","messages":[]}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "high"},
 		{name: "glm 5.2 low maps to high", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning_effort":"low","messages":[]}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "high"},
-		{name: "nested high case-normalizes", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning":{"effort":"HIGH"},"messages":[]}`, wantApplied: true, wantPath: "reasoning.effort", wantValue: "high"},
+		{name: "nested high becomes flat", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning":{"effort":"HIGH"},"messages":[]}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "high"},
+		{name: "nested effort wins over flat alias", model: "glm-5.3", input: `{"reasoning":{"effort":"low"},"reasoning_effort":"max"}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "low"},
 		{name: "glm 5.3 native low unchanged", model: "glm-5.3", input: `{"model":"glm-5.3","reasoning_effort":"low","messages":[]}`, wantApplied: false, wantUnchanged: true},
+		{name: "glm 5.3 flashx minimal uses low", model: "GLM-5.3-FLASHX", input: `{"reasoning_effort":"minimal"}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "low"},
+		{name: "glm 5.3 none uses low", model: "glm-5.3", input: `{"reasoning_effort":"none"}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "low"},
+		{name: "glm 5.4 native low unchanged", model: "glm-5.4", input: `{"reasoning_effort":"low"}`, wantUnchanged: true},
+		{name: "glm 5.4 xhigh uses max", model: "glm-5.4", input: `{"reasoning":{"effort":"xhigh"}}`, wantApplied: true, wantPath: "reasoning_effort", wantValue: "max"},
 		{name: "native max unchanged", model: "glm-5.2", input: `{"model":"glm-5.2","reasoning_effort":"max","messages":[]}`, wantApplied: false, wantUnchanged: true},
 		{name: "non glm unchanged", model: "deepseek-v4-pro", input: `{"model":"deepseek-v4-pro","reasoning_effort":"xhigh","messages":[]}`, wantApplied: false, wantUnchanged: true},
 		{name: "missing effort unchanged", model: "glm-5.2", input: `{"model":"glm-5.2","messages":[]}`, wantApplied: false, wantUnchanged: true},
@@ -48,6 +53,7 @@ func TestNormalizeGLMOpenAIReasoningEffort(t *testing.T) {
 				return
 			}
 			require.Equal(t, tt.wantValue, gjson.GetBytes(got, tt.wantPath).String())
+			require.False(t, gjson.GetBytes(got, "reasoning").Exists())
 		})
 	}
 }
@@ -103,6 +109,8 @@ func TestNativeAnthropicPassthroughLeavesOtherThinkingUntouched(t *testing.T) {
 		wantBody string
 	}{
 		{name: "glm 5.3 unspecified", body: `{"model":"glm-5.3","max_tokens":32,"stream":false,"messages":[]}`},
+		{name: "glm 5.4 leaves the upstream default", body: `{"model":"glm-5.4","max_tokens":32,"stream":false,"messages":[]}`},
+		{name: "glm 5.4 does not force-enable thinking", body: `{"model":"glm-5.4","max_tokens":32,"stream":false,"thinking":{"type":"disabled"},"messages":[]}`},
 		{name: "glm 5.2 disabled", body: `{"model":"glm-5.2","max_tokens":32,"stream":false,"thinking":{"type":"disabled"},"messages":[]}`},
 		{
 			name:     "glm 5.2 output config effort low",

@@ -4766,7 +4766,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type enabled->adaptive for %s", account.ID, reqModel)
 	}
 	if account.Platform == PlatformGLM {
-		if normalizedBody, applied := NormalizeGLM53AnthropicThinking(body, reqModel); applied {
+		if normalizedBody, applied := NormalizeGLMAnthropicThinking(body, reqModel); applied {
 			body = normalizedBody
 			reasoningEffort = NormalizeClaudeOutputEffort(gjson.GetBytes(body, "output_config.effort").String())
 		}
@@ -6542,6 +6542,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if account.Platform == PlatformDeepSeek {
 		// Native Messages, Chat and Responses must share the same forced-tool compatibility.
 		body = disableDeepSeekAnthropicThinkingForForcedToolChoice(body)
+		if u, err := url.Parse(anthropicCompatibleBaseURLForAccount(account)); err == nil && u.Scheme == "https" && strings.EqualFold(u.Hostname(), "api.deepseek.com") {
+			body = repairDeepSeekAnthropicToolHistory(body)
+		}
 		setOpsUpstreamRequestBody(c, body)
 	}
 	// 确定目标URL

@@ -6914,6 +6914,10 @@ func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any, requestedModel 
 		}
 	}
 
+	if effort := latestResponsesInputEffort(reqBody["input"]); effort != "" {
+		return normalizeOpenAIReasoningEffortForModel(effort, model), true
+	}
+
 	// Primary: reasoning.effort
 	if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
 		if effort, ok := reasoning["effort"].(string); ok {
@@ -6927,6 +6931,21 @@ func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any, requestedModel 
 	}
 
 	return "", false
+}
+
+func latestResponsesInputEffort(input any) string {
+	items, _ := input.([]any)
+	for i := len(items) - 1; i >= 0; i-- {
+		item, _ := items[i].(map[string]any)
+		if kind, _ := item["type"].(string); kind != "configuration_update" {
+			continue
+		}
+		reasoning, _ := item["reasoning"].(map[string]any)
+		if effort, _ := reasoning["effort"].(string); strings.TrimSpace(effort) != "" {
+			return effort
+		}
+	}
+	return ""
 }
 
 func deriveOpenAIReasoningEffortFromModel(model string) string {
@@ -7205,11 +7224,31 @@ func detectOpenAIPassthroughInstructionsRejectReason(reqModel string, body []byt
 	return ""
 }
 
-func extractOpenAIReasoningEffortFromBody(body []byte, modelCandidates ...string) *string {
-	reasoningEffort := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+func explicitResponsesReasoningEffort(body []byte) string {
+	var reasoningEffort string
+	// Codex can keep the top-level effort fixed and change it for the current turn.
+	input := gjson.GetBytes(body, "input")
+	if input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
+			if item.Get("type").Str == "configuration_update" {
+				if effort := strings.TrimSpace(item.Get("reasoning.effort").Str); effort != "" {
+					reasoningEffort = effort
+				}
+			}
+			return true
+		})
+	}
+	if reasoningEffort == "" {
+		reasoningEffort = strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	}
 	if reasoningEffort == "" {
 		reasoningEffort = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
 	}
+	return reasoningEffort
+}
+
+func extractOpenAIReasoningEffortFromBody(body []byte, modelCandidates ...string) *string {
+	reasoningEffort := explicitResponsesReasoningEffort(body)
 	if reasoningEffort != "" {
 		model := strings.TrimSpace(firstNonEmpty(modelCandidates...))
 		if model == "" {

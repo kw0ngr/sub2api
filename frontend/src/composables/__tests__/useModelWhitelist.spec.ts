@@ -129,7 +129,8 @@ describe('useModelWhitelist', () => {
   it('GLM 模型列表优先包含 5.x 和 4.7 系列', () => {
     const models = getModelsByPlatform('glm')
 
-    expect(models.slice(0, 6)).toEqual([
+    expect(models.slice(0, 7)).toEqual([
+      'glm-5.4',
       'glm-5.3',
       'glm-5.2',
       'glm-5-turbo',
